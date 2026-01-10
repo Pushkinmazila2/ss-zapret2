@@ -29,7 +29,7 @@ RUN ZAPRET_ARCH=$(cat /tmp/zapret_arch) && \
     cp /opt/zapret2-src/binaries/${ZAPRET_ARCH}/nfqws2 nfq2/nfqws2 && \
     chmod +x ip2net/ip2net mdig/mdig nfq2/nfqws2
 
-RUN cp -a /opt/zapret2-src/init.d /opt/zapret2-src/common /opt/zapret2-src/ipset . && \
+RUN cp -a /opt/zapret2-src/init.d /opt/zapret2-src/common /opt/zapret2-src/ipset /opt/zapret2-src/blockcheck2.d /opt/zapret2-src/blockcheck2.sh . && \
     cp -a /opt/zapret2-src/lua lua && \
     cp -a /opt/zapret2-src/lua lua.dist && \
     cp -a /opt/zapret2-src/init.d/custom.d.examples.linux init.d/custom.d.examples.linux && \
