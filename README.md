@@ -179,7 +179,7 @@ docker compose exec ss-zapret2 sh -c 'SKIP_TPWS=1 SKIP_DNSCHECK=1 SECURE_DNS=0 I
 После завершения поиска стратегий запустите zapret2 командой:
 
 ```bash
-docker compose exec ss-zapret2 sh /opt/zapret2/init.d/sysv/zapret2 start`
+docker compose exec ss-zapret2 sh /opt/zapret2/init.d/sysv/zapret2 start
 ```
 
 Либо перезапустите контейнер:
