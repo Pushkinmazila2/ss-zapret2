@@ -1,0 +1,8 @@
+NFQWS_ENABLE=1
+NFQWS_OPT="--qnum=200 -4 --filter-tcp=443 --dpi-desync=fake,disorder2 --dpi-desync-split-pos=2 --dpi-desync-ttl=8 --dpi-desync-fooling=md5sig,badsum"
+INIT_APPLY_FW=1
+MODE_HTTP=0
+MODE_HTTP_KEEPALIVE=0
+MODE_HTTPS=1
+MODE_QUIC=0
+IFACE_WAN=""
