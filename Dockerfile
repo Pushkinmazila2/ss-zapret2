@@ -30,6 +30,7 @@ RUN ZAPRET_ARCH=$(cat /tmp/zapret_arch) && \
     chmod +x ip2net/ip2net mdig/mdig nfq2/nfqws2
 
 RUN cp -a /opt/zapret2-src/init.d /opt/zapret2-src/common /opt/zapret2-src/ipset /opt/zapret2-src/blockcheck2.d /opt/zapret2-src/blockcheck2.sh . && \
+    cp -a /opt/zapret2-src/files files && \
     cp -a /opt/zapret2-src/lua lua && \
     cp -a /opt/zapret2-src/lua lua.dist && \
     cp -a /opt/zapret2-src/init.d/custom.d.examples.linux init.d/custom.d.examples.linux && \
@@ -38,6 +39,7 @@ RUN cp -a /opt/zapret2-src/init.d /opt/zapret2-src/common /opt/zapret2-src/ipset
 RUN cd init.d && \
     find . -mindepth 1 -maxdepth 1 -type d \
       ! -name "sysv" \
+      ! -name "files" \
       ! -name "custom.d.examples.*" \
       -exec rm -rf {} +
 
