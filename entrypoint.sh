@@ -23,8 +23,9 @@ sync_defaults "/opt/zapret2/init.d/custom.d.examples.linux.dist" "/opt/zapret2/i
 
 cleanup() {
   /opt/zapret2/init.d/sysv/zapret2 stop || true
-  [ -n "${SS_SERVER_PID:-}" ] && kill "${SS_SERVER_PID}" 2>/dev/null || true
-  [ -n "${SS_LOCAL_PID:-}" ] && kill "${SS_LOCAL_PID}" 2>/dev/null || true
+  pkill -P $$ ss-server 2>/dev/null || true
+  pkill -P $$ ss-local 2>/dev/null || true
+  pkill -P $$ sed 2>/dev/null || true
 }
 
 trap cleanup TERM INT
@@ -33,11 +34,21 @@ if [ "${SS_VERBOSE:-1}" = "0" ]; then
   exec >/dev/null 2>&1
 fi
 
-# Запускаем с unbuffered выводом и префиксами
-(stdbuf -oL -eL ss-server -v -s 0.0.0.0 -p "${SS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u 2>&1 | stdbuf -oL -eL sed 's/^/[SS-SERVER] /') &
-SS_SERVER_PID=$!
+# Создаем named pipes
+mkfifo /tmp/ss-server.pipe /tmp/ss-local.pipe
 
-(stdbuf -oL -eL ss-local -b 0.0.0.0 -s 127.0.0.1 -p "${SS_PORT}" -l "${SOCKS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -v -u 2>&1 | stdbuf -oL -eL sed 's/^/[SS-LOCAL] /') &
-SS_LOCAL_PID=$!
+# Запускаем ss-server с перенаправлением в pipe
+ss-server -v -s 0.0.0.0 -p "${SS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u 2>&1 >/tmp/ss-server.pipe &
 
-wait
+# Запускаем ss-local с перенаправлением в pipe
+ss-local -b 0.0.0.0 -s 127.0.0.1 -p "${SS_PORT}" -l "${SOCKS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -v -u 2>&1 >/tmp/ss-local.pipe &
+
+# Читаем из pipes и добавляем префиксы
+sed 's/^/[SS-SERVER] /' </tmp/ss-server.pipe &
+sed 's/^/[SS-LOCAL] /' </tmp/ss-local.pipe &
+
+# Ждем завершения любого процесса
+wait -n
+
+# Если один процесс упал, убиваем остальные
+cleanup
