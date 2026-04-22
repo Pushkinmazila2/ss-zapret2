@@ -12,7 +12,7 @@ services:
       - SS_VERBOSE=1
     ports:
       - "${SS_PORT}:${SS_PORT}"
-      -"${SOCKS_PORT}:${SOCKS_PORT}"
+      - "${SOCKS_PORT}:${SOCKS_PORT}"
     volumes:
       - ./config:/opt/zapret2/config
       - ./lua:/opt/zapret2/lua
