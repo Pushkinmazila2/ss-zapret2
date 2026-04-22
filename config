@@ -1,6 +1,6 @@
 NFQWS_ENABLE=1
 IFACE_WAN="eth0"
-NFQWS_OPT="--qnum=200 -4 --filter-tcp=443 --dpi-desync=disorder2 --dpi-desync-split-pos=1 --dpi-desync-fooling=md5sig,badseq --dpi-desync-repeats=6"
+NFQWS_OPT="--qnum=200 -46 -4 --filter-tcp=443 --dpi-desync=disorder2 --dpi-desync-split-pos=1 --dpi-desync-fooling=md5sig,badseq --dpi-desync-repeats=6"
 INIT_APPLY_FW=1
 MODE_HTTP=0
 MODE_HTTPS=1
