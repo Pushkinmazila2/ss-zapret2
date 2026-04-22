@@ -10,7 +10,9 @@ services:
       - SS_TIMEOUT=${SS_TIMEOUT}
       - SOCKS_PORT=${SOCKS_PORT}
       - SS_VERBOSE=1
-    network_mode: host
+    ports:
+      - "${SS_PORT}:${SS_PORT}"
+      -"${SOCKS_PORT}:${SOCKS_PORT}"
     volumes:
       - ./config:/opt/zapret2/config
       - ./lua:/opt/zapret2/lua
