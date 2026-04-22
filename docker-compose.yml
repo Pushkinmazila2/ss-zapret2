@@ -10,6 +10,8 @@ services:
       - SS_TIMEOUT=${SS_TIMEOUT}
       - SOCKS_PORT=${SOCKS_PORT}
       - SS_VERBOSE=1
+    dns:
+      - 172.19.0.4
     ports:
       - "${SS_PORT}:${SS_PORT}"
       - "${SOCKS_PORT}:${SOCKS_PORT}"
