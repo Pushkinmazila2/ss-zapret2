@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-set -e
+set -euo pipefail
 
 sync_defaults() {
   src_dir=$1
@@ -30,16 +30,17 @@ cleanup() {
   [ -n "${SS_LOCAL_PID:-}" ] && kill "${SS_LOCAL_PID}" 2>/dev/null || true
 }
 
-trap cleanup TERM INT
+trap cleanup EXIT TERM INT
 
-if [ "${SS_VERBOSE:-1}" = "0" ]; then
-  exec >/dev/null 2>&1
+SS_VERBOSE_FLAG=""
+if [ "${SS_VERBOSE:-1}" = "1" ]; then
+  SS_VERBOSE_FLAG="-v"
 fi
 
-ss-server -v -s 0.0.0.0 -p "${SS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u &
+ss-server ${SS_VERBOSE_FLAG} -s 0.0.0.0 -p "${SS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u &
 SS_SERVER_PID=$!
 
-ss-local -b 0.0.0.0 -s 127.0.0.1 -p "${SS_PORT}" -l "${SOCKS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u &
+ss-local ${SS_VERBOSE_FLAG} -b 0.0.0.0 -s 127.0.0.1 -p "${SS_PORT}" -l "${SOCKS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u &
 SS_LOCAL_PID=$!
 
 wait
