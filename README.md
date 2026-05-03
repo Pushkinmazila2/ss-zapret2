@@ -94,14 +94,14 @@ SS_TIMEOUT=300                              # Таймаут подключен�
 
 Список переменных окружения в `docker-compose.yml`:
 
-| Переменная                                  | Описание                                                                                               |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| SS_PORT: `8388`                             | Порт Shadowsocks                                                                                       |
-| SOCKS_PORT: `1080`                          | Порт SOCKS5                                                                                            |
-| SS_PASSWORD: `SuperSecurePassword`          | Пароль для Shadowsocks                                                                                 |
-| SS_ENCRYPT_METHOD: `chacha20-ietf-poly1305` | Метод шифрования Shadowsocks                                                                           |
-| SS_TIMEOUT: `300`                           | Таймаут сокета Shadowsocks в секундах                                                                  |
-| SS_VERBOSE: `0`, `1`                        | Логгирование Shadowsocks. Если переменная не установлена или равна `1`, то по-умолчанию будет включено |
+| Переменная                                  | Описание                                         |
+| ------------------------------------------- | ------------------------------------------------ |
+| SS_PORT: `8388`                             | Порт Shadowsocks                                 |
+| SOCKS_PORT: `1080`                          | Порт SOCKS5                                      |
+| SS_PASSWORD: `SuperSecurePassword`          | Пароль для Shadowsocks                           |
+| SS_ENCRYPT_METHOD: `chacha20-ietf-poly1305` | Метод шифрования Shadowsocks                     |
+| SS_TIMEOUT: `300`                           | Таймаут сокета Shadowsocks в секундах            |
+| SS_VERBOSE: `0`, `1`                        | Логгирование Shadowsocks. По умолчанию отключено |
 
 4. Запустите контейнер:
 
