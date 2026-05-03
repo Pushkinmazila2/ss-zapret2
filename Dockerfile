@@ -27,19 +27,21 @@ RUN src=/opt/zapret2-src && \
        ${src}/binaries/${ZAPRET_ARCH}/mdig \
        ${src}/binaries/${ZAPRET_ARCH}/nfqws2 \
        binaries/${ZAPRET_ARCH}/ && \
-    chmod +x binaries/${ZAPRET_ARCH}/* && \
+    chmod +x binaries/${ZAPRET_ARCH}/*
+
+RUN src=/opt/zapret2-src && \
     cp -a ${src}/init.d ${src}/common ${src}/ipset ${src}/blockcheck2.d ${src}/blockcheck2.sh . && \
     cp -a ${src}/files files && \
-    cp -a ${src}/lua lua && \
-    cp -a files/fake files/fake.dist && \
-    cp -a lua lua.dist && \
-    cp -a init.d/custom.d.examples.linux init.d/custom.d.examples.linux.dist && \
+    mv files/fake files/fake.dist && \
+    cp -a ${src}/lua lua.dist && \
+    mv init.d/custom.d.examples.linux init.d/custom.d.examples.linux.dist && \
     find init.d -mindepth 1 -maxdepth 1 -type d \
       ! -name "sysv" \
       ! -name "files" \
       ! -name "custom.d.examples.*" \
-      -exec rm -rf {} + && \
-    ZAPRET_BASE=/opt/zapret2-build ${src}/install_bin.sh
+      -exec rm -rf {} +
+
+RUN ZAPRET_BASE=/opt/zapret2-build /opt/zapret2-src/install_bin.sh
 
 RUN CURL_ARCH=$(cat /tmp/curl_arch) && \
     wget -qO- "https://github.com/stunnel/static-curl/releases/download/${CURL_VERSION}/curl-linux-${CURL_ARCH}-glibc-${CURL_VERSION}.tar.xz" | \
