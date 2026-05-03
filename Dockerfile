@@ -18,31 +18,28 @@ RUN case "$TARGETPLATFORM" in \
 RUN wget -qO- "https://github.com/bol-van/zapret2/releases/download/${ZAPRET_TAG}/zapret2-${ZAPRET_TAG}.tar.gz" | tar xz && \
     mv zapret2-* zapret2-src
 
-RUN /opt/zapret2-src/install_bin.sh
-
 WORKDIR /opt/zapret2-build
 
-RUN ZAPRET_ARCH=$(cat /tmp/zapret_arch) && \
-    mkdir -p ip2net mdig nfq2 && \
-    cp /opt/zapret2-src/binaries/${ZAPRET_ARCH}/ip2net ip2net/ip2net && \
-    cp /opt/zapret2-src/binaries/${ZAPRET_ARCH}/mdig mdig/mdig && \
-    cp /opt/zapret2-src/binaries/${ZAPRET_ARCH}/nfqws2 nfq2/nfqws2 && \
-    chmod +x ip2net/ip2net mdig/mdig nfq2/nfqws2
-
-RUN cp -a /opt/zapret2-src/init.d /opt/zapret2-src/common /opt/zapret2-src/ipset /opt/zapret2-src/blockcheck2.d /opt/zapret2-src/blockcheck2.sh . && \
-    cp -a /opt/zapret2-src/files files && \
-    cp -a /opt/zapret2-src/files/fake files/fake.dist && \
-    cp -a /opt/zapret2-src/lua lua && \
-    cp -a /opt/zapret2-src/lua lua.dist && \
-    cp -a /opt/zapret2-src/init.d/custom.d.examples.linux init.d/custom.d.examples.linux && \
-    cp -a /opt/zapret2-src/init.d/custom.d.examples.linux init.d/custom.d.examples.linux.dist
-
-RUN cd init.d && \
-    find . -mindepth 1 -maxdepth 1 -type d \
+RUN src=/opt/zapret2-src && \
+    ZAPRET_ARCH=$(cat /tmp/zapret_arch) && \
+    mkdir -p binaries/${ZAPRET_ARCH} && \
+    cp ${src}/binaries/${ZAPRET_ARCH}/ip2net \
+       ${src}/binaries/${ZAPRET_ARCH}/mdig \
+       ${src}/binaries/${ZAPRET_ARCH}/nfqws2 \
+       binaries/${ZAPRET_ARCH}/ && \
+    chmod +x binaries/${ZAPRET_ARCH}/* && \
+    cp -a ${src}/init.d ${src}/common ${src}/ipset ${src}/blockcheck2.d ${src}/blockcheck2.sh . && \
+    cp -a ${src}/files files && \
+    cp -a ${src}/lua lua && \
+    cp -a files/fake files/fake.dist && \
+    cp -a lua lua.dist && \
+    cp -a init.d/custom.d.examples.linux init.d/custom.d.examples.linux.dist && \
+    find init.d -mindepth 1 -maxdepth 1 -type d \
       ! -name "sysv" \
       ! -name "files" \
       ! -name "custom.d.examples.*" \
-      -exec rm -rf {} +
+      -exec rm -rf {} + && \
+    ZAPRET_BASE=/opt/zapret2-build ${src}/install_bin.sh
 
 RUN CURL_ARCH=$(cat /tmp/curl_arch) && \
     wget -qO- "https://github.com/stunnel/static-curl/releases/download/${CURL_VERSION}/curl-linux-${CURL_ARCH}-glibc-${CURL_VERSION}.tar.xz" | \
