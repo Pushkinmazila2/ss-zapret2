@@ -21,6 +21,7 @@ sync_defaults() {
 
 sync_defaults "/opt/zapret2/lua.dist" "/opt/zapret2/lua" "lua script"
 sync_defaults "/opt/zapret2/init.d/custom.d.examples.linux.dist" "/opt/zapret2/init.d/custom.d.examples.linux" "custom.d script"
+sync_defaults "/opt/zapret2/files/fake.dist" "/opt/zapret2/files/fake" "fake file"
 
 /opt/zapret2/init.d/sysv/zapret2 start
 

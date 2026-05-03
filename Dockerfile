@@ -31,6 +31,7 @@ RUN ZAPRET_ARCH=$(cat /tmp/zapret_arch) && \
 
 RUN cp -a /opt/zapret2-src/init.d /opt/zapret2-src/common /opt/zapret2-src/ipset /opt/zapret2-src/blockcheck2.d /opt/zapret2-src/blockcheck2.sh . && \
     cp -a /opt/zapret2-src/files files && \
+    cp -a /opt/zapret2-src/files/fake files/fake.dist && \
     cp -a /opt/zapret2-src/lua lua && \
     cp -a /opt/zapret2-src/lua lua.dist && \
     cp -a /opt/zapret2-src/init.d/custom.d.examples.linux init.d/custom.d.examples.linux && \

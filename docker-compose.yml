@@ -18,6 +18,7 @@ services:
     volumes:
       - ./config:/opt/zapret2/config
       - ./lua:/opt/zapret2/lua
+      - ./fakes:/opt/zapret2/files/fake
       - ./scripts/examples:/opt/zapret2/init.d/custom.d.examples.linux
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
     healthcheck:
