@@ -55,6 +55,7 @@ RUN echo "https://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/reposi
       ipset \
       iptables \
       ip6tables \
+      nftables \
       netcat-openbsd \
       shadowsocks-libev
 
