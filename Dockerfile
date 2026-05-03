@@ -6,6 +6,8 @@ FROM alpine:${ALPINE_VERSION} AS build
 ARG ZAPRET_TAG
 ARG CURL_VERSION
 ARG TARGETPLATFORM
+ARG ZAPRET_SRC=/opt/zapret2-src
+ARG ZAPRET_BUILD=/opt/zapret2-build
 
 WORKDIR /opt
 
@@ -16,24 +18,22 @@ RUN case "$TARGETPLATFORM" in \
     esac
 
 RUN wget -qO- "https://github.com/bol-van/zapret2/releases/download/${ZAPRET_TAG}/zapret2-${ZAPRET_TAG}.tar.gz" | tar xz && \
-    mv zapret2-* zapret2-src
+    mv zapret2-* ${ZAPRET_SRC}
 
-WORKDIR /opt/zapret2-build
+WORKDIR ${ZAPRET_BUILD}
 
-RUN src=/opt/zapret2-src && \
-    ZAPRET_ARCH=$(cat /tmp/zapret_arch) && \
+RUN ZAPRET_ARCH=$(cat /tmp/zapret_arch) && \
     mkdir -p binaries/${ZAPRET_ARCH} && \
-    cp ${src}/binaries/${ZAPRET_ARCH}/ip2net \
-       ${src}/binaries/${ZAPRET_ARCH}/mdig \
-       ${src}/binaries/${ZAPRET_ARCH}/nfqws2 \
+    cp ${ZAPRET_SRC}/binaries/${ZAPRET_ARCH}/ip2net \
+       ${ZAPRET_SRC}/binaries/${ZAPRET_ARCH}/mdig \
+       ${ZAPRET_SRC}/binaries/${ZAPRET_ARCH}/nfqws2 \
        binaries/${ZAPRET_ARCH}/ && \
     chmod +x binaries/${ZAPRET_ARCH}/*
 
-RUN src=/opt/zapret2-src && \
-    cp -a ${src}/init.d ${src}/common ${src}/ipset ${src}/blockcheck2.d ${src}/blockcheck2.sh . && \
-    cp -a ${src}/files files && \
+RUN cp -a ${ZAPRET_SRC}/init.d ${ZAPRET_SRC}/common ${ZAPRET_SRC}/ipset ${ZAPRET_SRC}/blockcheck2.d ${ZAPRET_SRC}/blockcheck2.sh . && \
+    cp -a ${ZAPRET_SRC}/files files && \
     mv files/fake files/fake.dist && \
-    cp -a ${src}/lua lua.dist && \
+    cp -a ${ZAPRET_SRC}/lua lua.dist && \
     mv init.d/custom.d.examples.linux init.d/custom.d.examples.linux.dist && \
     find init.d -mindepth 1 -maxdepth 1 -type d \
       ! -name "sysv" \
@@ -41,7 +41,7 @@ RUN src=/opt/zapret2-src && \
       ! -name "custom.d.examples.*" \
       -exec rm -rf {} +
 
-RUN ZAPRET_BASE=/opt/zapret2-build /opt/zapret2-src/install_bin.sh
+RUN ZAPRET_BASE=${ZAPRET_BUILD} ${ZAPRET_SRC}/install_bin.sh
 
 RUN CURL_ARCH=$(cat /tmp/curl_arch) && \
     wget -qO- "https://github.com/stunnel/static-curl/releases/download/${CURL_VERSION}/curl-linux-${CURL_ARCH}-glibc-${CURL_VERSION}.tar.xz" | \
