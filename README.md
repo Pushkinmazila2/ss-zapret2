@@ -204,6 +204,24 @@ docker compose exec ss-zapret2 sh /opt/zapret2/init.d/sysv/zapret2 start
 docker compose restart
 ```
 
+#### blockcheckw
+
+В контейнер интегрирован [blockcheckw](https://github.com/rcd27/blockcheckw). Это форк `blockcheck2` от [rcd27](https://github.com/rcd27), написанный на Rust.
+
+Для его работы в конфиге необходимо переключить `FWTYPE` на `nftables`:
+
+```bash
+FWTYPE=nftables
+```
+
+Пример запуска:
+
+```bash
+docker compose exec ss-zapret2 blockcheckw <параметры>
+```
+
+Более подробная документация описана в оригинальном репозитории.
+
 ### Custom.d скрипты
 
 После первого запуска контейнера в директории проекта будет создана директория `scripts`:

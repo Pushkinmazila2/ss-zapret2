@@ -12,8 +12,12 @@ ARG ZAPRET_BUILD=/opt/zapret2-build
 WORKDIR /opt
 
 RUN case "$TARGETPLATFORM" in \
-      "linux/amd64") echo "linux-x86_64" > /tmp/zapret_arch && echo "x86_64" > /tmp/curl_arch ;; \
-      "linux/arm64") echo "linux-arm64" > /tmp/zapret_arch && echo "aarch64" > /tmp/curl_arch ;; \
+      "linux/amd64") \
+        echo "linux-x86_64" | tee /tmp/zapret_arch /tmp/blockcheckw_arch > /dev/null && \
+        echo "x86_64" > /tmp/curl_arch ;; \
+      "linux/arm64") \
+        echo "linux-arm64" | tee /tmp/zapret_arch /tmp/blockcheckw_arch > /dev/null && \
+        echo "aarch64" > /tmp/curl_arch ;; \
       *) echo "Unsupported platform: $TARGETPLATFORM" && exit 1 ;; \
     esac
 
@@ -48,6 +52,11 @@ RUN CURL_ARCH=$(cat /tmp/curl_arch) && \
     tar -xJf - -C /opt && \
     chmod +x /opt/curl
 
+RUN BLOCKCHECKW_ARCH=$(cat /tmp/blockcheckw_arch) && \
+    wget -qO- "https://github.com/rcd27/blockcheckw/releases/latest/download/blockcheckw-${BLOCKCHECKW_ARCH}.tar.gz" | \
+    tar -xzf - -C /opt && \
+    chmod +x /opt/blockcheckw
+
 FROM alpine:${ALPINE_VERSION}
 
 RUN echo "https://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
@@ -65,6 +74,7 @@ WORKDIR /opt
 
 COPY --from=build /opt/zapret2-build /opt/zapret2
 COPY --from=build /opt/curl /usr/bin/curl
+COPY --from=build /opt/blockcheckw /usr/bin/blockcheckw
 COPY entrypoint.sh /opt/entrypoint.sh
 
 RUN chmod +x /opt/entrypoint.sh
