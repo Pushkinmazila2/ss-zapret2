@@ -180,11 +180,10 @@ docker compose exec ss-zapret2 sh -c 'SKIP_DNSCHECK=1 SECURE_DNS=0 IPVS=4 ENABLE
 Вместо `xxxxxx.googlevideo.com` можно указать адрес ближайшего GGC сервера, который можно найти командой (требуется установленный `curl` и `jq`):
 
 ```bash
-
 curl "https://www.youtube.com/youtubei/v1/player" \
   --silent \
   --request POST \
-  --json '{"videoId":"dQw4w9WgXcQ","context":{"client":{"clientName":"WEB","clientVersion":"2.20230810.05.00"}}}' \
+  --json '{"videoId":"dQw4w9WgXcQ","context":{"client":{"clientName":"ANDROID","clientVersion":"21.02.35","androidSdkVersion":30,"userAgent":"com.google.android.youtube/21.02.35(Linux;U;Android11)gzip","osName":"Android","osVersion":"11"}}}' \
   --proxy socks5://localhost:1080 |
   jq -r ".streamingData.serverAbrStreamingUrl" |
   awk -F'/' '{print $3}'
