@@ -217,7 +217,7 @@ FWTYPE=nftables
 Пример запуска:
 
 ```bash
-docker compose exec ss-zapret2 blockcheckw <параметры>
+docker compose exec ss-zapret2 sh -c "blockcheckw -w 32 scan -d rutracker.org | blockcheckw check -d rutracker.org --take 10"
 ```
 
 Более подробная документация описана в оригинальном репозитории.
