@@ -371,3 +371,9 @@ ss-zapret2:
 
 > [!IMPORTANT]
 > Shadowsocks и SOCKS5 предназначены только для подключения в **локальной** сети. Не рекомендуется использовать их для внешнего подключения, так как это может скомпрометировать сервер
+
+## Благодарности
+
+- [bol-van](https://github.com/bol-van) - За zapret2
+- [ampetelin](https://github.com/ampetelin) - За [изначальный](https://github.com/ampetelin/ss-zapret) проект
+- [rcd27](https://github.com/rcd27) - За blockcheckw
