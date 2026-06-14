@@ -34,7 +34,7 @@ cleanup() {
 trap cleanup EXIT TERM INT
 
 SS_VERBOSE_FLAG=""
-if [ "${SS_VERBOSE:-1}" = "1" ]; then
+if [ "${SS_VERBOSE:-0}" = "1" ]; then
   SS_VERBOSE_FLAG="-v"
 fi
 
