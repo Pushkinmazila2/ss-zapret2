@@ -32,3 +32,8 @@ services:
       start_period: 3s
     cap_add:
       - NET_ADMIN
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
