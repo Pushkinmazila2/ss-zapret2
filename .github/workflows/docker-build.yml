@@ -2,6 +2,8 @@ name: Build and Push Docker Image
 
 on:
   push:
+    branches:
+      - master
     paths:
       - "Dockerfile"
       - "entrypoint.sh"
@@ -12,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       - name: Checkout code
@@ -41,3 +42,5 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/ss-zapret2:${{ env.ZAPRET_TAG }}, ${{ secrets.DOCKERHUB_USERNAME }}/ss-zapret2:latest
           platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
