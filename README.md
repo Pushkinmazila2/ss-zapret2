@@ -33,7 +33,11 @@ Docker-контейнер на основе [zapret2 от bol-van](https://githu
   - [Проверка работы стратегий](#проверка-работы-стратегий)
   - [Интеграция с прокси-клиентами](#интеграция-с-прокси-клиентами)
 - [Работа Instagram в браузере](#работа-instagram-в-браузере)
+- [Сценарии использования](#сценарии-использования)
+- [Разработка](#разработка)
+- [Вклад в разработку](#вклад-в-разработку)
 - [Предупреждение про Shadowsocks и SOCKS5](#предупреждение-про-shadowsocks-и-socks5)
+- [Благодарности](#благодарности)
 
 ## Быстрый старт
 
@@ -315,24 +319,10 @@ curl --connect-to ::speedtest.selectel.ru https://manifest.googlevideo.com/100MB
 
 ```yaml
 ss-zapret2:
-  image: vernette/ss-zapret2:v0.8.4
-  container_name: zapret2-proxy
-  restart: unless-stopped
   ...
-  healthcheck:
-    test: [
-      "CMD-SHELL",
-      "nc -z localhost ${SS_PORT} && nc -z localhost ${SOCKS_PORT} || exit 1"
-    ]
-    interval: 30s
-    timeout: 10s
-    retries: 3
-    start_period: 3s
   extra_hosts:
     instagram.com: "незаблокированный_ip"
     www.instagram.com: "незаблокированный_ip"
-  cap_add:
-    - NET_ADMIN
 ```
 
 > Например instagram.com: "11.22.33.44"
