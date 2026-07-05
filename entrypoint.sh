@@ -2,6 +2,17 @@
 
 set -euo pipefail
 
+missing=""
+for var in SS_PORT SS_PASSWORD SS_ENCRYPT_METHOD SS_TIMEOUT SOCKS_PORT; do
+  eval "value=\${$var:-}"
+  [ -n "$value" ] || missing="$missing $var"
+done
+
+if [ -n "$missing" ]; then
+  echo "[entrypoint] ERROR: required environment variables are not set:$missing" >&2
+  exit 1
+fi
+
 sync_defaults() {
   src_dir=$1
   dst_dir=$2
