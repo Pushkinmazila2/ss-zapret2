@@ -1,10 +1,12 @@
 ARG ALPINE_VERSION=3.21
 ARG ZAPRET_TAG=v1.0.2
 ARG CURL_VERSION=8.13.0
+ARG BLOCKCHECKW_VERSION=v0.9.0
 
 FROM alpine:${ALPINE_VERSION} AS build
 ARG ZAPRET_TAG
 ARG CURL_VERSION
+ARG BLOCKCHECKW_VERSION
 ARG TARGETPLATFORM
 ARG ZAPRET_SRC=/opt/zapret2-src
 ARG ZAPRET_BUILD=/opt/zapret2-build
@@ -53,7 +55,7 @@ RUN CURL_ARCH=$(cat /tmp/curl_arch) && \
     chmod +x /opt/curl
 
 RUN BLOCKCHECKW_ARCH=$(cat /tmp/blockcheckw_arch) && \
-    wget -qO- "https://github.com/rcd27/blockcheckw/releases/latest/download/blockcheckw-${BLOCKCHECKW_ARCH}.tar.gz" | \
+    wget -qO- "https://github.com/rcd27/blockcheckw/releases/download/${BLOCKCHECKW_VERSION}/blockcheckw-${BLOCKCHECKW_ARCH}.tar.gz" | \
     tar -xzf - -C /opt && \
     chmod +x /opt/blockcheckw
 
