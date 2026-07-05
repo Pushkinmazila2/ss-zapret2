@@ -61,14 +61,13 @@ RUN BLOCKCHECKW_ARCH=$(cat /tmp/blockcheckw_arch) && \
 
 FROM alpine:${ALPINE_VERSION}
 
-RUN echo "https://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
-    apk add --no-cache \
+RUN apk add --no-cache \
       ipset \
       iptables \
       ip6tables \
       nftables \
-      netcat-openbsd \
-      shadowsocks-libev
+      netcat-openbsd && \
+    apk add --no-cache -X https://dl-cdn.alpinelinux.org/alpine/edge/testing shadowsocks-libev
 
 EXPOSE 1080 8388
 
