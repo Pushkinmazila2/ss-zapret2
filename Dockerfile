@@ -76,8 +76,6 @@ WORKDIR /opt
 COPY --from=build /opt/zapret2-build /opt/zapret2
 COPY --from=build /opt/curl /usr/bin/curl
 COPY --from=build /opt/blockcheckw /usr/bin/blockcheckw
-COPY entrypoint.sh /opt/entrypoint.sh
-
-RUN chmod +x /opt/entrypoint.sh
+COPY --chmod=755 entrypoint.sh /opt/entrypoint.sh
 
 ENTRYPOINT ["/opt/entrypoint.sh"]
