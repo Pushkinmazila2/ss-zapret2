@@ -60,6 +60,14 @@ header h1{font-size:16px;font-weight:700;}
 .log.ok {color:var(--ok); border-color:rgba(53,201,127,.3);}
 .log.err{color:var(--err);border-color:rgba(255,107,107,.3);}
 .log.n  {color:var(--mut);}
+/* connections */
+.connbox{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px 13px;}
+.cbtitle{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
+.cbport{color:var(--acc);font-size:10px;font-family:monospace;}
+.cbcount{font-size:28px;font-weight:700;margin:4px 0 6px;line-height:1;}
+.cbips{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--mut);
+  line-height:1.7;max-height:90px;overflow-y:auto;}
+.cbips .ip{display:block;}
 </style>
 </head>
 <body>
@@ -77,6 +85,23 @@ header h1{font-size:16px;font-weight:700;}
 
   <!-- RIGHT -->
   <div class="rcol">
+
+    <!-- подключения -->
+    <div class="card">
+      <h2>Активные подключения <span id="connTs" style="color:var(--mut);font-weight:400;font-size:11px"></span></h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
+        <div class="connbox" id="ssBox">
+          <div class="cbtitle">Shadowsocks <span id="ssPort" class="cbport"></span></div>
+          <div class="cbcount" id="ssCount">—</div>
+          <div class="cbips" id="ssIps"></div>
+        </div>
+        <div class="connbox" id="socksBox">
+          <div class="cbtitle">SOCKS5 <span id="socksPortLabel" class="cbport"></span></div>
+          <div class="cbcount" id="socksCount">—</div>
+          <div class="cbips" id="socksIps"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- текущий config -->
     <div class="card">
@@ -259,11 +284,31 @@ document.getElementById('importBtn').onclick = async () => {
   if(r.ok) await loadStrategies();
 };
 
+// ── connections ───────────────────────────────────────────────────────────
+async function refreshConnections(){
+  const data = await api('/api/connections');
+  if(data.error){ return; }
+  document.getElementById('ssPort').textContent        = ':' + data.ss_port;
+  document.getElementById('socksPortLabel').textContent = ':' + data.socks_port;
+  document.getElementById('ssCount').textContent    = data.ss.length;
+  document.getElementById('socksCount').textContent = data.socks.length;
+
+  function renderIps(elId, ips){
+    const el = document.getElementById(elId);
+    el.innerHTML = ips.length
+      ? ips.map(ip => '<span class="ip">' + ip + '</span>').join('')
+      : '<span style="color:var(--line)">нет</span>';
+  }
+  renderIps('ssIps',    data.ss);
+  renderIps('socksIps', data.socks);
+  document.getElementById('connTs').textContent = new Date().toLocaleTimeString();
+}
+
 // ── init ──────────────────────────────────────────────────────────────────
 (async ()=>{
-  await Promise.all([refreshCfg(), loadStrategies()]);
-  // обновить подсказку в curl
+  await Promise.all([refreshCfg(), loadStrategies(), refreshConnections()]);
   document.getElementById('curlUrl').dispatchEvent(new Event('input'));
+  setInterval(refreshConnections, 5000);
 })();
 </script>
 </body>
