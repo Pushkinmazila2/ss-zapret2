@@ -1,6 +1,7 @@
 services:
   ss-zapret2:
-    image: vernette/ss-zapret2:v1.0.2
+    build: .
+    # image: vernette/ss-zapret2:v1.0.2  # закомментировано: используем build
     container_name: zapret2-proxy
     restart: unless-stopped
     environment:
@@ -10,22 +11,20 @@ services:
       - SS_TIMEOUT=${SS_TIMEOUT}
       - SOCKS_PORT=${SOCKS_PORT}
       - SS_VERBOSE=${SS_VERBOSE:-0}
-      - PANEL_PORT=${PANEL_PORT:-1188}
+      - PANEL_PORT=${PANEL_PORT:-1888}
     ports:
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/tcp"
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/udp"
-      - "${SOCKS_PORT}:${SOCKS_PORT}/tcp"
-      - "${SOCKS_PORT}:${SOCKS_PORT}/udp"
-      - "${PANEL_PORT:-1188}:${PANEL_PORT:-1188}"
+      - "127.0.0.1:${SOCKS_PORT}:${SOCKS_PORT}/tcp"
+      - "127.0.0.1:${SOCKS_PORT}:${SOCKS_PORT}/udp"
+      - "127.0.0.1:${PANEL_PORT:-1888}:${PANEL_PORT:-1888}/tcp"
     volumes:
       - ./config:/opt/zapret2/config
       - ./lua:/opt/zapret2/lua
       - ./fakes:/opt/zapret2/files/fake
+      - ./strategies:/opt/zapret2/strategies
       - ./scripts/examples:/opt/zapret2/init.d/custom.d.examples.linux
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
-    networks:
-      - default
-      - s-ui_network
     healthcheck:
       test: [
         "CMD-SHELL",
@@ -46,7 +45,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-networks:
-  s-ui_network:
-    name: s-ui_s-ui
-    external: true
