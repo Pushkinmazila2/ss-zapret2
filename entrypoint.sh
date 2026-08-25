@@ -55,4 +55,18 @@ SS_SERVER_PID=$!
 ss-local ${SS_VERBOSE_FLAG} -b 0.0.0.0 -s 127.0.0.1 -p "${SS_PORT}" -l "${SOCKS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u &
 SS_LOCAL_PID=$!
 
+# Веб-панель управления стратегиями
+PANEL_PORT="${PANEL_PORT:-1888}"
+SOCKS_PORT="${SOCKS_PORT:-1181}"
+
+echo "[entrypoint] Starting web panel on port ${PANEL_PORT}, socks_port=${SOCKS_PORT}"
+python3 /opt/zapret2/panel/server.py \
+  --config /opt/zapret2/config \
+  --strategies /opt/zapret2/strategies \
+  --port "${PANEL_PORT}" \
+  --socks-port "${SOCKS_PORT}" \
+  > /proc/1/fd/1 2>&1 &
+
+echo "[entrypoint] Panel PID=$!"
+
 wait
