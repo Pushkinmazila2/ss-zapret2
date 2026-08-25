@@ -1,0 +1,127 @@
+{
+  "strategyKeys": [
+    "DESYNC_MODE",
+    "DESYNC_MODE_HTTP",
+    "DESYNC_SPLIT_POS",
+    "DESYNC_SPLIT_POS_HTTP",
+    "DESYNC_FOOLING",
+    "MODE"
+  ],
+  "fields": [
+    {
+      "key": "DESYNC_MODE",
+      "label": "Стратегия десинка (основной трафик)",
+      "type": "enum",
+      "default": "disorder",
+      "options": [
+        { "value": "disorder", "label": "disorder" },
+        { "value": "fake", "label": "fake" },
+        { "value": "fakedsplit", "label": "fakedsplit" },
+        { "value": "multidisorder", "label": "multidisorder" },
+        { "value": "multisplit", "label": "multisplit" },
+        { "value": "md5", "label": "md5 (md5sig)" },
+        { "value": "none", "label": "none" }
+      ],
+      "help": "Метод десинхронизации, применяемый к обычному (не-HTTP) трафику."
+    },
+    {
+      "key": "DESYNC_MODE_HTTP",
+      "label": "Способ десинка (HTTP)",
+      "type": "enum",
+      "default": "disorder",
+      "options": [
+        { "value": "disorder", "label": "disorder" },
+        { "value": "fake", "label": "fake" },
+        { "value": "fakedsplit", "label": "fakedsplit" },
+        { "value": "multidisorder", "label": "multidisorder" },
+        { "value": "multisplit", "label": "multisplit" },
+        { "value": "none", "label": "none" }
+      ],
+      "help": "Метод десинка для HTTP-трафика (отдельно от основного)."
+    },
+    {
+      "key": "DESYNC_SPLIT_POS",
+      "label": "Позиция разделения (основной)",
+      "type": "enum",
+      "default": "1",
+      "options": [
+        { "value": "1", "label": "1" },
+        { "value": "2", "label": "2" },
+        { "value": "5", "label": "5" },
+        { "value": "10", "label": "10" },
+        { "value": "20", "label": "20" }
+      ],
+      "help": "Позиция разделения пакета (pos=...)."
+    },
+    {
+      "key": "DESYNC_SPLIT_POS_HTTP",
+      "label": "Позиция разделения (HTTP)",
+      "type": "enum",
+      "default": "1",
+      "options": [
+        { "value": "1", "label": "1" },
+        { "value": "2", "label": "2" },
+        { "value": "5", "label": "5" },
+        { "value": "10", "label": "10" },
+        { "value": "20", "label": "20" }
+      ],
+      "help": "Позиция разделения пакета для HTTP (pos=...)."
+    },
+    {
+      "key": "DESYNC_FOOLING",
+      "label": "Fooling",
+      "type": "enum",
+      "default": "badseq",
+      "options": [
+        { "value": "badseq", "label": "badseq" },
+        { "value": "md5sig", "label": "md5sig" },
+        { "value": "fake", "label": "fake" },
+        { "value": "none", "label": "none" }
+      ],
+      "help": "Дополнительное маскирование (например, накрутка TCP seq)."
+    },
+    {
+      "key": "MODE",
+      "label": "Режим фильтрации",
+      "type": "enum",
+      "default": "none",
+      "options": [
+        { "value": "none", "label": "none — без белых/чёрных списков" },
+        { "value": "filter", "label": "filter" },
+        { "value": "dpi", "label": "dpi" }
+      ],
+      "help": "none — десинк работает на весь HTTPS/трафик телефона без списков."
+    },
+    {
+      "key": "PROXY_ENABLE",
+      "label": "Прокси (SOCKS5/HTTP)",
+      "type": "enum",
+      "default": "1",
+      "options": [
+        { "value": "1", "label": "1 — включён" },
+        { "value": "0", "label": "0 — выключен" }
+      ],
+      "help": "Режим прокси вместо прозрачного перехвата."
+    },
+    {
+      "key": "LOG_LEVEL",
+      "label": "Уровень логов",
+      "type": "enum",
+      "default": "warn",
+      "options": [
+        { "value": "warn", "label": "warn" },
+        { "value": "info", "label": "info" },
+        { "value": "error", "label": "error" },
+        { "value": "debug", "label": "debug" }
+      ],
+      "help": "Уровень логирования nfqws2."
+    },
+    {
+      "key": "NFQWS2_OPT",
+      "label": "NFQWS2_OPT (расширенный)",
+      "type": "multiline",
+      "default": "",
+      "help": "Необязательно. Многострочный блок параметров nfqws2 (профили). Обычно не нужен, если заданы поля DESYNC_*."
+    }
+  ]
+}
