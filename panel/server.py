@@ -18,6 +18,7 @@ CFG_PATH    = None
 STRAT_DIR   = None
 RESTART_CMD = None
 SOCKS_PORT  = None
+SS_PORT     = None
 
 MULTILINE_KEY = "NFQWS2_OPT"
 _KEY_RE = re.compile(r"^([A-Z0-9_]+)=")
@@ -153,6 +154,49 @@ def run_curl(port, url):
         return {"ok": False, "rc": -1, "output": str(e)}
 
 
+def _hex_to_ip(hex_str):
+    try:
+        return ".".join(str(int(hex_str[i:i+2], 16)) for i in (6, 4, 2, 0))
+    except Exception:
+        return None
+
+
+def _port_hex(port_int):
+    return "%04X" % port_int
+
+
+def get_connections(ss_port, socks_port):
+    """Читает /proc/net/tcp и возвращает уникальные внешние IP по портам."""
+    ss_ips    = set()
+    socks_ips = set()
+    ss_hex    = _port_hex(ss_port)
+    socks_hex = _port_hex(socks_port)
+    try:
+        with open("/proc/net/tcp", "r") as f:
+            for line in f.readlines()[1:]:
+                parts = line.split()
+                if len(parts) < 4:
+                    continue
+                if parts[3] != "01":        # только ESTABLISHED
+                    continue
+                local_port_hex  = parts[1].split(":")[1]
+                remote_ip       = _hex_to_ip(parts[2].split(":")[0])
+                if not remote_ip or remote_ip.startswith("127."):
+                    continue
+                if local_port_hex == ss_hex:
+                    ss_ips.add(remote_ip)
+                elif local_port_hex == socks_hex:
+                    socks_ips.add(remote_ip)
+    except Exception as e:
+        return {"error": str(e), "ss": [], "socks": []}
+    return {
+        "ss_port":    ss_port,
+        "socks_port": socks_port,
+        "ss":         sorted(ss_ips),
+        "socks":      sorted(socks_ips),
+    }
+
+
 # ── HTTP ───────────────────────────────────────────────────────────────────
 
 _HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
@@ -191,6 +235,8 @@ class Handler(BaseHTTPRequestHandler):
                         "nfqws_opt": get_nfqws(lines)})
         elif p == "/api/strategies":
             self._json({"strategies": list_strategies()})
+        elif p == "/api/connections":
+            self._json(get_connections(SS_PORT or 8388, SOCKS_PORT or 1080))
         else:
             self._json({"error": "not found"}, 404)
 
@@ -288,18 +334,21 @@ def main():
     ap.add_argument("--strategies",  required=True)
     ap.add_argument("--port",        type=int, default=1888)
     ap.add_argument("--host",        default="0.0.0.0")
+    ap.add_argument("--ss-port",     type=int, default=8388)
     ap.add_argument("--socks-port",  type=int, default=1080)
     ap.add_argument("--restart-cmd",
                     default="/opt/zapret2/init.d/sysv/zapret2 restart-daemons")
     args = ap.parse_args()
 
-    global CFG_PATH, STRAT_DIR, RESTART_CMD, SOCKS_PORT
+    global CFG_PATH, STRAT_DIR, RESTART_CMD, SOCKS_PORT, SS_PORT
     CFG_PATH    = args.config
     STRAT_DIR   = args.strategies
     RESTART_CMD = args.restart_cmd
     SOCKS_PORT  = args.socks_port
+    SS_PORT     = args.ss_port
 
-    print("[panel] config=%s  strategies=%s  socks=%d" % (CFG_PATH, STRAT_DIR, SOCKS_PORT), flush=True)
+    print("[panel] config=%s  strategies=%s  ss=%d  socks=%d" % (
+        CFG_PATH, STRAT_DIR, SS_PORT, SOCKS_PORT), flush=True)
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     print("[panel] http://%s:%d" % (args.host, args.port), flush=True)
     srv.serve_forever()
