@@ -25,6 +25,9 @@ services:
       - ./strategies:/opt/zapret2/strategies
       - ./scripts/examples:/opt/zapret2/init.d/custom.d.examples.linux
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
+    networks:
+      - default
+      - s-ui_network
     healthcheck:
       test: [
         "CMD-SHELL",
@@ -45,3 +48,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+networks:
+  s-ui_network:
+    name: s-ui_s-ui
+    external: true
