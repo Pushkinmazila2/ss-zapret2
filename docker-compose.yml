@@ -1,6 +1,9 @@
 services:
   ss-zapret2:
-    image: vernette/ss-zapret2:v1.0.2
+    image: vernette/ss-zapret2:v1.0.2 
+    build:
+      context: .              # Путь до папки, где лежит Dockerfile (текущая папка)
+      dockerfile: Dockerfile  # Имя файла (можно убрать, если он называется просто Dockerfile)
     container_name: zapret2-proxy
     restart: unless-stopped
     environment:
