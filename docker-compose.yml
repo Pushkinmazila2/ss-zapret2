@@ -10,17 +10,22 @@ services:
       - SS_TIMEOUT=${SS_TIMEOUT}
       - SOCKS_PORT=${SOCKS_PORT}
       - SS_VERBOSE=${SS_VERBOSE:-0}
+      - PANEL_PORT=${PANEL_PORT:-1188}
     ports:
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/tcp"
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/udp"
-      - "127.0.0.1:${SOCKS_PORT}:${SOCKS_PORT}/tcp"
-      - "127.0.0.1:${SOCKS_PORT}:${SOCKS_PORT}/udp"
+      - "${SOCKS_PORT}:${SOCKS_PORT}/tcp"
+      - "${SOCKS_PORT}:${SOCKS_PORT}/udp"
+      - "${PANEL_PORT:-1188}:${PANEL_PORT:-1188}"
     volumes:
       - ./config:/opt/zapret2/config
       - ./lua:/opt/zapret2/lua
       - ./fakes:/opt/zapret2/files/fake
       - ./scripts/examples:/opt/zapret2/init.d/custom.d.examples.linux
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
+    networks:
+      - default
+      - s-ui_network
     healthcheck:
       test: [
         "CMD-SHELL",
@@ -41,3 +46,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+networks:
+  s-ui_network:
+    name: s-ui_s-ui
+    external: true
