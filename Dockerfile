@@ -72,7 +72,8 @@ RUN apk add --no-cache \
 EXPOSE 1080 8388
 
 WORKDIR /opt
-
+COPY panel/ /opt/zapret2/panel/
+COPY strategies/ /opt/zapret2/strategies/
 COPY --from=build /opt/zapret2-build /opt/zapret2
 COPY --from=build /opt/curl /usr/bin/curl
 COPY --from=build /opt/blockcheckw /usr/bin/blockcheckw
