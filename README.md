@@ -5,7 +5,9 @@ Docker-контейнер на основе [zapret2 от bol-van](https://githu
 
 - Изоляция zapret2 в отдельном контейнере
 - Простая интеграция с sing-box, Xray и другими прокси-клиентами
-
+<p align="center">
+  <img src="https://github.com/Pushkinmazila2/ss-zapret2/blob/master/WebPanel.PNG" alt="Веб панель со сменой стратегий">
+</p>
 Контейнер был протестирован на следующих хостингах:
 
 - [RocketCloud](https://cloudcore.ru/?affiliate_uuid=ce1874ee-4940-48b1-b37d-60e03cfada66)

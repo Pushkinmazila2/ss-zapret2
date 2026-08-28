@@ -66,17 +66,18 @@ RUN apk add --no-cache \
       iptables \
       ip6tables \
       nftables \
-      netcat-openbsd && \
+      netcat-openbsd \
+      python3 && \
     apk add --no-cache -X https://dl-cdn.alpinelinux.org/alpine/edge/testing shadowsocks-libev
 
-EXPOSE 1080 8388
+EXPOSE 1080 8388 1888
 
 WORKDIR /opt
-COPY panel/ /opt/zapret2/panel/
-COPY strategies/ /opt/zapret2/strategies/
+
 COPY --from=build /opt/zapret2-build /opt/zapret2
 COPY --from=build /opt/curl /usr/bin/curl
 COPY --from=build /opt/blockcheckw /usr/bin/blockcheckw
 COPY --chmod=755 entrypoint.sh /opt/entrypoint.sh
+COPY panel/ /opt/zapret2/panel/
 
 ENTRYPOINT ["/opt/entrypoint.sh"]

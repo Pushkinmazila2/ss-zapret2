@@ -2,355 +2,314 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>zapret · панель стратегий</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>zapret2 · панель</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Ctext%20x%3D%220%22%20y%3D%2280%22%20font-size%3D%2275%22%3E🚀%3C%2Ftext%3E%3C%2Fsvg%3E">
 <style>
-:root { --bg:#0f1420; --panel:#1a2233; --panel2:#212b40; --line:#2d3a55;
-        --tx:#e7ecf5; --mut:#91a3c2; --acc:#4aa3ff; --okc:#35c97f; --warn:#ffb547; --err:#ff6b6b; }
-* { box-sizing:border-box; }
-body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,Arial; color:var(--tx); background:var(--bg); }
-header { padding:14px 22px; display:flex; align-items:center; gap:14px; background:var(--panel); border-bottom:1px solid var(--line); }
-header h1 { font-size:17px; margin:0; }
-.hinfo { color:var(--mut); font-size:12px; margin-left:auto; }
-.wrap { display:grid; grid-template-columns:320px 1fr; gap:16px; padding:16px; }
-.card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
-.card h2 { font-size:12px; margin:0 0 12px; color:var(--mut); text-transform:uppercase; letter-spacing:.06em; }
-ul.game { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
-.strat { border:1px solid var(--line); border-radius:10px; padding:11px 13px; background:var(--panel2); cursor:pointer; transition:border-color .15s; }
-.strat:hover { border-color:var(--acc); }
-.strat.active { border-color:var(--okc); box-shadow:0 0 0 1px var(--okc); }
-.strat .name { font-weight:700; font-size:13px; }
-.strat .desc { color:var(--mut); font-size:11px; margin-top:3px; }
-.strat .tag { font-size:10px; color:var(--warn); margin-top:3px; }
-.btn { font:inherit; padding:7px 13px; border-radius:8px; border:1px solid var(--line);
-       background:var(--panel2); color:var(--tx); cursor:pointer; font-size:13px; }
-.btn:hover { border-color:var(--acc); }
-.btn.primary { background:var(--acc); color:#06121f; font-weight:600; border-color:var(--acc); }
-.btn.primary:hover { opacity:.9; }
-.btn.danger { border-color:var(--warn); color:var(--warn); }
-.btn.danger:hover { background:rgba(255,181,71,.1); }
-.btn.small { padding:4px 10px; font-size:12px; }
-.grid-form { display:grid; gap:10px; }
-.field label { display:block; font-size:12px; color:var(--mut); margin-bottom:4px; }
-.field select, .field input[type=number], .field textarea {
-  width:100%; background:#0c1120; border:1px solid var(--line); color:var(--tx);
-  border-radius:8px; padding:7px 9px; font:inherit; }
-.field .help { font-size:11px; color:var(--mut); margin-top:3px; }
-textarea { font-family:ui-monospace,Consolas,monospace; font-size:12px; resize:vertical; }
-.row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center; }
-.mono { font-family:ui-monospace,Consolas,monospace; font-size:12px; }
-/* Log boxes */
-.logbox { margin-top:12px; padding:10px 12px; border-radius:8px; background:#080d18;
-  border:1px solid var(--line); white-space:pre-wrap; max-height:260px; overflow:auto; }
-.logbox.ok  { color:var(--okc); border-color:rgba(53,201,127,.3); }
-.logbox.err { color:var(--err); border-color:rgba(255,107,107,.3); }
-.logbox.neutral { color:var(--mut); }
-/* Config viewer */
-#configBox { background:#080d18; border:1px solid var(--line); border-radius:8px; padding:10px 12px;
-  font-family:ui-monospace,Consolas,monospace; font-size:12px; color:#c8d8f0; white-space:pre-wrap;
-  max-height:220px; overflow:auto; margin-top:8px; }
-/* curl test */
-.curl-row { display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap; }
-.curl-url { flex:1; min-width:160px; background:#0c1120; border:1px solid var(--line); color:var(--tx);
-  border-radius:8px; padding:6px 9px; font:inherit; }
-/* section tabs */
-.right-col { display:flex; flex-direction:column; gap:16px; }
+:root{--bg:#0f1420;--panel:#1a2233;--panel2:#212b40;--line:#2d3a55;
+      --tx:#e7ecf5;--mut:#91a3c2;--acc:#4aa3ff;--ok:#35c97f;--warn:#ffb547;--err:#ff6b6b;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font:14px/1.5 system-ui,Segoe UI,Roboto,Arial;color:var(--tx);background:var(--bg);}
+header{padding:13px 20px;display:flex;align-items:center;gap:12px;
+       background:var(--panel);border-bottom:1px solid var(--line);}
+header h1{font-size:16px;font-weight:700;}
+.hp{color:var(--mut);font-size:12px;font-family:monospace;margin-left:auto;}
+.wrap{display:grid;grid-template-columns:310px 1fr;gap:14px;padding:14px;}
+@media(max-width:860px){.wrap{grid-template-columns:1fr;}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;}
+.card h2{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:11px;}
+/* strategy list */
+.slist{display:flex;flex-direction:column;gap:7px;}
+.strat{border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+       background:var(--panel2);cursor:pointer;transition:border-color .15s;}
+.strat:hover{border-color:var(--acc);}
+.strat.active{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok);}
+.strat .sname{font-weight:700;font-size:13px;}
+.strat .sdesc{color:var(--mut);font-size:11px;margin-top:2px;}
+/* right col */
+.rcol{display:flex;flex-direction:column;gap:14px;}
+/* config box */
+#configBox{background:#080d18;border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px;
+  color:#c8d8f0;white-space:pre-wrap;max-height:200px;overflow:auto;margin-top:8px;}
+/* nfqws editor */
+#nfqwsEditor{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
+  border-radius:8px;padding:9px 11px;font-family:ui-monospace,Consolas,monospace;
+  font-size:12px;resize:vertical;}
 /* import */
-#jsonInput { width:100%; background:#0c1120; border:1px solid var(--line); color:var(--tx);
-  border-radius:8px; padding:8px; font-family:ui-monospace,Consolas,monospace; font-size:12px; resize:vertical; }
-#jsonPrefix { background:#0c1120; border:1px solid var(--line); color:var(--tx);
-  border-radius:8px; padding:6px 9px; font:inherit; width:180px; }
-@media(max-width:900px){ .wrap{ grid-template-columns:1fr; } }
+#jsonInput{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
+  border-radius:8px;padding:9px 11px;font-family:ui-monospace,Consolas,monospace;
+  font-size:12px;resize:vertical;}
+/* curl */
+.crl{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;}
+.inp{background:#080d18;border:1px solid var(--line);color:var(--tx);
+  border-radius:8px;padding:6px 9px;font:inherit;}
+/* buttons */
+.row{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center;}
+.btn{font:inherit;padding:7px 13px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--tx);cursor:pointer;font-size:13px;}
+.btn:hover{border-color:var(--acc);}
+.btn.p{background:var(--acc);color:#05111f;font-weight:600;border-color:var(--acc);}
+.btn.p:hover{opacity:.88;}
+.btn.d{border-color:var(--warn);color:var(--warn);}
+.btn.d:hover{background:rgba(255,181,71,.1);}
+.btn.sm{padding:4px 9px;font-size:12px;}
+/* log */
+.log{margin-top:11px;padding:9px 11px;border-radius:8px;background:#080d18;
+  border:1px solid var(--line);white-space:pre-wrap;max-height:220px;overflow:auto;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;display:none;}
+.log.ok {color:var(--ok); border-color:rgba(53,201,127,.3);}
+.log.err{color:var(--err);border-color:rgba(255,107,107,.3);}
+.log.n  {color:var(--mut);}
+/* connections */
+.connbox{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px 13px;}
+.cbtitle{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
+.cbport{color:var(--acc);font-size:10px;font-family:monospace;}
+.cbcount{font-size:28px;font-weight:700;margin:4px 0 6px;line-height:1;}
+.cbips{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--mut);
+  line-height:1.7;max-height:90px;overflow-y:auto;}
+.cbips .ip{display:block;}
 </style>
 </head>
 <body>
 <header>
-  <h1>zapret · панель стратегий</h1>
-  <span class="hinfo mono" id="cfgpath"></span>
+  <h1>zapret2 · панель стратегий</h1>
+  <span class="hp" id="hpath"></span>
 </header>
-
 <div class="wrap">
+
   <!-- LEFT: список стратегий -->
   <div class="card">
     <h2>Готовые стратегии</h2>
-    <ul class="game" id="list"><li style="color:var(--mut);font-size:13px">Загрузка…</li></ul>
+    <div class="slist" id="slist"><div style="color:var(--mut);font-size:13px">Загрузка…</div></div>
   </div>
 
-  <!-- RIGHT: всё остальное -->
-  <div class="right-col">
+  <!-- RIGHT -->
+  <div class="rcol">
 
-    <!-- Текущий config файл -->
+    <!-- подключения -->
     <div class="card">
-      <h2>Текущий config <span id="cfgPathLabel" style="color:var(--acc);font-weight:400;font-size:11px"></span></h2>
-      <div class="row" style="margin-top:0;margin-bottom:8px;">
-        <button class="btn small" id="refreshCfg">↻ Обновить</button>
-        <span id="cfgStatus" style="font-size:12px;color:var(--mut)"></span>
+      <h2>Активные подключения <span id="connTs" style="color:var(--mut);font-weight:400;font-size:11px"></span></h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
+        <div class="connbox" id="ssBox">
+          <div class="cbtitle">Shadowsocks <span id="ssPort" class="cbport"></span></div>
+          <div class="cbcount" id="ssCount">—</div>
+          <div class="cbips" id="ssIps"></div>
+        </div>
+        <div class="connbox" id="socksBox">
+          <div class="cbtitle">SOCKS5 <span id="socksPortLabel" class="cbport"></span></div>
+          <div class="cbcount" id="socksCount">—</div>
+          <div class="cbips" id="socksIps"></div>
+        </div>
       </div>
-      <div id="configBox" class="mono">Загрузка…</div>
     </div>
 
-    <!-- Тест curl -->
+    <!-- текущий config -->
     <div class="card">
-      <h2>Тест подключения (curl через SOCKS5)</h2>
-      <div class="curl-row">
-        <input class="curl-url" id="curlUrl" type="text" value="https://google.com" placeholder="URL для теста">
-        <input class="curl-url" id="socksPort" type="number" value="1080" style="width:90px;flex:none;" placeholder="SOCKS порт">
-        <button class="btn primary" id="runCurl">▶ Тест</button>
+      <h2>Текущий config <span id="cfgPath" style="color:var(--acc);font-weight:400"></span></h2>
+      <div class="row" style="margin-top:0">
+        <button class="btn sm" id="refreshCfg">↻ Обновить</button>
+        <span id="cfgTs" style="font-size:12px;color:var(--mut)"></span>
       </div>
-      <div id="curlLog" class="logbox neutral mono" style="display:none"></div>
+      <div id="configBox">Загрузка…</div>
     </div>
 
-    <!-- Ручная настройка -->
+    <!-- редактор NFQWS2_OPT -->
     <div class="card">
-      <h2>Ручная настройка полей</h2>
-      <div class="grid-form" id="fields"></div>
+      <h2>Редактор NFQWS2_OPT</h2>
+      <textarea id="nfqwsEditor" rows="7" placeholder="--filter-tcp=443 --filter-l7=tls ..."></textarea>
       <div class="row">
-        <button class="btn primary" id="applyFields">Применить поля</button>
-        <button class="btn" id="applyAndRestart">Применить + перезапустить</button>
-        <button class="btn danger" id="restartOnly">Перезапуск zapret</button>
-        <button class="btn" id="showBackup">Показать бэкап</button>
+        <button class="btn p" id="saveNfqws">Сохранить</button>
+        <button class="btn" id="saveAndRestart">Сохранить + перезапустить</button>
+        <button class="btn d" id="restartOnly">Перезапуск zapret</button>
+        <button class="btn sm" id="showBackup">Бэкап</button>
       </div>
-      <div id="applyLog" class="logbox neutral mono" style="margin-top:12px;display:none"></div>
+      <div class="log n" id="editLog"></div>
     </div>
 
-    <!-- Импорт JSON -->
+    <!-- curl тест -->
     <div class="card">
-      <h2>Импорт стратегий из JSON (авто-тест)</h2>
-      <textarea id="jsonInput" rows="5" placeholder='Вставьте JSON с полем "strategies": [{"args": "...", ...}, ...]'></textarea>
-      <div class="row" style="margin-top:8px;">
-        <input id="jsonPrefix" type="text" placeholder="Префикс имён (необяз., по умолч. — domain)">
-        <button class="btn primary" id="importJson">Импортировать</button>
+      <h2>Тест подключения</h2>
+      <div class="crl">
+        <input class="inp" id="curlUrl" style="flex:1;min-width:150px" type="text" value="https://google.com">
+        <input class="inp" id="socksPort" type="number" value="1080" style="width:85px" placeholder="SOCKS порт">
+        <button class="btn p" id="runCurl">▶ Тест</button>
       </div>
-      <div id="importLog" class="logbox neutral mono" style="display:none"></div>
+      <div id="curlCmd" style="font-size:11px;color:var(--mut);margin-top:5px;font-family:monospace"></div>
+      <div class="log n" id="curlLog"></div>
     </div>
 
-  </div><!-- /right-col -->
+    <!-- импорт JSON -->
+    <div class="card">
+      <h2>Импорт стратегий из JSON (blockcheckw / авто-тест)</h2>
+      <textarea id="jsonInput" rows="5" placeholder='{ "domain": "youtube.com", "strategies": [{"args": "..."}] }'></textarea>
+      <div class="row">
+        <input class="inp" id="jsonPrefix" type="text" style="width:180px" placeholder="Префикс имён (необяз.)">
+        <button class="btn p" id="importBtn">Импортировать</button>
+      </div>
+      <div class="log n" id="importLog"></div>
+    </div>
+
+  </div><!-- /rcol -->
 </div>
 
 <script>
-let SCHEMA = null;
-let CURRENT = { fields: {}, raw: "" };
-
-async function api(path, opts) {
-  const r = await fetch(path, opts);
-  return r.json();
+// ── helpers ──────────────────────────────────────────────────────────────
+async function api(path, opts){ return (await fetch(path, opts)).json(); }
+function post(path, data){
+  return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+}
+function showLog(id, text, cls){
+  const el = document.getElementById(id);
+  el.style.display = 'block';
+  el.className = 'log ' + (cls||'n');
+  el.textContent = text;
 }
 
-// ---------- config viewer ----------
-async function refreshCfg() {
-  document.getElementById('cfgStatus').textContent = '…';
+// ── config refresh ────────────────────────────────────────────────────────
+async function refreshCfg(){
+  document.getElementById('cfgTs').textContent = '…';
   const c = await api('/api/config');
-  CURRENT = c;
-  document.getElementById('cfgpath').textContent = c.config_path || '';
-  document.getElementById('cfgPathLabel').textContent = c.config_path || '';
-  const box = document.getElementById('configBox');
-  box.textContent = c.raw || '(пусто)';
-  document.getElementById('cfgStatus').textContent = 'обновлено ' + new Date().toLocaleTimeString();
-  fillFields(c.fields);
+  document.getElementById('hpath').textContent = c.path || '';
+  document.getElementById('cfgPath').textContent = c.path || '';
+  document.getElementById('configBox').textContent = c.raw || '(пусто)';
+  document.getElementById('nfqwsEditor').value = c.nfqws_opt || '';
+  document.getElementById('cfgTs').textContent = 'обновлено ' + new Date().toLocaleTimeString();
 }
-
 document.getElementById('refreshCfg').onclick = refreshCfg;
 
-// ---------- schema / fields ----------
-function fillFields(fields) {
-  const box = document.getElementById('fields');
-  box.innerHTML = '';
-  for (const f of SCHEMA.fields) {
-    const d = document.createElement('div');
-    d.className = 'field';
-    const lbl = document.createElement('label');
-    lbl.textContent = f.label;
-    const val = fields[f.key] ?? f.default ?? '';
-    let ctl;
-    if (f.type === 'multiline') {
-      ctl = document.createElement('textarea');
-      ctl.id = 'k_' + f.key; ctl.rows = 4; ctl.value = val;
-    } else if (f.type === 'enum') {
-      ctl = document.createElement('select');
-      ctl.id = 'k_' + f.key;
-      (f.options || []).forEach(o => {
-        const op = typeof o === 'object' ? { value: o.value, label: o.label || o.value } : { value: o, label: o };
-        const opt = document.createElement('option');
-        opt.value = op.value; opt.textContent = op.label;
-        if (String(op.value) === String(val)) opt.selected = true;
-        ctl.appendChild(opt);
-      });
-    } else {
-      ctl = document.createElement('input');
-      ctl.id = 'k_' + f.key; ctl.type = 'number'; ctl.step = '1'; ctl.value = val;
-    }
-    d.appendChild(lbl); d.appendChild(ctl);
-    if (f.help) {
-      const h = document.createElement('div'); h.className = 'help'; h.textContent = f.help; d.appendChild(h);
-    }
-    box.appendChild(d);
-  }
-}
-
-function collectFields() {
-  const out = {};
-  for (const f of SCHEMA.fields) {
-    const el = document.getElementById('k_' + f.key);
-    if (el) out[f.key] = el.value;
-  }
-  return out;
-}
-
-// ---------- strategies list ----------
-async function fillStrategies() {
+// ── strategies ────────────────────────────────────────────────────────────
+async function loadStrategies(){
   const data = await api('/api/strategies');
-  const listBox = document.getElementById('list');
-  listBox.innerHTML = '';
-  for (const s of data.strategies) {
-    const li = document.createElement('li');
-    li.className = 'strat';
-    li.dataset.name = s.name;
-    const name = document.createElement('div'); name.className = 'name'; name.textContent = s.name;
-    const desc = document.createElement('div'); desc.className = 'desc';
-    desc.textContent = s.description || '';
-    li.appendChild(name); li.appendChild(desc);
-    if (s.contains_nfqws) {
-      const t = document.createElement('div'); t.className = 'tag'; t.textContent = 'использует NFQWS2_OPT'; li.appendChild(t);
-    }
-    li.onclick = () => applyPreset(s.name);
-    listBox.appendChild(li);
+  const box = document.getElementById('slist');
+  box.innerHTML = '';
+  if(!data.strategies || !data.strategies.length){
+    box.innerHTML = '<div style="color:var(--mut);font-size:13px">Нет стратегий в ./strategies/</div>';
+    return;
+  }
+  for(const s of data.strategies){
+    const el = document.createElement('div');
+    el.className = 'strat'; el.dataset.name = s.name;
+    el.innerHTML = '<div class="sname">' + s.name + '</div>' +
+                   (s.description ? '<div class="sdesc">' + s.description + '</div>' : '');
+    el.onclick = () => applyPreset(s.name);
+    box.appendChild(el);
   }
 }
 
-function setActivePreset(name) {
-  document.querySelectorAll('.strat').forEach(el => {
-    el.classList.toggle('active', el.dataset.name === name);
-  });
+function markActive(name){
+  document.querySelectorAll('.strat').forEach(el =>
+    el.classList.toggle('active', el.dataset.name === name));
 }
 
-// ---------- apply preset ----------
-async function applyPreset(name) {
-  if (!confirm('Применить стратегию «' + name + '» и перезапустить zapret?')) return;
-  logApply('⏳ Применяем «' + name + '»…', 'neutral');
-  const res = await api('/api/apply', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preset: name })
-  });
-  if (res.error) { logApply('❌ Ошибка: ' + res.error, 'err'); return; }
-
-  let msg = res.message || 'Готово';
-  if (res.restart) {
-    const r = res.restart;
-    if (r.rc !== 0) msg += '\n⚠ restart rc=' + r.rc + (r.stderr ? '\n' + r.stderr : '');
-    else msg += '\nrestart rc=0' + (r.stdout ? '\n' + r.stdout : '');
-  }
-  logApply(msg, res.ok ? 'ok' : 'err');
-
-  if (res.ok) {
-    CURRENT = { raw: res.raw, fields: res.fields };
-    fillFields(res.fields);
-    document.getElementById('configBox').textContent = res.raw || '(пусто)';
-    document.getElementById('cfgStatus').textContent = 'обновлено ' + new Date().toLocaleTimeString();
-    setActivePreset(name);
+// ── apply preset ──────────────────────────────────────────────────────────
+async function applyPreset(name){
+  if(!confirm('Применить «' + name + '» и перезапустить zapret?')) return;
+  showLog('editLog', '⏳ Применяем «' + name + '»…', 'n');
+  const r = await post('/api/apply', {preset: name});
+  if(r.error){ showLog('editLog', '❌ ' + r.error, 'err'); return; }
+  let msg = r.message;
+  if(r.restart && r.restart.rc !== 0)
+    msg += '\nrestart stderr: ' + r.restart.stderr;
+  showLog('editLog', msg, r.ok ? 'ok' : 'err');
+  if(r.ok){
+    document.getElementById('configBox').textContent = r.raw || '';
+    document.getElementById('nfqwsEditor').value = r.nfqws_opt || '';
+    document.getElementById('cfgTs').textContent = 'обновлено ' + new Date().toLocaleTimeString();
+    markActive(name);
   }
 }
 
-// ---------- apply fields ----------
-document.getElementById('applyFields').onclick = async () => {
-  logApply('⏳ Применяем поля…', 'neutral');
-  const res = await api('/api/apply', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: collectFields() })
-  });
-  if (res.ok) {
-    document.getElementById('configBox').textContent = res.raw || '(пусто)';
-    document.getElementById('cfgStatus').textContent = 'обновлено ' + new Date().toLocaleTimeString();
+// ── editor ────────────────────────────────────────────────────────────────
+async function saveNfqws(doRestart){
+  const value = document.getElementById('nfqwsEditor').value;
+  showLog('editLog', '⏳ Сохраняем…', 'n');
+  const r = await post('/api/save-nfqws', {value, restart: doRestart});
+  let msg = r.ok ? '✅ Сохранено' : '❌ Ошибка';
+  if(r.restart) msg += ' | restart rc=' + r.restart.rc + (r.restart.stderr ? '\n' + r.restart.stderr : '');
+  showLog('editLog', msg, r.ok ? 'ok' : 'err');
+  if(r.ok){
+    document.getElementById('configBox').textContent = r.raw || '';
+    document.getElementById('cfgTs').textContent = 'обновлено ' + new Date().toLocaleTimeString();
   }
-  logApply(res.ok ? res.message : '❌ Ошибка: ' + res.error, res.ok ? 'ok' : 'err');
-};
-
-document.getElementById('applyAndRestart').onclick = async () => {
-  logApply('⏳ Применяем поля + рестарт…', 'neutral');
-  const res = await api('/api/apply', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: collectFields(), restart: true })
-  });
-  let msg = res.ok ? res.message : '❌ Ошибка: ' + res.error;
-  if (res.restart) msg += '\nrestart rc=' + res.restart.rc + (res.restart.stderr ? '\n' + res.restart.stderr : '');
-  if (res.ok) {
-    document.getElementById('configBox').textContent = res.raw || '(пусто)';
-    document.getElementById('cfgStatus').textContent = 'обновлено ' + new Date().toLocaleTimeString();
-  }
-  logApply(msg, res.ok ? 'ok' : 'err');
-};
+}
+document.getElementById('saveNfqws').onclick    = () => saveNfqws(false);
+document.getElementById('saveAndRestart').onclick = () => saveNfqws(true);
 
 document.getElementById('restartOnly').onclick = async () => {
-  logApply('⏳ Перезапуск zapret…', 'neutral');
-  const res = await api('/api/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-  logApply('rc=' + (res.rc ?? '?') + (res.stderr ? '\n' + res.stderr : '') + (res.stdout ? '\n' + res.stdout : ''),
-    res && res.rc === 0 ? 'ok' : 'err');
+  showLog('editLog', '⏳ Перезапуск…', 'n');
+  const r = await post('/api/restart', {});
+  showLog('editLog', 'rc=' + r.rc + (r.stderr ? '\n' + r.stderr : '') + (r.stdout ? '\n' + r.stdout : ''),
+    r.rc === 0 ? 'ok' : 'err');
 };
 
 document.getElementById('showBackup').onclick = async () => {
-  const b = await api('/api/backup');
-  logApply(b.ok ? b.raw : '❌ Бэкап отсутствует', b.ok ? 'neutral' : 'err');
+  const b = await post('/api/backup', {});
+  showLog('editLog', b.ok ? b.raw : '❌ Бэкап отсутствует', b.ok ? 'n' : 'err');
 };
 
-// ---------- curl test ----------
+// ── curl test ─────────────────────────────────────────────────────────────
+document.getElementById('socksPort').oninput =
+document.getElementById('curlUrl').oninput = () => {
+  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
+  const port = document.getElementById('socksPort').value || '1080';
+  document.getElementById('curlCmd').textContent =
+    'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
+};
+
 document.getElementById('runCurl').onclick = async () => {
-  const url = document.getElementById('curlUrl').value.trim() || 'https://google.com';
+  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
   const port = parseInt(document.getElementById('socksPort').value) || 1080;
-  logCurl('⏳ curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I\n…', 'neutral');
-  const res = await api('/api/test-curl', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, socks_port: port })
-  });
-  const cls = res.ok ? 'ok' : 'err';
-  logCurl((res.ok ? '✅ OK' : '❌ FAIL') + ' (rc=' + res.rc + ')\n\n' + (res.output || ''), cls);
+  document.getElementById('curlCmd').textContent =
+    'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
+  showLog('curlLog', '⏳ …', 'n');
+  const r = await post('/api/test-curl', {url, socks_port: port});
+  showLog('curlLog', (r.ok ? '✅ OK' : '❌ FAIL') + ' (rc=' + r.rc + ')\n\n' + (r.output||''),
+    r.ok ? 'ok' : 'err');
 };
 
-// ---------- import JSON ----------
-document.getElementById('importJson').onclick = async () => {
+// ── import json ───────────────────────────────────────────────────────────
+document.getElementById('importBtn').onclick = async () => {
   const raw = document.getElementById('jsonInput').value.trim();
-  if (!raw) { alert('Вставьте JSON'); return; }
-  const prefix = document.getElementById('jsonPrefix').value.trim();
+  if(!raw){ alert('Вставьте JSON'); return; }
   let parsed;
-  try { parsed = JSON.parse(raw); } catch (e) { alert('Невалидный JSON: ' + e); return; }
-  if (prefix) parsed.name_prefix = prefix;
-  logImport('⏳ Импортируем…', 'neutral');
-  const res = await api('/api/import-json', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parsed)
-  });
-  let txt = res.message || '';
-  if (res.saved?.length) txt += '\n✅ ' + res.saved.join(', ');
-  if (res.errors?.length) txt += '\n❌ ' + res.errors.join('\n');
-  logImport(txt.trim(), res.ok ? 'ok' : 'err');
-  if (res.ok) await fillStrategies();
+  try{ parsed = JSON.parse(raw); } catch(e){ alert('Невалидный JSON: ' + e); return; }
+  const prefix = document.getElementById('jsonPrefix').value.trim();
+  if(prefix) parsed.name_prefix = prefix;
+  showLog('importLog', '⏳ …', 'n');
+  const r = await post('/api/import-json', parsed);
+  let txt = r.message || '';
+  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');
+  if(r.errors?.length) txt += '\n❌ ' + r.errors.join('\n');
+  showLog('importLog', txt.trim(), r.ok ? 'ok' : 'err');
+  if(r.ok) await loadStrategies();
 };
 
-// ---------- helpers ----------
-function logApply(text, cls) {
-  const el = document.getElementById('applyLog');
-  el.style.display = 'block'; el.className = 'logbox mono ' + (cls || 'neutral');
-  el.textContent = text;
-}
-function logCurl(text, cls) {
-  const el = document.getElementById('curlLog');
-  el.style.display = 'block'; el.className = 'logbox mono ' + (cls || 'neutral');
-  el.textContent = text;
-}
-function logImport(text, cls) {
-  const el = document.getElementById('importLog');
-  el.style.display = 'block'; el.className = 'logbox mono ' + (cls || 'neutral');
-  el.textContent = text;
+// ── connections ───────────────────────────────────────────────────────────
+async function refreshConnections(){
+  const data = await api('/api/connections');
+  if(data.error){ return; }
+  document.getElementById('ssPort').textContent        = ':' + data.ss_port;
+  document.getElementById('socksPortLabel').textContent = ':' + data.socks_port;
+  document.getElementById('ssCount').textContent    = data.ss.length;
+  document.getElementById('socksCount').textContent = data.socks.length;
+
+  function renderIps(elId, ips){
+    const el = document.getElementById(elId);
+    el.innerHTML = ips.length
+      ? ips.map(ip => '<span class="ip">' + ip + '</span>').join('')
+      : '<span style="color:var(--line)">нет</span>';
+  }
+  renderIps('ssIps',    data.ss);
+  renderIps('socksIps', data.socks);
+  document.getElementById('connTs').textContent = new Date().toLocaleTimeString();
 }
 
-// ---------- init ----------
-(async function init() {
-  SCHEMA = await api('/api/schema');
-  await fillStrategies();
-  await refreshCfg();
+// ── init ──────────────────────────────────────────────────────────────────
+(async ()=>{
+  await Promise.all([refreshCfg(), loadStrategies(), refreshConnections()]);
+  document.getElementById('curlUrl').dispatchEvent(new Event('input'));
+  setInterval(refreshConnections, 5000);
 })();
 </script>
 </body>
