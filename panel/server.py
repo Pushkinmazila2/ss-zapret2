@@ -333,7 +333,7 @@ class PoolSwitcher:
 
         with self._lock:
             url       = self.test_url
-            port      = SOCKS_PORT or 1080
+            port      = SOCKS_PORT or 1181
             threshold = self.fail_threshold
             enabled   = self.enabled
 
