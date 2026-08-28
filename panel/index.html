@@ -6,310 +6,493 @@
 <title>zapret2 · панель</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Ctext%20x%3D%220%22%20y%3D%2280%22%20font-size%3D%2275%22%3E🚀%3C%2Ftext%3E%3C%2Fsvg%3E">
 <style>
-:root{--bg:#0f1420;--panel:#1a2233;--panel2:#212b40;--line:#2d3a55;
-      --tx:#e7ecf5;--mut:#91a3c2;--acc:#4aa3ff;--ok:#35c97f;--warn:#ffb547;--err:#ff6b6b;}
+:root{
+  --bg:#0c1118;--panel:#141b27;--panel2:#1c2535;--line:#263147;
+  --tx:#dde6f5;--mut:#7a90b5;--acc:#4da3ff;--ok:#2ecc71;--warn:#f39c12;--err:#e74c3c;
+  --ok-dim:rgba(46,204,113,.12);--warn-dim:rgba(243,156,18,.12);--err-dim:rgba(231,76,60,.12);
+}
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font:14px/1.5 system-ui,Segoe UI,Roboto,Arial;color:var(--tx);background:var(--bg);}
-header{padding:13px 20px;display:flex;align-items:center;gap:12px;
-       background:var(--panel);border-bottom:1px solid var(--line);}
-header h1{font-size:16px;font-weight:700;}
-.hp{color:var(--mut);font-size:12px;font-family:monospace;margin-left:auto;}
-.wrap{display:grid;grid-template-columns:310px 1fr;gap:14px;padding:14px;}
-@media(max-width:860px){.wrap{grid-template-columns:1fr;}}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;}
-.card h2{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:11px;}
+body{font:13px/1.55 system-ui,Segoe UI,Roboto,Arial;color:var(--tx);background:var(--bg);}
+header{padding:12px 18px;display:flex;align-items:center;gap:10px;background:var(--panel);
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;}
+header h1{font-size:15px;font-weight:700;}
+.hpath{color:var(--mut);font-size:11px;font-family:monospace;margin-left:auto;}
+.wrap{display:grid;grid-template-columns:270px 1fr;gap:12px;padding:12px;align-items:start;}
+@media(max-width:800px){.wrap{grid-template-columns:1fr;}}
+.rcol{display:flex;flex-direction:column;gap:12px;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;}
+.card h2{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;
+  margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+ 
 /* strategy list */
-.slist{display:flex;flex-direction:column;gap:7px;}
-.strat{border:1px solid var(--line);border-radius:9px;padding:10px 12px;
-       background:var(--panel2);cursor:pointer;transition:border-color .15s;}
-.strat:hover{border-color:var(--acc);}
-.strat.active{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok);}
-.strat .sname{font-weight:700;font-size:13px;}
-.strat .sdesc{color:var(--mut);font-size:11px;margin-top:2px;}
-/* right col */
-.rcol{display:flex;flex-direction:column;gap:14px;}
-/* config box */
-#configBox{background:#080d18;border:1px solid var(--line);border-radius:8px;
-  padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px;
-  color:#c8d8f0;white-space:pre-wrap;max-height:200px;overflow:auto;margin-top:8px;}
-/* nfqws editor */
-#nfqwsEditor{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
-  border-radius:8px;padding:9px 11px;font-family:ui-monospace,Consolas,monospace;
-  font-size:12px;resize:vertical;}
-/* import */
-#jsonInput{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
-  border-radius:8px;padding:9px 11px;font-family:ui-monospace,Consolas,monospace;
-  font-size:12px;resize:vertical;}
-/* curl */
-.crl{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;}
-.inp{background:#080d18;border:1px solid var(--line);color:var(--tx);
-  border-radius:8px;padding:6px 9px;font:inherit;}
-/* buttons */
-.row{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center;}
-.btn{font:inherit;padding:7px 13px;border-radius:8px;border:1px solid var(--line);
-  background:var(--panel2);color:var(--tx);cursor:pointer;font-size:13px;}
-.btn:hover{border-color:var(--acc);}
-.btn.p{background:var(--acc);color:#05111f;font-weight:600;border-color:var(--acc);}
-.btn.p:hover{opacity:.88;}
-.btn.d{border-color:var(--warn);color:var(--warn);}
-.btn.d:hover{background:rgba(255,181,71,.1);}
-.btn.sm{padding:4px 9px;font-size:12px;}
-/* log */
-.log{margin-top:11px;padding:9px 11px;border-radius:8px;background:#080d18;
-  border:1px solid var(--line);white-space:pre-wrap;max-height:220px;overflow:auto;
-  font-family:ui-monospace,Consolas,monospace;font-size:12px;display:none;}
-.log.ok {color:var(--ok); border-color:rgba(53,201,127,.3);}
-.log.err{color:var(--err);border-color:rgba(255,107,107,.3);}
-.log.n  {color:var(--mut);}
+.slist{display:flex;flex-direction:column;gap:5px;}
+.strat{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel2);
+  cursor:default;transition:border-color .13s,background .13s;position:relative;}
+.strat .sname{font-weight:700;font-size:12px;}
+.strat .sdesc{color:var(--mut);font-size:11px;margin-top:1px;}
+.strat .sbadge{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;}
+.sbadge.ok  {background:var(--ok-dim);color:var(--ok);}
+.sbadge.warn{background:var(--warn-dim);color:var(--warn);}
+.sbadge.idle{background:rgba(255,255,255,.05);color:var(--mut);}
+ 
 /* connections */
-.connbox{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px 13px;}
-.cbtitle{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
-.cbport{color:var(--acc);font-size:10px;font-family:monospace;}
-.cbcount{font-size:28px;font-weight:700;margin:4px 0 6px;line-height:1;}
+.conn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.connbox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;}
+.cbtitle{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
+.cbport{color:var(--acc);font-family:monospace;}
+.cbcount{font-size:24px;font-weight:700;margin:2px 0 4px;line-height:1;}
 .cbips{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--mut);
-  line-height:1.7;max-height:90px;overflow-y:auto;}
-.cbips .ip{display:block;}
+  line-height:1.7;max-height:60px;overflow-y:auto;}
+ 
+/* pool slots */
+.pool-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.pool-state{font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;}
+.pool-state.ok      {background:var(--ok-dim);color:var(--ok);}
+.pool-state.degraded{background:var(--warn-dim);color:var(--warn);}
+.pool-state.checking{background:rgba(77,163,255,.12);color:var(--acc);}
+.pool-state.replacing{background:var(--warn-dim);color:var(--warn);}
+.pool-state.idle    {background:rgba(255,255,255,.05);color:var(--mut);}
+ 
+.slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin:10px 0;}
+.slot{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+  position:relative;transition:border-color .2s;}
+.slot.ok  {border-color:rgba(46,204,113,.4);}
+.slot.fail{border-color:rgba(231,76,60,.4);}
+.slot.unknown{border-color:var(--line);}
+.slot .slot-num{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
+.slot .slot-qnum{font-family:monospace;color:var(--acc);font-size:10px;margin-left:4px;}
+.slot .slot-name{font-weight:700;font-size:12px;margin:3px 0;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;padding-right:24px;}
+.slot .slot-status{font-size:11px;}
+.slot .slot-status.ok  {color:var(--ok);}
+.slot .slot-status.fail{color:var(--err);}
+.slot .slot-status.unknown{color:var(--mut);}
+.slot-del{position:absolute;top:8px;right:8px;background:none;border:none;
+  color:var(--mut);cursor:pointer;font-size:14px;line-height:1;padding:2px;}
+.slot-del:hover{color:var(--err);}
+.slot-sel{width:100%;margin-top:6px;background:#080d18;border:1px solid var(--line);
+  color:var(--tx);border-radius:6px;padding:4px 6px;font:inherit;font-size:11px;}
+ 
+/* settings */
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}
+.sg label{display:block;font-size:11px;color:var(--mut);margin-bottom:3px;}
+.sg input,.sg select{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
+  border-radius:7px;padding:5px 8px;font:inherit;font-size:12px;}
+ 
+/* log */
+.swlog{background:#080d18;border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;max-height:180px;overflow-y:auto;
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;}
+.entry{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.entry:last-child{border:none;}
+.entry .ts{color:var(--mut);flex-shrink:0;}
+.entry.ok   .msg{color:var(--ok);}
+.entry.warn .msg{color:var(--warn);}
+.entry.error .msg{color:var(--err);}
+.entry.info .msg{color:var(--tx);}
+ 
+/* config/editor */
+#configBox{background:#080d18;border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;font-family:ui-monospace,Consolas,monospace;font-size:11px;
+  color:#c0d4f0;white-space:pre-wrap;max-height:170px;overflow:auto;margin-top:7px;}
+textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
+  border-radius:8px;padding:9px 11px;font-family:ui-monospace,Consolas,monospace;
+  font-size:11px;resize:vertical;}
+ 
+/* curl */
+.crl{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+.inp{background:#080d18;border:1px solid var(--line);color:var(--tx);
+  border-radius:7px;padding:6px 9px;font:inherit;font-size:12px;}
+ 
+/* buttons */
+.row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;align-items:center;}
+.btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--tx);cursor:pointer;font-size:12px;transition:border-color .13s;}
+.btn:hover{border-color:var(--acc);}
+.btn.p{background:var(--acc);color:#04111f;font-weight:600;border-color:var(--acc);}
+.btn.p:hover{opacity:.88;}
+.btn.g{background:var(--ok);color:#021a0d;font-weight:600;border-color:var(--ok);}
+.btn.d{border-color:var(--warn);color:var(--warn);}
+.btn.d:hover{background:var(--warn-dim);}
+.btn.r{border-color:var(--err);color:var(--err);}
+.btn.r:hover{background:var(--err-dim);}
+.btn.sm{padding:3px 8px;font-size:11px;}
+.btn.tog-on {background:var(--ok);color:#021a0d;font-weight:700;border-color:var(--ok);}
+.btn.tog-off{background:var(--panel2);color:var(--mut);border-color:var(--line);}
+ 
+.log{margin-top:9px;padding:8px 10px;border-radius:8px;background:#080d18;
+  border:1px solid var(--line);white-space:pre-wrap;max-height:160px;overflow:auto;
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;display:none;}
+.log.ok {color:var(--ok); border-color:rgba(46,204,113,.3);}
+.log.err{color:var(--err);border-color:rgba(231,76,60,.3);}
+.log.n  {color:var(--mut);}
 </style>
 </head>
 <body>
 <header>
-  <h1>zapret2 · панель стратегий</h1>
-  <span class="hp" id="hpath"></span>
+  <h1>zapret2 · пул стратегий</h1>
+  <span class="hpath" id="hpath"></span>
 </header>
 <div class="wrap">
-
-  <!-- LEFT: список стратегий -->
+ 
+  <!-- LEFT: список всех стратегий -->
   <div class="card">
-    <h2>Готовые стратегии</h2>
-    <div class="slist" id="slist"><div style="color:var(--mut);font-size:13px">Загрузка…</div></div>
+    <h2>Все стратегии <span id="stratCount" style="font-weight:400"></span></h2>
+    <div class="slist" id="slist"><div style="color:var(--mut)">Загрузка…</div></div>
   </div>
-
+ 
   <!-- RIGHT -->
   <div class="rcol">
-
+ 
     <!-- подключения -->
     <div class="card">
-      <h2>Активные подключения <span id="connTs" style="color:var(--mut);font-weight:400;font-size:11px"></span></h2>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
-        <div class="connbox" id="ssBox">
+      <h2>Подключения <span id="connTs" style="font-weight:400;margin-left:auto"></span></h2>
+      <div class="conn-grid">
+        <div class="connbox">
           <div class="cbtitle">Shadowsocks <span id="ssPort" class="cbport"></span></div>
           <div class="cbcount" id="ssCount">—</div>
           <div class="cbips" id="ssIps"></div>
         </div>
-        <div class="connbox" id="socksBox">
-          <div class="cbtitle">SOCKS5 <span id="socksPortLabel" class="cbport"></span></div>
+        <div class="connbox">
+          <div class="cbtitle">SOCKS5 <span id="socksPortLbl" class="cbport"></span></div>
           <div class="cbcount" id="socksCount">—</div>
           <div class="cbips" id="socksIps"></div>
         </div>
       </div>
     </div>
-
+ 
+    <!-- пул nfqws2 -->
+    <div class="card">
+      <div class="pool-header">
+        <h2 style="margin:0">Пул nfqws2</h2>
+        <span class="pool-state idle" id="poolState">idle</span>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+          <button class="btn sm" onclick="forceCheck()">Проверить</button>
+          <button class="btn sm p" onclick="addSlot()">+ Слот</button>
+          <button class="btn sm tog-off" id="poolToggle" onclick="togglePool()">Вкл авто</button>
+        </div>
+      </div>
+ 
+      <!-- слоты -->
+      <div class="slots-grid" id="slotsGrid">
+        <div style="color:var(--mut);font-size:12px;grid-column:1/-1">Пул не запущен</div>
+      </div>
+ 
+      <!-- настройки -->
+      <div class="sg" style="margin-top:12px">
+        <div>
+          <label>Размер пула (слотов)</label>
+          <input type="number" id="cfgPoolSize" value="3" min="1" max="10">
+        </div>
+        <div>
+          <label>Интервал проверки (сек)</label>
+          <input type="number" id="cfgInterval" value="60" min="10">
+        </div>
+        <div>
+          <label>Провалов до замены слота</label>
+          <input type="number" id="cfgThreshold" value="2" min="1">
+        </div>
+        <div>
+          <label>URL для теста</label>
+          <input type="text" id="cfgUrl" value="https://www.youtube.com">
+        </div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button class="btn p sm" onclick="savePoolCfg()">Сохранить настройки</button>
+        <span id="cfgSaved" style="font-size:11px;color:var(--ok);display:none">✓ Сохранено</span>
+      </div>
+ 
+      <!-- лог пула -->
+      <div style="margin-top:12px">
+        <div style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em;
+          margin-bottom:5px;display:flex;align-items:center;gap:6px;">
+          Лог <button class="btn sm" onclick="clearLog()">очистить</button>
+        </div>
+        <div class="swlog" id="poolLog"><div style="color:var(--mut)">—</div></div>
+      </div>
+    </div>
+ 
     <!-- текущий config -->
     <div class="card">
-      <h2>Текущий config <span id="cfgPath" style="color:var(--acc);font-weight:400"></span></h2>
-      <div class="row" style="margin-top:0">
-        <button class="btn sm" id="refreshCfg">↻ Обновить</button>
-        <span id="cfgTs" style="font-size:12px;color:var(--mut)"></span>
-      </div>
+      <h2>Config
+        <button class="btn sm" onclick="refreshCfg()" style="margin-left:4px">↻</button>
+        <span id="cfgTs" style="font-weight:400;margin-left:4px"></span>
+      </h2>
       <div id="configBox">Загрузка…</div>
     </div>
-
-    <!-- редактор NFQWS2_OPT -->
-    <div class="card">
-      <h2>Редактор NFQWS2_OPT</h2>
-      <textarea id="nfqwsEditor" rows="7" placeholder="--filter-tcp=443 --filter-l7=tls ..."></textarea>
-      <div class="row">
-        <button class="btn p" id="saveNfqws">Сохранить</button>
-        <button class="btn" id="saveAndRestart">Сохранить + перезапустить</button>
-        <button class="btn d" id="restartOnly">Перезапуск zapret</button>
-        <button class="btn sm" id="showBackup">Бэкап</button>
-      </div>
-      <div class="log n" id="editLog"></div>
-    </div>
-
+ 
     <!-- curl тест -->
     <div class="card">
       <h2>Тест подключения</h2>
       <div class="crl">
-        <input class="inp" id="curlUrl" style="flex:1;min-width:150px" type="text" value="https://google.com">
-        <input class="inp" id="socksPort" type="number" value="1080" style="width:85px" placeholder="SOCKS порт">
-        <button class="btn p" id="runCurl">▶ Тест</button>
+        <input class="inp" id="curlUrl" style="flex:1;min-width:140px" type="text"
+          value="https://google.com" oninput="updateCurlCmd()">
+        <input class="inp" id="curlPort" type="number" value="1080" style="width:80px"
+          oninput="updateCurlCmd()">
+        <button class="btn p" onclick="runCurl()">▶ Тест</button>
       </div>
-      <div id="curlCmd" style="font-size:11px;color:var(--mut);margin-top:5px;font-family:monospace"></div>
+      <div id="curlCmd" style="font-size:10px;color:var(--mut);margin-top:4px;font-family:monospace"></div>
       <div class="log n" id="curlLog"></div>
     </div>
-
-    <!-- импорт JSON -->
+ 
+    <!-- импорт -->
     <div class="card">
-      <h2>Импорт стратегий из JSON (blockcheckw / авто-тест)</h2>
-      <textarea id="jsonInput" rows="5" placeholder='{ "domain": "youtube.com", "strategies": [{"args": "..."}] }'></textarea>
+      <h2>Импорт стратегий из JSON</h2>
+      <textarea id="jsonInput" rows="4"
+        placeholder='{"domain":"youtube.com","strategies":[{"args":"..."}]}'></textarea>
       <div class="row">
-        <input class="inp" id="jsonPrefix" type="text" style="width:180px" placeholder="Префикс имён (необяз.)">
-        <button class="btn p" id="importBtn">Импортировать</button>
+        <input class="inp" id="jsonPrefix" type="text" style="width:160px" placeholder="Префикс (необяз.)">
+        <button class="btn p" onclick="importJson()">Импортировать</button>
       </div>
       <div class="log n" id="importLog"></div>
     </div>
-
-  </div><!-- /rcol -->
+ 
+  </div>
 </div>
-
+ 
 <script>
-// ── helpers ──────────────────────────────────────────────────────────────
 async function api(path, opts){ return (await fetch(path, opts)).json(); }
 function post(path, data){
   return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
 }
 function showLog(id, text, cls){
   const el = document.getElementById(id);
-  el.style.display = 'block';
-  el.className = 'log ' + (cls||'n');
-  el.textContent = text;
+  el.style.display = 'block'; el.className = 'log ' + (cls||'n'); el.textContent = text;
 }
-
-// ── config refresh ────────────────────────────────────────────────────────
+ 
+// ── pool status ───────────────────────────────────────────────────────────
+let _allStrategies = [];
+let _poolEnabled   = false;
+ 
+async function refreshPool(){
+  const s = await api('/api/pool/status');
+  _poolEnabled = s.enabled;
+ 
+  // state badge
+  const stateEl = document.getElementById('poolState');
+  stateEl.textContent = {
+    idle:'Выключен', ok:'Работает ✓', degraded:'Деградация', checking:'Проверка…',
+    replacing:'Замена…'
+  }[s.state] || s.state;
+  stateEl.className = 'pool-state ' + (s.state || 'idle');
+ 
+  // toggle
+  const tog = document.getElementById('poolToggle');
+  tog.textContent = s.enabled ? 'Авто вкл' : 'Вкл авто';
+  tog.className = 'btn sm ' + (s.enabled ? 'tog-on' : 'tog-off');
+ 
+  // settings sync (только если не редактируем)
+  const fields = {cfgPoolSize:'pool_size', cfgInterval:'check_interval',
+                  cfgThreshold:'fail_threshold', cfgUrl:'test_url'};
+  Object.entries(fields).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if(el.dataset.dirty !== '1' && s[key] !== undefined) el.value = s[key];
+  });
+ 
+  // slots grid
+  renderSlots(s.slots || []);
+ 
+  // strategy list badges
+  updateStrategyBadges(s.slots || []);
+}
+ 
+function renderSlots(slots){
+  const grid = document.getElementById('slotsGrid');
+  if(!slots.length){
+    grid.innerHTML = '<div style="color:var(--mut);font-size:12px;grid-column:1/-1">Нет активных слотов</div>';
+    return;
+  }
+  grid.innerHTML = '';
+  for(const slot of slots){
+    const ok  = slot.healthy === true;
+    const bad = slot.healthy === false;
+    const cls = ok ? 'ok' : (bad ? 'fail' : 'unknown');
+    const statusText = ok ? '✓ Работает' : (bad ? '✗ Не работает' : '— Проверяется');
+    const statusCls  = ok ? 'ok' : (bad ? 'fail' : 'unknown');
+ 
+    const el = document.createElement('div');
+    el.className = 'slot ' + cls;
+    el.innerHTML =
+      '<div><span class="slot-num">Слот ' + slot.index + '</span>' +
+      '<span class="slot-qnum">qnum=' + slot.qnum + '</span></div>' +
+      '<div class="slot-name">' + (slot.strategy || '—') + '</div>' +
+      '<div class="slot-status ' + statusCls + '">' + statusText + '</div>' +
+      (slot.started ? '<div style="font-size:10px;color:var(--mut);margin-top:3px">старт ' + slot.started + '</div>' : '') +
+      '<select class="slot-sel" onchange="changeSlotStrategy(' + slot.index + ', this.value)">' +
+        '<option value="">— сменить стратегию —</option>' +
+        _allStrategies.map(s => '<option value="' + s.name + '"' +
+          (s.name === slot.strategy ? ' selected' : '') + '>' + s.name + '</option>').join('') +
+      '</select>' +
+      '<button class="slot-del" onclick="removeSlot(' + slot.index + ')" title="Убрать слот">×</button>';
+    grid.appendChild(el);
+  }
+}
+ 
+function updateStrategyBadges(slots){
+  const inUse = {};
+  slots.forEach(s => { if(s.strategy) inUse[s.strategy] = s.healthy; });
+  document.querySelectorAll('.strat').forEach(el => {
+    let badge = el.querySelector('.sbadge');
+    const name = el.dataset.name;
+    if(name in inUse){
+      if(!badge){ badge = document.createElement('span'); badge.className='sbadge'; el.appendChild(badge); }
+      const h = inUse[name];
+      badge.className = 'sbadge ' + (h === true ? 'ok' : h === false ? 'warn' : 'idle');
+      badge.textContent = h === true ? '✓ активна' : h === false ? '✗ сбой' : '⟳';
+    } else {
+      if(badge) badge.remove();
+    }
+  });
+}
+ 
+// ── pool log ──────────────────────────────────────────────────────────────
+let _logLen = 0;
+async function refreshLog(){
+  const data = await api('/api/pool/log');
+  const log = data.log || [];
+  if(log.length === _logLen) return;
+  _logLen = log.length;
+  const box = document.getElementById('poolLog');
+  if(!log.length){ box.innerHTML = '<div style="color:var(--mut)">—</div>'; return; }
+  box.innerHTML = [...log].reverse().map(e =>
+    '<div class="entry ' + e.level + '"><span class="ts">' + e.ts + '</span>' +
+    '<span class="msg">' + e.msg + '</span></div>'
+  ).join('');
+}
+ 
+function clearLog(){ document.getElementById('poolLog').innerHTML='<div style="color:var(--mut)">—</div>'; _logLen=0; }
+ 
+// ── pool controls ─────────────────────────────────────────────────────────
+async function togglePool(){
+  await post('/api/pool/enable', {enabled: !_poolEnabled});
+  refreshPool(); setTimeout(refreshLog, 500);
+}
+ 
+async function addSlot(){
+  const r = await post('/api/pool/slot/add', {});
+  if(r.error) alert(r.error);
+  else { refreshPool(); setTimeout(refreshLog, 300); }
+}
+ 
+async function removeSlot(index){
+  if(!confirm('Убрать слот ' + index + '?')) return;
+  await post('/api/pool/slot/remove', {index});
+  refreshPool(); setTimeout(refreshLog, 300);
+}
+ 
+async function changeSlotStrategy(index, strategy){
+  if(!strategy) return;
+  const r = await post('/api/pool/slot/set', {index, strategy});
+  if(r.error) alert(r.error);
+  setTimeout(()=>{ refreshPool(); refreshLog(); }, 400);
+}
+ 
+async function forceCheck(){
+  await post('/api/pool/check', {});
+  setTimeout(()=>{ refreshPool(); refreshLog(); }, 800);
+}
+ 
+async function savePoolCfg(){
+  const cfg = {
+    pool_size:      +document.getElementById('cfgPoolSize').value,
+    check_interval: +document.getElementById('cfgInterval').value,
+    fail_threshold: +document.getElementById('cfgThreshold').value,
+    test_url:        document.getElementById('cfgUrl').value.trim(),
+  };
+  await post('/api/pool/configure', cfg);
+  ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl'].forEach(id =>
+    document.getElementById(id).dataset.dirty = '0');
+  const saved = document.getElementById('cfgSaved');
+  saved.style.display = 'inline'; setTimeout(()=> saved.style.display='none', 2000);
+  refreshPool();
+}
+ 
+['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () =>
+    document.getElementById(id).dataset.dirty = '1'));
+ 
+// ── strategies list ───────────────────────────────────────────────────────
+async function loadStrategies(){
+  const data = await api('/api/strategies');
+  _allStrategies = data.strategies || [];
+  const box = document.getElementById('slist');
+  document.getElementById('stratCount').textContent = '(' + _allStrategies.length + ')';
+  box.innerHTML = '';
+  if(!_allStrategies.length){
+    box.innerHTML = '<div style="color:var(--mut);font-size:12px">Нет стратегий</div>'; return;
+  }
+  for(const s of _allStrategies){
+    const el = document.createElement('div');
+    el.className = 'strat'; el.dataset.name = s.name;
+    el.innerHTML = '<div class="sname">' + s.name + '</div>' +
+      (s.description ? '<div class="sdesc">' + s.description + '</div>' : '');
+    box.appendChild(el);
+  }
+}
+ 
+// ── config ────────────────────────────────────────────────────────────────
 async function refreshCfg(){
   document.getElementById('cfgTs').textContent = '…';
   const c = await api('/api/config');
   document.getElementById('hpath').textContent = c.path || '';
-  document.getElementById('cfgPath').textContent = c.path || '';
   document.getElementById('configBox').textContent = c.raw || '(пусто)';
-  document.getElementById('nfqwsEditor').value = c.nfqws_opt || '';
-  document.getElementById('cfgTs').textContent = 'обновлено ' + new Date().toLocaleTimeString();
+  document.getElementById('cfgTs').textContent = new Date().toLocaleTimeString();
 }
-document.getElementById('refreshCfg').onclick = refreshCfg;
-
-// ── strategies ────────────────────────────────────────────────────────────
-async function loadStrategies(){
-  const data = await api('/api/strategies');
-  const box = document.getElementById('slist');
-  box.innerHTML = '';
-  if(!data.strategies || !data.strategies.length){
-    box.innerHTML = '<div style="color:var(--mut);font-size:13px">Нет стратегий в ./strategies/</div>';
-    return;
-  }
-  for(const s of data.strategies){
-    const el = document.createElement('div');
-    el.className = 'strat'; el.dataset.name = s.name;
-    el.innerHTML = '<div class="sname">' + s.name + '</div>' +
-                   (s.description ? '<div class="sdesc">' + s.description + '</div>' : '');
-    el.onclick = () => applyPreset(s.name);
-    box.appendChild(el);
-  }
-}
-
-function markActive(name){
-  document.querySelectorAll('.strat').forEach(el =>
-    el.classList.toggle('active', el.dataset.name === name));
-}
-
-// ── apply preset ──────────────────────────────────────────────────────────
-async function applyPreset(name){
-  if(!confirm('Применить «' + name + '» и перезапустить zapret?')) return;
-  showLog('editLog', '⏳ Применяем «' + name + '»…', 'n');
-  const r = await post('/api/apply', {preset: name});
-  if(r.error){ showLog('editLog', '❌ ' + r.error, 'err'); return; }
-  let msg = r.message;
-  if(r.restart && r.restart.rc !== 0)
-    msg += '\nrestart stderr: ' + r.restart.stderr;
-  showLog('editLog', msg, r.ok ? 'ok' : 'err');
-  if(r.ok){
-    document.getElementById('configBox').textContent = r.raw || '';
-    document.getElementById('nfqwsEditor').value = r.nfqws_opt || '';
-    document.getElementById('cfgTs').textContent = 'обновлено ' + new Date().toLocaleTimeString();
-    markActive(name);
-  }
-}
-
-// ── editor ────────────────────────────────────────────────────────────────
-async function saveNfqws(doRestart){
-  const value = document.getElementById('nfqwsEditor').value;
-  showLog('editLog', '⏳ Сохраняем…', 'n');
-  const r = await post('/api/save-nfqws', {value, restart: doRestart});
-  let msg = r.ok ? '✅ Сохранено' : '❌ Ошибка';
-  if(r.restart) msg += ' | restart rc=' + r.restart.rc + (r.restart.stderr ? '\n' + r.restart.stderr : '');
-  showLog('editLog', msg, r.ok ? 'ok' : 'err');
-  if(r.ok){
-    document.getElementById('configBox').textContent = r.raw || '';
-    document.getElementById('cfgTs').textContent = 'обновлено ' + new Date().toLocaleTimeString();
-  }
-}
-document.getElementById('saveNfqws').onclick    = () => saveNfqws(false);
-document.getElementById('saveAndRestart').onclick = () => saveNfqws(true);
-
-document.getElementById('restartOnly').onclick = async () => {
-  showLog('editLog', '⏳ Перезапуск…', 'n');
-  const r = await post('/api/restart', {});
-  showLog('editLog', 'rc=' + r.rc + (r.stderr ? '\n' + r.stderr : '') + (r.stdout ? '\n' + r.stdout : ''),
-    r.rc === 0 ? 'ok' : 'err');
-};
-
-document.getElementById('showBackup').onclick = async () => {
-  const b = await post('/api/backup', {});
-  showLog('editLog', b.ok ? b.raw : '❌ Бэкап отсутствует', b.ok ? 'n' : 'err');
-};
-
-// ── curl test ─────────────────────────────────────────────────────────────
-document.getElementById('socksPort').oninput =
-document.getElementById('curlUrl').oninput = () => {
-  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
-  const port = document.getElementById('socksPort').value || '1080';
-  document.getElementById('curlCmd').textContent =
-    'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
-};
-
-document.getElementById('runCurl').onclick = async () => {
-  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
-  const port = parseInt(document.getElementById('socksPort').value) || 1080;
-  document.getElementById('curlCmd').textContent =
-    'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
-  showLog('curlLog', '⏳ …', 'n');
-  const r = await post('/api/test-curl', {url, socks_port: port});
-  showLog('curlLog', (r.ok ? '✅ OK' : '❌ FAIL') + ' (rc=' + r.rc + ')\n\n' + (r.output||''),
-    r.ok ? 'ok' : 'err');
-};
-
-// ── import json ───────────────────────────────────────────────────────────
-document.getElementById('importBtn').onclick = async () => {
-  const raw = document.getElementById('jsonInput').value.trim();
-  if(!raw){ alert('Вставьте JSON'); return; }
-  let parsed;
-  try{ parsed = JSON.parse(raw); } catch(e){ alert('Невалидный JSON: ' + e); return; }
-  const prefix = document.getElementById('jsonPrefix').value.trim();
-  if(prefix) parsed.name_prefix = prefix;
-  showLog('importLog', '⏳ …', 'n');
-  const r = await post('/api/import-json', parsed);
-  let txt = r.message || '';
-  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');
-  if(r.errors?.length) txt += '\n❌ ' + r.errors.join('\n');
-  showLog('importLog', txt.trim(), r.ok ? 'ok' : 'err');
-  if(r.ok) await loadStrategies();
-};
-
+ 
 // ── connections ───────────────────────────────────────────────────────────
 async function refreshConnections(){
-  const data = await api('/api/connections');
-  if(data.error){ return; }
-  document.getElementById('ssPort').textContent        = ':' + data.ss_port;
-  document.getElementById('socksPortLabel').textContent = ':' + data.socks_port;
-  document.getElementById('ssCount').textContent    = data.ss.length;
-  document.getElementById('socksCount').textContent = data.socks.length;
-
-  function renderIps(elId, ips){
-    const el = document.getElementById(elId);
-    el.innerHTML = ips.length
-      ? ips.map(ip => '<span class="ip">' + ip + '</span>').join('')
-      : '<span style="color:var(--line)">нет</span>';
-  }
-  renderIps('ssIps',    data.ss);
-  renderIps('socksIps', data.socks);
+  const d = await api('/api/connections');
+  if(d.error) return;
+  document.getElementById('ssPort').textContent      = ':' + d.ss_port;
+  document.getElementById('socksPortLbl').textContent = ':' + d.socks_port;
+  document.getElementById('ssCount').textContent     = d.ss.length;
+  document.getElementById('socksCount').textContent  = d.socks.length;
+  const rip = (id, ips) => document.getElementById(id).innerHTML = ips.length
+    ? ips.map(ip => '<span style="display:block">' + ip + '</span>').join('')
+    : '<span style="color:var(--line)">нет</span>';
+  rip('ssIps', d.ss); rip('socksIps', d.socks);
   document.getElementById('connTs').textContent = new Date().toLocaleTimeString();
 }
-
-// ── init ──────────────────────────────────────────────────────────────────
-(async ()=>{
-  await Promise.all([refreshCfg(), loadStrategies(), refreshConnections()]);
-  document.getElementById('curlUrl').dispatchEvent(new Event('input'));
+ 
+// ── curl ──────────────────────────────────────────────────────────────────
+function updateCurlCmd(){
+  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
+  const port = document.getElementById('curlPort').value || '1080';
+  document.getElementById('curlCmd').textContent = 'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
+}
+async function runCurl(){
+  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
+  const port = parseInt(document.getElementById('curlPort').value) || 1080;
+  updateCurlCmd(); showLog('curlLog','⏳ …','n');
+  const r = await post('/api/test-curl',{url, socks_port:port});
+  showLog('curlLog',(r.ok?'✅ OK':'❌ FAIL')+' (rc='+r.rc+')\n\n'+(r.output||''),r.ok?'ok':'err');
+}
+ 
+// ── import ────────────────────────────────────────────────────────────────
+async function importJson(){
+  const raw = document.getElementById('jsonInput').value.trim();
+  if(!raw){alert('Вставьте JSON');return;}
+  let parsed; try{parsed=JSON.parse(raw);}catch(e){alert('Невалидный JSON: '+e);return;}
+  const prefix = document.getElementById('jsonPrefix').value.trim();
+  if(prefix) parsed.name_prefix = prefix;
+  showLog('importLog','⏳ …','n');
+  const r = await post('/api/import-json', parsed);
+  let txt = r.message||'';
+  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');
+  if(r.errors?.length) txt += '\n❌ ' + r.errors.join('\n');
+  showLog('importLog', txt.trim(), r.ok?'ok':'err');
+  if(r.ok) loadStrategies();
+}
+ 
+// ── init & polling ────────────────────────────────────────────────────────
+(async()=>{
+  updateCurlCmd();
+  await loadStrategies();
+  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog()]);
   setInterval(refreshConnections, 5000);
+  setInterval(refreshPool,        3000);
+  setInterval(refreshLog,         4000);
 })();
 </script>
 </body>
