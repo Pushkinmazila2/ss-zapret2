@@ -73,6 +73,13 @@ header h1{font-size:15px;font-weight:700;}
 .slot-sel{width:100%;margin-top:6px;background:#080d18;border:1px solid var(--line);
   color:var(--tx);border-radius:6px;padding:4px 6px;font:inherit;font-size:11px;}
 
+/* slot traffic bar */
+.slot-traffic{margin-top:5px;}
+.tbar-wrap{height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;margin-top:2px;}
+.tbar{height:100%;border-radius:2px;transition:width .8s ease,background .4s;background:var(--acc);}
+.tbar.live{background:var(--ok);}
+.tbar-label{font-size:10px;color:var(--mut);font-family:monospace;}
+
 /* reset monitor */
 .mon-bar-wrap{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;margin:6px 0;}
 .mon-bar{height:100%;border-radius:3px;transition:width .6s ease,background .4s;}
@@ -371,6 +378,64 @@ async function saveMonitorCfg(){
   document.getElementById(id).addEventListener('input', () =>
     document.getElementById(id).dataset.dirty = '1'));
 
+// ── traffic stats ─────────────────────────────────────────────────────────
+let _maxKbps = 1;
+
+async function refreshTraffic(){
+  const data = await api('/api/pool/traffic');
+  if(!data || data.error) return;
+  let maxK = 1;
+  for(const s of Object.values(data)) if(s.kbps > maxK) maxK = s.kbps;
+  _maxKbps = Math.max(_maxKbps * 0.85, maxK, 1);
+  for(const [qnum, s] of Object.entries(data)){
+    const lbl = document.getElementById('tkbps-' + qnum);
+    const bar = document.getElementById('tbar-'  + qnum);
+    if(!lbl || !bar) continue;
+    const pct = Math.min(100, s.kbps / _maxKbps * 100);
+    lbl.textContent  = s.kbps > 0 ? s.kbps.toFixed(1) + ' kbps' : '—';
+    bar.style.width  = pct.toFixed(1) + '%';
+    bar.className    = 'tbar' + (s.kbps > 0.5 ? ' live' : '');
+  }
+}
+
+function renderSlots(slots){
+  const grid = document.getElementById('slotsGrid');
+  if(!slots.length){
+    grid.innerHTML = '<div style="color:var(--mut);font-size:12px;grid-column:1/-1">Нет активных слотов</div>';
+    return;
+  }
+  grid.innerHTML = '';
+  for(const slot of slots){
+    const ok  = slot.healthy === true;
+    const bad = slot.healthy === false;
+    const cls = ok ? 'ok' : bad ? 'fail' : 'unknown';
+    const stTx  = ok ? '✓ Работает' : bad ? '✗ Не работает' : '— Ожидание';
+    const stCls = ok ? 'ok' : bad ? 'fail' : 'unknown';
+    const el = document.createElement('div');
+    el.className = 'slot ' + cls;
+    el.id = 'slot-' + slot.index;
+    el.innerHTML =
+      '<div><span class="slot-num">Слот ' + slot.index + '</span>' +
+      '<span class="slot-qnum"> qnum=' + slot.qnum + '</span></div>' +
+      '<div class="slot-name">' + (slot.strategy || '—') + '</div>' +
+      '<div class="slot-status ' + stCls + '">' + stTx + '</div>' +
+      '<div class="slot-traffic">' +
+        '<span class="tbar-label" id="tkbps-' + slot.qnum + '">—</span>' +
+        '<div class="tbar-wrap"><div class="tbar" id="tbar-' + slot.qnum + '" style="width:0%"></div></div>' +
+      '</div>' +
+      (slot.started ? '<div style="font-size:10px;color:var(--mut);margin-top:2px">старт ' + slot.started + '</div>' : '') +
+      '<select class="slot-sel" onchange="changeSlotStrategy(' + slot.index + ',this.value)">' +
+        '<option value="">— сменить стратегию —</option>' +
+        _allStrategies.map(s => '<option value="' + s.name + '"' +
+          (s.name === slot.strategy ? ' selected' : '') + '>' + s.name + '</option>').join('') +
+      '</select>' +
+      '<button class="slot-del" onclick="removeSlot(' + slot.index + ')" title="Убрать">×</button>';
+    grid.appendChild(el);
+  }
+  // сразу обновляем трафик для новых карточек
+  refreshTraffic();
+}
+
 // ── pool status ───────────────────────────────────────────────────────────
 let _allStrategies = [];
 let _poolEnabled   = false;
@@ -604,6 +669,7 @@ async function importJson(){
   setInterval(refreshPool,        3000);
   setInterval(refreshLog,         4000);
   setInterval(refreshMonitor,     3000);
+  setInterval(refreshTraffic,     2000);
 })();
 </script>
 </body>

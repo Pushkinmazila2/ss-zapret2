@@ -176,18 +176,20 @@ class ResetMonitor:
     def __init__(self):
         self._lock          = threading.Lock()
         # настройки
-        self.window_sec     = 60      # секунд скользящего окна
-        self.threshold      = 0.4     # ratio reset/(reset+close) для детекта
-        self.min_events     = 5       # минимум событий для срабатывания
+        self.window_sec     = 60
+        self.threshold      = 0.4
+        self.min_events     = 5
         # состояние
-        self._events        = collections.deque()  # (timestamp, "reset"|"close")
+        self._events        = collections.deque()
         self._file_pos      = 0
         self._thread        = None
         self._stop_evt      = threading.Event()
         self.degraded       = False
+        self._was_degraded  = False   # edge-trigger: срабатываем только при переходе
         self.last_ratio     = 0.0
         self.total_resets   = 0
         self.total_closes   = 0
+        self.on_degraded    = None    # callback fn() при переходе ok → degraded
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -276,9 +278,15 @@ class ResetMonitor:
             self.last_ratio = resets / total if total > 0 else 0.0
             self.degraded   = (self.last_ratio >= self.threshold
                                and total >= self.min_events)
+            fire = self.degraded and not self._was_degraded
+            self._was_degraded = self.degraded
             if event == "reset":
-                print("[monitor] reset detected ratio=%.2f (%d/%d)" % (
+                print("[monitor] reset ratio=%.2f (%d/%d)" % (
                     self.last_ratio, resets, total), flush=True)
+
+        if fire and self.on_degraded:
+            print("[monitor] degraded edge — triggering immediate check", flush=True)
+            threading.Thread(target=self.on_degraded, daemon=True).start()
 
     def _window_events(self, now):
         cutoff = now - self.window_sec
@@ -797,6 +805,7 @@ def main():
     _pool     = PoolManager(log_fn=_log)
     _switcher = PoolSwitcher(_pool)
     reset_monitor.start()
+    reset_monitor.on_degraded = _switcher.force_check
 
     print("[panel] config=%s  strategies=%s  ss=%d  socks=%d" % (
         CFG_PATH, STRAT_DIR, SS_PORT, SOCKS_PORT), flush=True)
