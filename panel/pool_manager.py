@@ -21,11 +21,6 @@ POOL_RUN_DIR   = "/run/zapret-pool"
 QNUM_BASE      = 300
 MAX_SLOTS      = 10
 
-LUAOPT = (
-    "--lua-init=@/opt/zapret2/lua/zapret-lib.lua "
-    "--lua-init=@/opt/zapret2/lua/zapret-antidpi.lua "
-    "--lua-init=@/opt/zapret2/lua/zapret-auto.lua"
-)
 DESYNC_MARK = os.environ.get("DESYNC_MARK", "0x40000000")
 WS_USER     = "nobody"
 
@@ -174,8 +169,10 @@ class PoolManager:
 
     def test_pool(self, url, timeout=12):
         """Быстрый тест пула целиком через основной SOCKS."""
+        port = _SOCKS_PORT or 1080
+        self._log("info", "test_pool: socks5h://127.0.0.1:%d → %s" % (port, url))
         cmd = [
-            "curl", "-x", "socks5h://127.0.0.1:%d" % (_SOCKS_PORT or 1080),
+            "curl", "-x", "socks5h://127.0.0.1:%d" % port,
             url, "-I",
             "--max-time", str(timeout),
             "--connect-timeout", "8",
@@ -185,6 +182,7 @@ class PoolManager:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
             out = (p.stdout or "") + (p.stderr or "")
             ok  = p.returncode == 0 and bool(re.search(r"HTTP/\S+ [23]", p.stdout))
+            self._log("info", "test_pool: rc=%d ok=%s" % (p.returncode, ok))
             return {"ok": ok, "rc": p.returncode, "output": out.strip()}
         except subprocess.TimeoutExpired:
             return {"ok": False, "rc": -1, "output": "Таймаут %dс" % timeout}
@@ -227,15 +225,34 @@ class PoolManager:
     def _start_slot_proc(self, slot):
         if not slot.nfqws_opt:
             return
+
+        # Базовые аргументы
         cmd = [
             NFQWS2_BIN,
             "--qnum=%d" % slot.qnum,
             "--user=%s" % WS_USER,
             "--fwmark=%s" % DESYNC_MARK,
-        ] + LUAOPT.split() + slot.nfqws_opt.strip().split("\n")
+            "--lua-init=@/opt/zapret2/lua/zapret-lib.lua",
+            "--lua-init=@/opt/zapret2/lua/zapret-antidpi.lua",
+            "--lua-init=@/opt/zapret2/lua/zapret-auto.lua",
+        ]
+
+        # nfqws_opt — многострочная строка, каждая строка = отдельный --new профиль
+        # Внутри строки аргументы разделены пробелами, но значения с = не трогаем
+        import shlex
+        for line in slot.nfqws_opt.strip().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                cmd.extend(shlex.split(line))
+            except ValueError:
+                cmd.extend(line.split())
 
         self._log("info", "Слот %d старт: qnum=%d strategy=%s" % (
             slot.index, slot.qnum, slot.strategy or "custom"))
+        self._log("info", "CMD: %s" % " ".join(cmd))
+
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -243,6 +260,16 @@ class PoolManager:
                 stderr=subprocess.PIPE,
                 text=True,
             )
+            # Даём секунду и проверяем не упал ли сразу
+            time.sleep(0.5)
+            rc = proc.poll()
+            if rc is not None:
+                err = proc.stderr.read() if proc.stderr else ""
+                self._log("error", "Слот %d упал сразу (rc=%d): %s" % (
+                    slot.index, rc, err.strip()[:200]))
+                slot.proc    = None
+                slot.healthy = False
+                return
             slot.proc    = proc
             slot.started = time.strftime("%H:%M:%S")
             slot.healthy = None
@@ -263,14 +290,15 @@ class PoolManager:
         slot.healthy = None
 
     def _write_size(self):
-        """Записывает текущий размер пула для custom.d fw скрипта."""
-        size = len(self._slots)
-        path = os.path.join(POOL_RUN_DIR, "size")
+        """Записывает активные qnum для custom.d fw скрипта."""
+        os.makedirs(POOL_RUN_DIR, exist_ok=True)
+        slots_path = os.path.join(POOL_RUN_DIR, "slots")
         try:
-            with open(path, "w") as f:
-                f.write(str(size) + "\n")
+            qnums = [str(s.qnum) for s in self._slots if s.is_alive()]
+            with open(slots_path, "w") as f:
+                f.write("\n".join(qnums) + "\n" if qnums else "")
         except Exception as e:
-            self._log("warn", "write size: %s" % e)
+            self._log("warn", "write slots: %s" % e)
 
     def _reload_fw(self):
         """Перегружает iptables правила пула (вызывает zapret2 restart-fw)."""

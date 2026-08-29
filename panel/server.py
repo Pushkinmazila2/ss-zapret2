@@ -70,7 +70,11 @@ def _remove_key(lines, key):
     del lines[start:end]
 
 def ensure_pool_mode(lines):
-    """Устанавливает NFQWS2_ENABLE=0 и DISABLE_CUSTOM=0 в config."""
+    """
+    Устанавливает в config:
+      NFQWS2_ENABLE=0  — отключает стандартный nfqws2 демон
+      DISABLE_CUSTOM=0 — включает наш custom.d хук
+    """
     def _set_simple(key, val):
         pat = re.compile(r"^" + re.escape(key) + r"=")
         for i, ln in enumerate(lines):
@@ -223,6 +227,11 @@ class PoolSwitcher:
         with self._lock:
             self.enabled = bool(enabled)
         if self.enabled:
+            # Отключаем стандартный nfqws2, включаем custom.d
+            lines = read_lines()
+            ensure_pool_mode(lines)
+            write_lines(lines)
+            restart_zapret()
             self._ensure_pool_filled()
             self._ensure_running()
         else:
