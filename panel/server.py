@@ -327,7 +327,12 @@ class PoolSwitcher:
             return s["name"], s["nfqws_opt"]
 
     def _check_all_slots(self):
-        """Тестирует каждый активный слот изолированно."""
+        """
+        Двухфазная проверка:
+          1. Быстрый тест пула целиком — если OK, все слоты помечаем healthy.
+          2. При провале — последовательный захват трафика на каждый слот,
+             точно определяем кто не работает, заменяем.
+        """
         pool_status = self._pool.get_status()
         if not pool_status:
             return
@@ -336,42 +341,64 @@ class PoolSwitcher:
             url       = self.test_url
             threshold = self.fail_threshold
             enabled   = self.enabled
-
         if not enabled:
             return
 
+        # ── Фаза 1: быстрый тест пула целиком ─────────────────────────────
         with self._lock:
             self.state = "checking"
 
-        all_ok = True
+        result = self._pool.test_pool(url)
+
+        if result["ok"]:
+            # Всё работает — помечаем все живые слоты healthy, сбрасываем счётчики
+            for slot_info in pool_status:
+                if slot_info["alive"]:
+                    self._pool.set_slot_health(slot_info["index"], True)
+                    with self._lock:
+                        self._slot_fails[slot_info["index"]] = 0
+            self._log_event("ok", "✓ Пул работает (%d слотов)" % len(pool_status))
+            with self._lock:
+                self.state = "ok"
+            return
+
+        # ── Фаза 2: пул деградировал — тестируем каждый слот изолированно ─
+        self._log_event("warn",
+            "✗ Пул не работает (rc=%d) — запускаю диагностику слотов…" % result["rc"])
+        with self._lock:
+            self.state = "checking"
+
+        bad_slots = []
         for slot_info in pool_status:
             if not slot_info["alive"]:
                 continue
             idx  = slot_info["index"]
             name = slot_info["strategy"] or "slot%d" % idx
 
-            # Изолированный тест — трафик идёт строго через NFQUEUE этого слота
-            result = self._pool.test_slot_isolated(idx, url)
-            self._pool.set_slot_health(idx, result["ok"])
+            self._log_event("info", "Тестирую слот %d «%s» (захват трафика)…" % (idx, name))
+            r = self._pool.test_slot_isolated(idx, url)
+            self._pool.set_slot_health(idx, r["ok"])
 
-            if result["ok"]:
+            if r["ok"]:
                 with self._lock:
                     self._slot_fails[idx] = 0
-                self._log_event("ok", "✓ Слот %d «%s»" % (idx, name))
+                self._log_event("ok", "✓ Слот %d «%s» — работает" % (idx, name))
             else:
                 with self._lock:
                     self._slot_fails[idx] = self._slot_fails.get(idx, 0) + 1
                     fails = self._slot_fails[idx]
                 self._log_event("warn",
-                    "✗ Слот %d «%s» (rc=%d, провалов: %d/%d) %s" % (
-                        idx, name, result["rc"], fails, threshold,
-                        (result["output"] or "")[:60]))
-                all_ok = False
+                    "✗ Слот %d «%s» — не работает (rc=%d, провалов: %d/%d)" % (
+                        idx, name, r["rc"], fails, threshold))
                 if fails >= threshold:
-                    self._replace_slot(idx, name)
+                    bad_slots.append((idx, name))
+
+        # Заменяем нерабочие слоты
+        for idx, name in bad_slots:
+            self._replace_slot(idx, name)
 
         with self._lock:
-            self.state = "ok" if all_ok else "degraded"
+            self.state = "ok" if not bad_slots else "degraded"
 
     def _replace_slot(self, index, old_name):
         """Тихо заменяет стратегию в слоте без остановки трафика."""
@@ -594,8 +621,6 @@ def main():
     ap.add_argument("--host",         default="0.0.0.0")
     ap.add_argument("--ss-port",      type=int, default=8388)
     ap.add_argument("--socks-port",   type=int, default=1080)
-    ap.add_argument("--ss-password",  default=os.environ.get("SS_PASSWORD", ""))
-    ap.add_argument("--ss-method",    default=os.environ.get("SS_ENCRYPT_METHOD", "chacha20-ietf-poly1305"))
     ap.add_argument("--restart-cmd",
                     default="/opt/zapret2/init.d/sysv/zapret2 restart-daemons")
     args = ap.parse_args()
@@ -608,10 +633,8 @@ def main():
     SOCKS_PORT  = args.socks_port
     SS_PORT     = args.ss_port
 
-    # Передаём SS параметры в pool_manager для изолированных тестов
-    _pm._SS_SERVER_PORT = args.ss_port
-    _pm._SS_PASSWORD    = args.ss_password
-    _pm._SS_METHOD      = args.ss_method
+    # Передаём SOCKS порт в pool_manager для тестов
+    _pm._SOCKS_PORT = args.socks_port
 
     def _log(lvl, msg):
         print("[pool][%s] %s" % (lvl.upper(), msg), flush=True)
