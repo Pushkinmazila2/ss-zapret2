@@ -88,11 +88,6 @@ header h1{font-size:15px;font-weight:700;}
   padding:7px 10px;text-align:center;}
 .mon-stat .val{font-size:18px;font-weight:700;line-height:1;}
 .mon-stat .lbl{font-size:10px;color:var(--mut);margin-top:2px;}
-.slot-traffic{margin-top:6px;}
-.traffic-bar-wrap{height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;margin-top:3px;}
-.traffic-bar{height:100%;border-radius:2px;transition:width .8s ease;background:var(--acc);}
-.traffic-bar.active{background:var(--ok);}
-.traffic-kbps{font-size:10px;color:var(--mut);font-family:monospace;}
 .sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}
 .sg label{display:block;font-size:11px;color:var(--mut);margin-bottom:3px;}
 .sg input,.sg select{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
@@ -473,38 +468,6 @@ async function refreshPool(){
   updateStrategyBadges(s.slots || []);
 }
 
-function renderSlots(slots){
-  const grid = document.getElementById('slotsGrid');
-  if(!slots.length){
-    grid.innerHTML = '<div style="color:var(--mut);font-size:12px;grid-column:1/-1">Нет активных слотов</div>';
-    return;
-  }
-  grid.innerHTML = '';
-  for(const slot of slots){
-    const ok  = slot.healthy === true;
-    const bad = slot.healthy === false;
-    const cls = ok ? 'ok' : (bad ? 'fail' : 'unknown');
-    const statusText = ok ? '✓ Работает' : (bad ? '✗ Не работает' : '— Проверяется');
-    const statusCls  = ok ? 'ok' : (bad ? 'fail' : 'unknown');
-
-    const el = document.createElement('div');
-    el.className = 'slot ' + cls;
-    el.innerHTML =
-      '<div><span class="slot-num">Слот ' + slot.index + '</span>' +
-      '<span class="slot-qnum">qnum=' + slot.qnum + '</span></div>' +
-      '<div class="slot-name">' + (slot.strategy || '—') + '</div>' +
-      '<div class="slot-status ' + statusCls + '">' + statusText + '</div>' +
-      (slot.started ? '<div style="font-size:10px;color:var(--mut);margin-top:3px">старт ' + slot.started + '</div>' : '') +
-      '<select class="slot-sel" onchange="changeSlotStrategy(' + slot.index + ', this.value)">' +
-        '<option value="">— сменить стратегию —</option>' +
-        _allStrategies.map(s => '<option value="' + s.name + '"' +
-          (s.name === slot.strategy ? ' selected' : '') + '>' + s.name + '</option>').join('') +
-      '</select>' +
-      '<button class="slot-del" onclick="removeSlot(' + slot.index + ')" title="Убрать слот">×</button>';
-    grid.appendChild(el);
-  }
-}
-
 function updateStrategyBadges(slots){
   const inUse = {};
   slots.forEach(s => { if(s.strategy) inUse[s.strategy] = s.healthy; });
@@ -655,7 +618,7 @@ async function importJson(){
   showLog('importLog','⏳ …','n');
   const r = await post('/api/import-json', parsed);
   let txt = r.message||'';
-  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');ы
+  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');
   if(r.errors?.length) txt += '\n❌ ' + r.errors.join('\n');
   showLog('importLog', txt.trim(), r.ok?'ok':'err');
   if(r.ok) loadStrategies();
