@@ -64,7 +64,12 @@ if [ "${SS_VERBOSE:-0}" = "1" ]; then
   SS_VERBOSE_FLAG="-v"
 fi
 
-ss-server ${SS_VERBOSE_FLAG} -s 0.0.0.0 -p "${SS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u &
+SS_LOG=/run/zapret-pool/ss-server.log
+mkdir -p /run/zapret-pool
+: > "$SS_LOG"   # очищаем при старте
+
+ss-server ${SS_VERBOSE_FLAG} -s 0.0.0.0 -p "${SS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u \
+  2>&1 | tee -a "$SS_LOG" | awk '{print "[SS-SERVER] " $0; fflush()}' &
 SS_SERVER_PID=$!
 
 ss-local ${SS_VERBOSE_FLAG} -b 0.0.0.0 -s 127.0.0.1 -p "${SS_PORT}" -l "${SOCKS_PORT}" -k "${SS_PASSWORD}" -m "${SS_ENCRYPT_METHOD}" -t "${SS_TIMEOUT}" -u &

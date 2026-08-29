@@ -156,7 +156,137 @@ def get_connections(ss_port, socks_port):
     return {"ss_port": ss_port, "socks_port": socks_port,
             "ss": sorted(ss_ips), "socks": sorted(socks_ips)}
 
-# ── PoolSwitcher ─────────────────────────────────────────────────────────────
+# ── ResetMonitor ─────────────────────────────────────────────────────────────
+
+SS_LOG_PATH = "/run/zapret-pool/ss-server.log"
+
+class ResetMonitor:
+    """
+    Читает лог ss-server в реальном времени.
+    Считает соотношение reset / (reset + normal_close) за скользящее окно.
+    Если ratio > threshold — сигнализирует о деградации.
+
+    Строки которые считаем:
+      reset:  "Connection reset by peer"
+      close:  "close a connection"  (нормальное закрытие)
+    """
+
+    MAX_EVENTS = 500   # максимум событий в скользящем окне
+
+    def __init__(self):
+        self._lock          = threading.Lock()
+        # настройки
+        self.window_sec     = 60      # секунд скользящего окна
+        self.threshold      = 0.4     # ratio reset/(reset+close) для детекта
+        self.min_events     = 5       # минимум событий для срабатывания
+        # состояние
+        self._events        = collections.deque()  # (timestamp, "reset"|"close")
+        self._file_pos      = 0
+        self._thread        = None
+        self._stop_evt      = threading.Event()
+        self.degraded       = False
+        self.last_ratio     = 0.0
+        self.total_resets   = 0
+        self.total_closes   = 0
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_evt.clear()
+        self._thread = threading.Thread(target=self._tail_loop, daemon=True)
+        self._thread.start()
+        print("[monitor] Started tailing %s" % SS_LOG_PATH, flush=True)
+
+    def get_status(self):
+        with self._lock:
+            now = time.time()
+            win = self._window_events(now)
+            resets = sum(1 for _, t in win if t == "reset")
+            closes = sum(1 for _, t in win if t == "close")
+            total  = resets + closes
+            ratio  = resets / total if total >= self.min_events else 0.0
+            return {
+                "degraded":      ratio >= self.threshold and total >= self.min_events,
+                "ratio":         round(ratio, 3),
+                "resets_window": resets,
+                "closes_window": closes,
+                "total_window":  total,
+                "total_resets":  self.total_resets,
+                "total_closes":  self.total_closes,
+                "window_sec":    self.window_sec,
+                "threshold":     self.threshold,
+                "min_events":    self.min_events,
+            }
+
+    def configure(self, cfg):
+        with self._lock:
+            for k in ("window_sec", "threshold", "min_events"):
+                if k in cfg:
+                    setattr(self, k, cfg[k])
+        return self.get_status()
+
+    # ── internals ─────────────────────────────────────────────────────────
+
+    def _tail_loop(self):
+        """Бесконечно читает новые строки из лог файла."""
+        while not self._stop_evt.is_set():
+            try:
+                if not os.path.exists(SS_LOG_PATH):
+                    self._stop_evt.wait(2)
+                    continue
+                with open(SS_LOG_PATH, "r", errors="replace") as f:
+                    f.seek(self._file_pos)
+                    while not self._stop_evt.is_set():
+                        line = f.readline()
+                        if not line:
+                            self._file_pos = f.tell()
+                            self._stop_evt.wait(0.5)
+                            continue
+                        self._parse_line(line)
+            except Exception as e:
+                print("[monitor] tail error: %s" % e, flush=True)
+                self._stop_evt.wait(2)
+
+    def _parse_line(self, line):
+        now = time.time()
+        event = None
+        if "Connection reset by peer" in line or "server_recv_cb_recv" in line:
+            event = "reset"
+        elif "close a connection" in line:
+            event = "close"
+        if not event:
+            return
+        with self._lock:
+            self._events.append((now, event))
+            if event == "reset":
+                self.total_resets += 1
+            else:
+                self.total_closes += 1
+            # Чистим старые события
+            while self._events and now - self._events[0][0] > self.window_sec * 2:
+                self._events.popleft()
+            # Ограничиваем размер
+            while len(self._events) > self.MAX_EVENTS:
+                self._events.popleft()
+            # Обновляем статус деградации
+            win    = self._window_events(now)
+            resets = sum(1 for _, t in win if t == "reset")
+            closes = sum(1 for _, t in win if t == "close")
+            total  = resets + closes
+            self.last_ratio = resets / total if total > 0 else 0.0
+            self.degraded   = (self.last_ratio >= self.threshold
+                               and total >= self.min_events)
+            if event == "reset":
+                print("[monitor] reset detected ratio=%.2f (%d/%d)" % (
+                    self.last_ratio, resets, total), flush=True)
+
+    def _window_events(self, now):
+        cutoff = now - self.window_sec
+        return [(ts, t) for ts, t in self._events if ts >= cutoff]
+
+
+# глобальный экземпляр
+reset_monitor = ResetMonitor()
 
 class PoolSwitcher:
     """
@@ -357,7 +487,16 @@ class PoolSwitcher:
         with self._lock:
             self.state = "checking"
 
-        result = self._pool.test_pool(url)
+        # Если монитор уже видит деградацию — сразу к диагностике без curl
+        mon = reset_monitor.get_status()
+        if mon["degraded"]:
+            self._log_event("warn",
+                "⚠ ResetMonitor: ratio=%.0f%% (%d reset/%d total за %ds) — сразу диагностика" % (
+                    mon["ratio"] * 100, mon["resets_window"],
+                    mon["total_window"], mon["window_sec"]))
+            result = {"ok": False, "rc": -2, "output": "reset ratio high"}
+        else:
+            result = self._pool.test_pool(url)
 
         if result["ok"]:
             # Всё работает — помечаем все живые слоты healthy, сбрасываем счётчики
@@ -497,6 +636,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"log": _switcher.get_log()})
         elif p == "/api/pool/traffic":
             self._json(_pool.get_traffic_stats())
+        elif p == "/api/monitor/status":
+            self._json(reset_monitor.get_status())
         else:
             self._json({"error": "not found"}, 404)
 
@@ -555,6 +696,9 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/pool/check":
             _switcher.force_check()
             return self._json({"ok": True, "message": "Проверка запущена"})
+
+        elif p == "/api/monitor/configure":
+            return self._json(reset_monitor.configure(body))
 
         # ── сохранить NFQWS2_OPT вручную ────────────────────────────────────
         elif p == "/api/save-nfqws":
@@ -652,6 +796,7 @@ def main():
 
     _pool     = PoolManager(log_fn=_log)
     _switcher = PoolSwitcher(_pool)
+    reset_monitor.start()
 
     print("[panel] config=%s  strategies=%s  ss=%d  socks=%d" % (
         CFG_PATH, STRAT_DIR, SS_PORT, SOCKS_PORT), flush=True)

@@ -73,7 +73,14 @@ header h1{font-size:15px;font-weight:700;}
 .slot-sel{width:100%;margin-top:6px;background:#080d18;border:1px solid var(--line);
   color:var(--tx);border-radius:6px;padding:4px 6px;font:inherit;font-size:11px;}
 
-/* slot traffic bar */
+/* reset monitor */
+.mon-bar-wrap{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;margin:6px 0;}
+.mon-bar{height:100%;border-radius:3px;transition:width .6s ease,background .4s;}
+.mon-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px;}
+.mon-stat{background:var(--panel2);border:1px solid var(--line);border-radius:7px;
+  padding:7px 10px;text-align:center;}
+.mon-stat .val{font-size:18px;font-weight:700;line-height:1;}
+.mon-stat .lbl{font-size:10px;color:var(--mut);margin-top:2px;}
 .slot-traffic{margin-top:6px;}
 .traffic-bar-wrap{height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;margin-top:3px;}
 .traffic-bar{height:100%;border-radius:2px;transition:width .8s ease;background:var(--acc);}
@@ -163,6 +170,60 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
           <div class="cbcount" id="socksCount">—</div>
           <div class="cbips" id="socksIps"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- монитор reset/close -->
+    <div class="card">
+      <h2>Детектор блокировки ТСПУ
+        <span id="monAlert" style="display:none;margin-left:6px;font-size:11px;
+          padding:2px 7px;border-radius:4px;background:var(--err-dim);color:var(--err);font-weight:600">
+          ⚠ Деградация
+        </span>
+      </h2>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:11px;color:var(--mut)">Reset ratio за окно:</span>
+        <span id="monRatio" style="font-size:13px;font-weight:700;font-family:monospace">—</span>
+        <span style="font-size:11px;color:var(--mut)" id="monThreshLbl"></span>
+      </div>
+      <div class="mon-bar-wrap">
+        <div class="mon-bar" id="monBar" style="width:0%;background:var(--ok)"></div>
+      </div>
+
+      <div class="mon-stats">
+        <div class="mon-stat">
+          <div class="val" id="monResets" style="color:var(--err)">—</div>
+          <div class="lbl">Resets (окно)</div>
+        </div>
+        <div class="mon-stat">
+          <div class="val" id="monCloses" style="color:var(--ok)">—</div>
+          <div class="lbl">Closes (окно)</div>
+        </div>
+        <div class="mon-stat">
+          <div class="val" id="monWindow">—</div>
+          <div class="lbl">Окно (сек)</div>
+        </div>
+      </div>
+
+      <!-- настройки -->
+      <div class="sg" style="margin-top:10px">
+        <div>
+          <label>Окно наблюдения (сек)</label>
+          <input type="number" id="monWinSec" value="60" min="10">
+        </div>
+        <div>
+          <label>Порог ratio (0.0–1.0)</label>
+          <input type="number" id="monThresh" value="0.4" min="0.05" max="1" step="0.05">
+        </div>
+        <div>
+          <label>Мин. событий для срабатывания</label>
+          <input type="number" id="monMinEv" value="5" min="1">
+        </div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button class="btn p sm" onclick="saveMonitorCfg()">Сохранить</button>
+        <span id="monSaved" style="font-size:11px;color:var(--ok);display:none">✓</span>
       </div>
     </div>
 
@@ -264,6 +325,51 @@ function showLog(id, text, cls){
   const el = document.getElementById(id);
   el.style.display = 'block'; el.className = 'log ' + (cls||'n'); el.textContent = text;
 }
+
+// ── reset monitor ─────────────────────────────────────────────────────────
+async function refreshMonitor(){
+  const s = await api('/api/monitor/status');
+  if(!s || s.error) return;
+
+  const pct     = Math.min(100, s.ratio * 100);
+  const color   = s.degraded ? 'var(--err)' : (pct > 25 ? 'var(--warn)' : 'var(--ok)');
+  const ratioTx = (s.ratio * 100).toFixed(1) + '%';
+
+  document.getElementById('monRatio').textContent   = ratioTx;
+  document.getElementById('monRatio').style.color   = color;
+  document.getElementById('monBar').style.width     = pct.toFixed(1) + '%';
+  document.getElementById('monBar').style.background = color;
+  document.getElementById('monThreshLbl').textContent = '(порог ' + (s.threshold*100).toFixed(0) + '%)';
+  document.getElementById('monResets').textContent  = s.resets_window;
+  document.getElementById('monCloses').textContent  = s.closes_window;
+  document.getElementById('monWindow').textContent  = s.window_sec + 's';
+  document.getElementById('monAlert').style.display = s.degraded ? 'inline' : 'none';
+
+  // Синхронизируем поля если не редактируем
+  if(document.getElementById('monWinSec').dataset.dirty !== '1')
+    document.getElementById('monWinSec').value  = s.window_sec;
+  if(document.getElementById('monThresh').dataset.dirty !== '1')
+    document.getElementById('monThresh').value  = s.threshold;
+  if(document.getElementById('monMinEv').dataset.dirty !== '1')
+    document.getElementById('monMinEv').value   = s.min_events;
+}
+
+async function saveMonitorCfg(){
+  const cfg = {
+    window_sec:  +document.getElementById('monWinSec').value,
+    threshold:   +document.getElementById('monThresh').value,
+    min_events:  +document.getElementById('monMinEv').value,
+  };
+  await post('/api/monitor/configure', cfg);
+  ['monWinSec','monThresh','monMinEv'].forEach(id =>
+    document.getElementById(id).dataset.dirty = '0');
+  const s = document.getElementById('monSaved');
+  s.style.display = 'inline'; setTimeout(() => s.style.display = 'none', 2000);
+}
+
+['monWinSec','monThresh','monMinEv'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () =>
+    document.getElementById(id).dataset.dirty = '1'));
 
 // ── pool status ───────────────────────────────────────────────────────────
 let _allStrategies = [];
@@ -493,10 +599,11 @@ async function importJson(){
 (async()=>{
   updateCurlCmd();
   await loadStrategies();
-  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog()]);
+  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog(), refreshMonitor()]);
   setInterval(refreshConnections, 5000);
   setInterval(refreshPool,        3000);
   setInterval(refreshLog,         4000);
+  setInterval(refreshMonitor,     3000);
 })();
 </script>
 </body>
