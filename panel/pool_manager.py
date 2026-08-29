@@ -29,26 +29,28 @@ _SOCKS_PORT     = None   # выставляется из main()
 
 class Slot:
     def __init__(self, index):
-        self.index     = index
-        self.qnum      = QNUM_BASE + index
-        self.strategy  = None   # имя стратегии
-        self.nfqws_opt = None   # строка аргументов
-        self.proc      = None   # subprocess.Popen
-        self.healthy   = None   # True/False/None
-        self.started   = None   # timestamp
+        self.index       = index
+        self.qnum        = QNUM_BASE + index
+        self.strategy    = None
+        self.nfqws_opt   = None
+        self.proc        = None
+        self.healthy     = None
+        self.started     = None
+        self._fw_excluded = False   # временно исключён из iptables rotation
 
     def is_alive(self):
         return self.proc is not None and self.proc.poll() is None
 
     def to_dict(self):
         return {
-            "index":     self.index,
-            "qnum":      self.qnum,
-            "strategy":  self.strategy,
-            "healthy":   self.healthy,
-            "alive":     self.is_alive(),
-            "started":   self.started,
-            "pid":       self.proc.pid if self.proc else None,
+            "index":       self.index,
+            "qnum":        self.qnum,
+            "strategy":    self.strategy,
+            "healthy":     self.healthy,
+            "alive":       self.is_alive(),
+            "started":     self.started,
+            "pid":         self.proc.pid if self.proc else None,
+            "fw_excluded": self._fw_excluded,
         }
 
 
@@ -259,6 +261,30 @@ class PoolManager:
                     self._log("warn", "Слот %d (qnum=%d) упал, перезапускаю" % (slot.index, slot.qnum))
                     self._start_slot_proc(slot)
 
+    def remove_slots_from_fw(self, indices):
+        """
+        Убирает указанные слоты из iptables rotation немедленно.
+        Процессы nfqws2 остаются живыми — только fw правила меняются.
+        """
+        with self._lock:
+            # Помечаем слоты как временно исключённые
+            for slot in self._slots:
+                if slot.index in indices:
+                    slot._fw_excluded = True
+            self._write_size()
+        self._reload_fw()
+        self._log("info", "Слоты %s убраны из rotation" % indices)
+
+    def restore_slot_to_fw(self, index):
+        """Возвращает слот в iptables rotation."""
+        with self._lock:
+            slot = self._find(index)
+            if slot:
+                slot._fw_excluded = False
+            self._write_size()
+        self._reload_fw()
+        self._log("info", "Слот %d возвращён в rotation" % index)
+
     def active_count(self):
         with self._lock:
             return len(self._slots)
@@ -344,11 +370,12 @@ class PoolManager:
         slot.healthy = None
 
     def _write_size(self):
-        """Записывает активные qnum для custom.d fw скрипта."""
+        """Записывает активные (не исключённые) qnum для fw скрипта."""
         os.makedirs(POOL_RUN_DIR, exist_ok=True)
         slots_path = os.path.join(POOL_RUN_DIR, "slots")
         try:
-            qnums = [str(s.qnum) for s in self._slots if s.is_alive()]
+            qnums = [str(s.qnum) for s in self._slots
+                     if s.is_alive() and not s._fw_excluded]
             with open(slots_path, "w") as f:
                 f.write("\n".join(qnums) + "\n" if qnums else "")
         except Exception as e:

@@ -518,20 +518,22 @@ class PoolSwitcher:
                 self.state = "ok"
             return
 
-        # ── Фаза 2: пул деградировал — тестируем каждый слот изолированно ─
+        # ── Фаза 2: диагностика каждого слота изолированно ────────────────
         self._log_event("warn",
-            "✗ Пул не работает (rc=%d) — запускаю диагностику слотов…" % result["rc"])
+            "Деградация — диагностирую %d слотов…" % len([s for s in pool_status if s["alive"]]))
         with self._lock:
             self.state = "checking"
 
-        bad_slots = []
+        good_slots = []
+        bad_slots  = []
+
         for slot_info in pool_status:
             if not slot_info["alive"]:
                 continue
             idx  = slot_info["index"]
             name = slot_info["strategy"] or "slot%d" % idx
 
-            self._log_event("info", "Тестирую слот %d «%s» (захват трафика)…" % (idx, name))
+            self._log_event("info", "Тестирую слот %d «%s»…" % (idx, name))
             r = self._pool.test_slot_isolated(idx, url)
             self._pool.set_slot_health(idx, r["ok"])
 
@@ -539,6 +541,7 @@ class PoolSwitcher:
                 with self._lock:
                     self._slot_fails[idx] = 0
                 self._log_event("ok", "✓ Слот %d «%s» — работает" % (idx, name))
+                good_slots.append(idx)
             else:
                 with self._lock:
                     self._slot_fails[idx] = self._slot_fails.get(idx, 0) + 1
@@ -549,17 +552,28 @@ class PoolSwitcher:
                 if fails >= threshold:
                     bad_slots.append((idx, name))
 
-        # Заменяем нерабочие слоты
+        if not bad_slots:
+            with self._lock:
+                self.state = "ok"
+            return
+
+        # Сначала убираем нерабочие слоты из iptables rotation —
+        # клиенты перестают попадать на них немедленно
+        bad_indices = [idx for idx, _ in bad_slots]
+        self._log_event("warn",
+            "Убираю нерабочие слоты из rotation: %s" % bad_indices)
+        self._pool.remove_slots_from_fw(bad_indices)
+
+        # Заменяем нерабочие в фоне — клиенты уже на рабочих слотах
         for idx, name in bad_slots:
             self._replace_slot(idx, name)
 
         with self._lock:
-            self.state = "ok" if not bad_slots else "degraded"
+            self.state = "ok" if good_slots else "degraded"
 
     def _replace_slot(self, index, old_name):
-        """Тихо заменяет стратегию в слоте без остановки трафика."""
-        self._log_event("warn",
-            "Слот %d «%s»: заменяю стратегию…" % (index, old_name))
+        """Заменяет стратегию в слоте. Слот уже убран из rotation к этому моменту."""
+        self._log_event("warn", "Слот %d «%s»: подбираю замену…" % (index, old_name))
 
         with self._lock:
             self.state = "replacing"
@@ -567,27 +581,34 @@ class PoolSwitcher:
         new_name, new_nfqws = self._next_strategy()
         if not new_name:
             self._log_event("error", "Нет стратегий для замены слота %d" % index)
+            # Возвращаем слот в rotation даже со старой стратегией — лучше чем ничего
+            self._pool.restore_slot_to_fw(index)
             return
 
-        # Graceful replace: новый стартует, потом убивается старый
+        # Заменяем процесс nfqws2
         self._pool.replace_slot(index, new_name, new_nfqws)
 
         with self._lock:
             self._slot_fails[index] = 0
-
-        # Проверяем новую стратегию
-        with self._lock:
             settle = self.settle_time
+
         time.sleep(settle)
 
-        result = run_curl(SOCKS_PORT or 1080, self.test_url, timeout=12)
-        if result["ok"]:
+        # Тестируем новый слот изолированно
+        r = self._pool.test_slot_isolated(index, self.test_url)
+        self._pool.set_slot_health(index, r["ok"])
+
+        if r["ok"]:
             self._log_event("ok",
-                "✓ Слот %d: «%s» → «%s» — работает" % (index, old_name, new_name))
+                "✓ Слот %d: «%s» → «%s» — работает, возвращаю в rotation" % (
+                    index, old_name, new_name))
         else:
             self._log_event("warn",
-                "✗ Слот %d: «%s» тоже не работает (rc=%d)" % (
-                    index, new_name, result["rc"]))
+                "✗ Слот %d: «%s» не помогла (rc=%d), всё равно возвращаю в rotation" % (
+                    index, new_name, r["rc"]))
+
+        # Возвращаем слот в rotation в любом случае
+        self._pool.restore_slot_to_fw(index)
 
         with self._lock:
             self.state = "ok"

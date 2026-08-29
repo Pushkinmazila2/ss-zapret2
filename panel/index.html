@@ -408,9 +408,10 @@ function renderSlots(slots){
   for(const slot of slots){
     const ok  = slot.healthy === true;
     const bad = slot.healthy === false;
-    const cls = ok ? 'ok' : bad ? 'fail' : 'unknown';
-    const stTx  = ok ? '✓ Работает' : bad ? '✗ Не работает' : '— Ожидание';
-    const stCls = ok ? 'ok' : bad ? 'fail' : 'unknown';
+    const excluded = slot.fw_excluded;
+    const cls = excluded ? 'unknown' : ok ? 'ok' : bad ? 'fail' : 'unknown';
+    const stTx  = excluded ? '⏸ Замена…' : ok ? '✓ Работает' : bad ? '✗ Не работает' : '— Ожидание';
+    const stCls = excluded ? 'unknown' : ok ? 'ok' : bad ? 'fail' : 'unknown';
     const el = document.createElement('div');
     el.className = 'slot ' + cls;
     el.id = 'slot-' + slot.index;
@@ -654,7 +655,7 @@ async function importJson(){
   showLog('importLog','⏳ …','n');
   const r = await post('/api/import-json', parsed);
   let txt = r.message||'';
-  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');
+  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');ы
   if(r.errors?.length) txt += '\n❌ ' + r.errors.join('\n');
   showLog('importLog', txt.trim(), r.ok?'ok':'err');
   if(r.ok) loadStrategies();
