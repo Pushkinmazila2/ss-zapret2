@@ -56,8 +56,10 @@ class PoolManager:
 
     def __init__(self, log_fn=None):
         self._lock   = threading.Lock()
-        self._slots  = []          # list[Slot]
+        self._slots  = []
         self._log    = log_fn or (lambda lvl, msg: print("[pool][%s] %s" % (lvl, msg), flush=True))
+        self._prev_counters     = {}   # qnum → (pkts, bytes)
+        self._prev_counter_time = None
         os.makedirs(POOL_RUN_DIR, exist_ok=True)
 
     # ── public ────────────────────────────────────────────────────────────
@@ -65,6 +67,58 @@ class PoolManager:
     def get_status(self):
         with self._lock:
             return [s.to_dict() for s in self._slots]
+
+    def get_traffic_stats(self):
+        """
+        Читает счётчики пакетов/байт из цепочки ZAPRET_POOL.
+        Возвращает dict: qnum → {pkts, bytes, pkts_delta, bytes_delta}
+        Дельта считается относительно предыдущего вызова.
+        """
+        raw = self._read_zapret_pool_counters()
+        now = time.time()
+        result = {}
+        with self._lock:
+            prev      = self._prev_counters
+            prev_time = self._prev_counter_time
+            dt = now - prev_time if prev_time else 1.0
+            dt = max(dt, 0.1)
+            for qnum, (pkts, byt) in raw.items():
+                pp, pb = prev.get(qnum, (0, 0))
+                dpkts = max(0, pkts - pp)
+                dbyt  = max(0, byt  - pb)
+                result[qnum] = {
+                    "pkts":       pkts,
+                    "bytes":      byt,
+                    "pkts_delta": dpkts,
+                    "bytes_delta": dbyt,
+                    "kbps":       round(dbyt * 8 / 1024 / dt, 1),
+                    "pps":        round(dpkts / dt, 1),
+                }
+            self._prev_counters    = raw
+            self._prev_counter_time = now
+        return result
+
+    def _read_zapret_pool_counters(self):
+        """Парсит `iptables -t mangle -L ZAPRET_POOL -n -v -x`."""
+        result = {}
+        try:
+            p = subprocess.run(
+                ["iptables", "-t", "mangle", "-L", "ZAPRET_POOL", "-n", "-v", "-x"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in p.stdout.splitlines():
+                # Строка вида:  pkts bytes target ... NFQUEUE num 300 bypass
+                m = re.search(r"^\s*(\d+)\s+(\d+)\s+NFQUEUE.*?num\s+(\d+)", line)
+                if m:
+                    pkts  = int(m.group(1))
+                    byt   = int(m.group(2))
+                    qnum  = int(m.group(3))
+                    # Суммируем если один qnum встречается несколько раз (ipv4+ipv6)
+                    existing = result.get(qnum, (0, 0))
+                    result[qnum] = (existing[0] + pkts, existing[1] + byt)
+        except Exception:
+            pass
+        return result
 
     def start_slot(self, index, strategy_name, nfqws_opt):
         """Запустить/перезапустить один слот."""

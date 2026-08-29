@@ -495,6 +495,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_switcher.get_status())
         elif p == "/api/pool/log":
             self._json({"log": _switcher.get_log()})
+        elif p == "/api/pool/traffic":
+            self._json(_pool.get_traffic_stats())
         else:
             self._json({"error": "not found"}, 404)
 

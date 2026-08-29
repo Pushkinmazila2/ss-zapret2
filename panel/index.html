@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>zapret2 · панель</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Ctext%20x%3D%220%22%20y%3D%2280%22%20font-size%3D%2275%22%3E🚀%3C%2Ftext%3E%3C%2Fsvg%3E">
 <style>
 :root{
   --bg:#0c1118;--panel:#141b27;--panel2:#1c2535;--line:#263147;
@@ -23,7 +22,7 @@ header h1{font-size:15px;font-weight:700;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;}
 .card h2{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;
   margin-bottom:10px;display:flex;align-items:center;gap:6px;}
- 
+
 /* strategy list */
 .slist{display:flex;flex-direction:column;gap:5px;}
 .strat{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel2);
@@ -35,7 +34,7 @@ header h1{font-size:15px;font-weight:700;}
 .sbadge.ok  {background:var(--ok-dim);color:var(--ok);}
 .sbadge.warn{background:var(--warn-dim);color:var(--warn);}
 .sbadge.idle{background:rgba(255,255,255,.05);color:var(--mut);}
- 
+
 /* connections */
 .conn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .connbox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;}
@@ -44,7 +43,7 @@ header h1{font-size:15px;font-weight:700;}
 .cbcount{font-size:24px;font-weight:700;margin:2px 0 4px;line-height:1;}
 .cbips{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--mut);
   line-height:1.7;max-height:60px;overflow-y:auto;}
- 
+
 /* pool slots */
 .pool-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
 .pool-state{font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;}
@@ -53,7 +52,7 @@ header h1{font-size:15px;font-weight:700;}
 .pool-state.checking{background:rgba(77,163,255,.12);color:var(--acc);}
 .pool-state.replacing{background:var(--warn-dim);color:var(--warn);}
 .pool-state.idle    {background:rgba(255,255,255,.05);color:var(--mut);}
- 
+
 .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin:10px 0;}
 .slot{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;
   position:relative;transition:border-color .2s;}
@@ -73,13 +72,18 @@ header h1{font-size:15px;font-weight:700;}
 .slot-del:hover{color:var(--err);}
 .slot-sel{width:100%;margin-top:6px;background:#080d18;border:1px solid var(--line);
   color:var(--tx);border-radius:6px;padding:4px 6px;font:inherit;font-size:11px;}
- 
-/* settings */
+
+/* slot traffic bar */
+.slot-traffic{margin-top:6px;}
+.traffic-bar-wrap{height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;margin-top:3px;}
+.traffic-bar{height:100%;border-radius:2px;transition:width .8s ease;background:var(--acc);}
+.traffic-bar.active{background:var(--ok);}
+.traffic-kbps{font-size:10px;color:var(--mut);font-family:monospace;}
 .sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}
 .sg label{display:block;font-size:11px;color:var(--mut);margin-bottom:3px;}
 .sg input,.sg select{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
   border-radius:7px;padding:5px 8px;font:inherit;font-size:12px;}
- 
+
 /* log */
 .swlog{background:#080d18;border:1px solid var(--line);border-radius:8px;
   padding:8px 10px;max-height:180px;overflow-y:auto;
@@ -91,7 +95,7 @@ header h1{font-size:15px;font-weight:700;}
 .entry.warn .msg{color:var(--warn);}
 .entry.error .msg{color:var(--err);}
 .entry.info .msg{color:var(--tx);}
- 
+
 /* config/editor */
 #configBox{background:#080d18;border:1px solid var(--line);border-radius:8px;
   padding:9px 11px;font-family:ui-monospace,Consolas,monospace;font-size:11px;
@@ -99,12 +103,12 @@ header h1{font-size:15px;font-weight:700;}
 textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
   border-radius:8px;padding:9px 11px;font-family:ui-monospace,Consolas,monospace;
   font-size:11px;resize:vertical;}
- 
+
 /* curl */
 .crl{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
 .inp{background:#080d18;border:1px solid var(--line);color:var(--tx);
   border-radius:7px;padding:6px 9px;font:inherit;font-size:12px;}
- 
+
 /* buttons */
 .row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;align-items:center;}
 .btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);
@@ -120,7 +124,7 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
 .btn.sm{padding:3px 8px;font-size:11px;}
 .btn.tog-on {background:var(--ok);color:#021a0d;font-weight:700;border-color:var(--ok);}
 .btn.tog-off{background:var(--panel2);color:var(--mut);border-color:var(--line);}
- 
+
 .log{margin-top:9px;padding:8px 10px;border-radius:8px;background:#080d18;
   border:1px solid var(--line);white-space:pre-wrap;max-height:160px;overflow:auto;
   font-family:ui-monospace,Consolas,monospace;font-size:11px;display:none;}
@@ -135,16 +139,16 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
   <span class="hpath" id="hpath"></span>
 </header>
 <div class="wrap">
- 
+
   <!-- LEFT: список всех стратегий -->
   <div class="card">
     <h2>Все стратегии <span id="stratCount" style="font-weight:400"></span></h2>
     <div class="slist" id="slist"><div style="color:var(--mut)">Загрузка…</div></div>
   </div>
- 
+
   <!-- RIGHT -->
   <div class="rcol">
- 
+
     <!-- подключения -->
     <div class="card">
       <h2>Подключения <span id="connTs" style="font-weight:400;margin-left:auto"></span></h2>
@@ -161,7 +165,7 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
         </div>
       </div>
     </div>
- 
+
     <!-- пул nfqws2 -->
     <div class="card">
       <div class="pool-header">
@@ -173,12 +177,12 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
           <button class="btn sm tog-off" id="poolToggle" onclick="togglePool()">Вкл авто</button>
         </div>
       </div>
- 
+
       <!-- слоты -->
       <div class="slots-grid" id="slotsGrid">
         <div style="color:var(--mut);font-size:12px;grid-column:1/-1">Пул не запущен</div>
       </div>
- 
+
       <!-- настройки -->
       <div class="sg" style="margin-top:12px">
         <div>
@@ -202,7 +206,7 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
         <button class="btn p sm" onclick="savePoolCfg()">Сохранить настройки</button>
         <span id="cfgSaved" style="font-size:11px;color:var(--ok);display:none">✓ Сохранено</span>
       </div>
- 
+
       <!-- лог пула -->
       <div style="margin-top:12px">
         <div style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em;
@@ -212,7 +216,7 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
         <div class="swlog" id="poolLog"><div style="color:var(--mut)">—</div></div>
       </div>
     </div>
- 
+
     <!-- текущий config -->
     <div class="card">
       <h2>Config
@@ -221,7 +225,7 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
       </h2>
       <div id="configBox">Загрузка…</div>
     </div>
- 
+
     <!-- curl тест -->
     <div class="card">
       <h2>Тест подключения</h2>
@@ -235,7 +239,7 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
       <div id="curlCmd" style="font-size:10px;color:var(--mut);margin-top:4px;font-family:monospace"></div>
       <div class="log n" id="curlLog"></div>
     </div>
- 
+
     <!-- импорт -->
     <div class="card">
       <h2>Импорт стратегий из JSON</h2>
@@ -247,10 +251,10 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
       </div>
       <div class="log n" id="importLog"></div>
     </div>
- 
+
   </div>
 </div>
- 
+
 <script>
 async function api(path, opts){ return (await fetch(path, opts)).json(); }
 function post(path, data){
@@ -260,15 +264,15 @@ function showLog(id, text, cls){
   const el = document.getElementById(id);
   el.style.display = 'block'; el.className = 'log ' + (cls||'n'); el.textContent = text;
 }
- 
+
 // ── pool status ───────────────────────────────────────────────────────────
 let _allStrategies = [];
 let _poolEnabled   = false;
- 
+
 async function refreshPool(){
   const s = await api('/api/pool/status');
   _poolEnabled = s.enabled;
- 
+
   // state badge
   const stateEl = document.getElementById('poolState');
   stateEl.textContent = {
@@ -276,12 +280,12 @@ async function refreshPool(){
     replacing:'Замена…'
   }[s.state] || s.state;
   stateEl.className = 'pool-state ' + (s.state || 'idle');
- 
+
   // toggle
   const tog = document.getElementById('poolToggle');
   tog.textContent = s.enabled ? 'Авто вкл' : 'Вкл авто';
   tog.className = 'btn sm ' + (s.enabled ? 'tog-on' : 'tog-off');
- 
+
   // settings sync (только если не редактируем)
   const fields = {cfgPoolSize:'pool_size', cfgInterval:'check_interval',
                   cfgThreshold:'fail_threshold', cfgUrl:'test_url'};
@@ -289,14 +293,14 @@ async function refreshPool(){
     const el = document.getElementById(id);
     if(el.dataset.dirty !== '1' && s[key] !== undefined) el.value = s[key];
   });
- 
+
   // slots grid
   renderSlots(s.slots || []);
- 
+
   // strategy list badges
   updateStrategyBadges(s.slots || []);
 }
- 
+
 function renderSlots(slots){
   const grid = document.getElementById('slotsGrid');
   if(!slots.length){
@@ -310,7 +314,7 @@ function renderSlots(slots){
     const cls = ok ? 'ok' : (bad ? 'fail' : 'unknown');
     const statusText = ok ? '✓ Работает' : (bad ? '✗ Не работает' : '— Проверяется');
     const statusCls  = ok ? 'ok' : (bad ? 'fail' : 'unknown');
- 
+
     const el = document.createElement('div');
     el.className = 'slot ' + cls;
     el.innerHTML =
@@ -328,7 +332,7 @@ function renderSlots(slots){
     grid.appendChild(el);
   }
 }
- 
+
 function updateStrategyBadges(slots){
   const inUse = {};
   slots.forEach(s => { if(s.strategy) inUse[s.strategy] = s.healthy; });
@@ -345,7 +349,7 @@ function updateStrategyBadges(slots){
     }
   });
 }
- 
+
 // ── pool log ──────────────────────────────────────────────────────────────
 let _logLen = 0;
 async function refreshLog(){
@@ -360,39 +364,39 @@ async function refreshLog(){
     '<span class="msg">' + e.msg + '</span></div>'
   ).join('');
 }
- 
+
 function clearLog(){ document.getElementById('poolLog').innerHTML='<div style="color:var(--mut)">—</div>'; _logLen=0; }
- 
+
 // ── pool controls ─────────────────────────────────────────────────────────
 async function togglePool(){
   await post('/api/pool/enable', {enabled: !_poolEnabled});
   refreshPool(); setTimeout(refreshLog, 500);
 }
- 
+
 async function addSlot(){
   const r = await post('/api/pool/slot/add', {});
   if(r.error) alert(r.error);
   else { refreshPool(); setTimeout(refreshLog, 300); }
 }
- 
+
 async function removeSlot(index){
   if(!confirm('Убрать слот ' + index + '?')) return;
   await post('/api/pool/slot/remove', {index});
   refreshPool(); setTimeout(refreshLog, 300);
 }
- 
+
 async function changeSlotStrategy(index, strategy){
   if(!strategy) return;
   const r = await post('/api/pool/slot/set', {index, strategy});
   if(r.error) alert(r.error);
   setTimeout(()=>{ refreshPool(); refreshLog(); }, 400);
 }
- 
+
 async function forceCheck(){
   await post('/api/pool/check', {});
   setTimeout(()=>{ refreshPool(); refreshLog(); }, 800);
 }
- 
+
 async function savePoolCfg(){
   const cfg = {
     pool_size:      +document.getElementById('cfgPoolSize').value,
@@ -407,11 +411,11 @@ async function savePoolCfg(){
   saved.style.display = 'inline'; setTimeout(()=> saved.style.display='none', 2000);
   refreshPool();
 }
- 
+
 ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl'].forEach(id =>
   document.getElementById(id).addEventListener('input', () =>
     document.getElementById(id).dataset.dirty = '1'));
- 
+
 // ── strategies list ───────────────────────────────────────────────────────
 async function loadStrategies(){
   const data = await api('/api/strategies');
@@ -430,7 +434,7 @@ async function loadStrategies(){
     box.appendChild(el);
   }
 }
- 
+
 // ── config ────────────────────────────────────────────────────────────────
 async function refreshCfg(){
   document.getElementById('cfgTs').textContent = '…';
@@ -439,7 +443,7 @@ async function refreshCfg(){
   document.getElementById('configBox').textContent = c.raw || '(пусто)';
   document.getElementById('cfgTs').textContent = new Date().toLocaleTimeString();
 }
- 
+
 // ── connections ───────────────────────────────────────────────────────────
 async function refreshConnections(){
   const d = await api('/api/connections');
@@ -454,7 +458,7 @@ async function refreshConnections(){
   rip('ssIps', d.ss); rip('socksIps', d.socks);
   document.getElementById('connTs').textContent = new Date().toLocaleTimeString();
 }
- 
+
 // ── curl ──────────────────────────────────────────────────────────────────
 function updateCurlCmd(){
   const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
@@ -468,7 +472,7 @@ async function runCurl(){
   const r = await post('/api/test-curl',{url, socks_port:port});
   showLog('curlLog',(r.ok?'✅ OK':'❌ FAIL')+' (rc='+r.rc+')\n\n'+(r.output||''),r.ok?'ok':'err');
 }
- 
+
 // ── import ────────────────────────────────────────────────────────────────
 async function importJson(){
   const raw = document.getElementById('jsonInput').value.trim();
@@ -484,7 +488,7 @@ async function importJson(){
   showLog('importLog', txt.trim(), r.ok?'ok':'err');
   if(r.ok) loadStrategies();
 }
- 
+
 // ── init & polling ────────────────────────────────────────────────────────
 (async()=>{
   updateCurlCmd();
