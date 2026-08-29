@@ -13,23 +13,26 @@ PoolManager только перезаписывает /run/zapret-pool/size и �
 когда меняется размер пула.
 """
 
-import os, re, signal, subprocess, threading, time
+import os, re, signal, subprocess, threading, time, socket
 
 NFQWS2_BIN     = "/opt/zapret2/nfq2/nfqws2"
 ZAPRET_INIT    = "/opt/zapret2/init.d/sysv/zapret2"
 POOL_RUN_DIR   = "/run/zapret-pool"
 QNUM_BASE      = 300
 MAX_SLOTS      = 10
+TEST_SOCKS_BASE = 2300   # временные ss-local порты: 2300, 2301, ...
 
-# Из functions: NFQWS2_OPT_BASE добавляется автоматически zapret2.
-# Мы запускаем nfqws2 напрямую — берём те же базовые опции.
 LUAOPT = (
     "--lua-init=@/opt/zapret2/lua/zapret-lib.lua "
     "--lua-init=@/opt/zapret2/lua/zapret-antidpi.lua "
     "--lua-init=@/opt/zapret2/lua/zapret-auto.lua"
 )
-DESYNC_MARK    = os.environ.get("DESYNC_MARK", "0x40000000")
-WS_USER        = "nobody"
+DESYNC_MARK = os.environ.get("DESYNC_MARK", "0x40000000")
+WS_USER     = "nobody"
+
+_SS_SERVER_PORT = None   # выставляется из main()
+_SS_PASSWORD    = None
+_SS_METHOD      = None
 
 
 class Slot:
@@ -127,6 +130,96 @@ class PoolManager:
             slot = self._find(index)
             if slot:
                 slot.healthy = healthy
+
+    def test_slot_isolated(self, index, url, timeout=12):
+        """
+        Изолированно тестирует один слот:
+          1. Добавляет временное iptables правило: sport=TEST_SOCKS_BASE+index → NFQUEUE index
+          2. Запускает временный ss-local на порту TEST_SOCKS_BASE+index
+          3. Делает curl через этот ss-local
+          4. Убирает правило и процесс
+        Возвращает {"ok": bool, "rc": int, "output": str}
+        """
+        if _SS_SERVER_PORT is None:
+            return {"ok": False, "rc": -1, "output": "SS_SERVER_PORT не задан"}
+
+        test_port = TEST_SOCKS_BASE + index
+        qnum      = QNUM_BASE + index
+
+        # 1. Временное iptables правило: пакеты от test_port → строго NFQUEUE qnum
+        #    Ставим с наивысшим приоритетом (INSERT) чтобы перекрыть random правила
+        ipt_rule = [
+            "POSTROUTING", "-t", "mangle",
+            "-p", "tcp",
+            "--sport", str(test_port),
+            "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+        ]
+        def ipt(op):
+            for cmd in (["iptables"], ["ip6tables"]):
+                subprocess.run(cmd + [op] + ipt_rule,
+                               capture_output=True, timeout=5)
+
+        ipt("-I")
+
+        # 2. Временный ss-local
+        ss_proc = None
+        if _SS_PASSWORD and _SS_METHOD:
+            ss_cmd = [
+                "ss-local",
+                "-b", "127.0.0.1",
+                "-l", str(test_port),
+                "-s", "127.0.0.1",
+                "-p", str(_SS_SERVER_PORT),
+                "-k", _SS_PASSWORD,
+                "-m", _SS_METHOD,
+                "-t", "10",
+            ]
+            try:
+                ss_proc = subprocess.Popen(
+                    ss_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(1.5)   # ждём пока ss-local поднимется
+            except Exception as e:
+                ipt("-D")
+                return {"ok": False, "rc": -1, "output": "ss-local: %s" % e}
+        else:
+            # ss параметры неизвестны — тестируем через основной SOCKS порт
+            # (менее точно, но лучше чем ничего)
+            ipt("-D")
+            return {"ok": False, "rc": -1,
+                    "output": "SS_PASSWORD/SS_METHOD не заданы — изолированный тест недоступен"}
+
+        # 3. curl через временный ss-local
+        cmd = [
+            "curl", "-x", "socks5h://127.0.0.1:%d" % test_port,
+            url, "-I",
+            "--max-time", str(timeout),
+            "--connect-timeout", "8",
+            "-s", "-S",
+        ]
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
+            out = (p.stdout or "") + (p.stderr or "")
+            ok  = p.returncode == 0 and bool(re.search(r"HTTP/\S+ [23]", p.stdout))
+            result = {"ok": ok, "rc": p.returncode, "output": out.strip()}
+        except subprocess.TimeoutExpired:
+            result = {"ok": False, "rc": -1, "output": "Таймаут %dс" % timeout}
+        except Exception as e:
+            result = {"ok": False, "rc": -1, "output": str(e)}
+
+        # 4. Cleanup
+        if ss_proc:
+            try:
+                ss_proc.terminate()
+                ss_proc.wait(timeout=3)
+            except Exception:
+                try: ss_proc.kill()
+                except Exception: pass
+        ipt("-D")
+
+        return result
 
     def stop_all(self):
         with self._lock:

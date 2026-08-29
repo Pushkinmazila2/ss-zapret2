@@ -45,6 +45,8 @@ python3 /opt/zapret2/panel/server.py \
   --port        "${PANEL_PORT}" \
   --ss-port     "${SS_PORT}" \
   --socks-port  "${SOCKS_PORT}" \
+  --ss-password "${SS_PASSWORD}" \
+  --ss-method   "${SS_ENCRYPT_METHOD}" \
   --restart-cmd "/opt/zapret2/init.d/sysv/zapret2 restart-daemons" \
   2>&1 | awk '{print "[PANEL] " $0; fflush()}' &
 PANEL_PID=$!

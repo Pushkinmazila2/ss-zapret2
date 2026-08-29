@@ -8,6 +8,7 @@ import sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pool_manager as _pm
 from pool_manager import PoolManager, MAX_SLOTS
 
 # ── globals ────────────────────────────────────────────────────────────────
@@ -114,18 +115,13 @@ def restart_zapret():
     except Exception as e:
         return {"rc": -1, "stdout": "", "stderr": str(e)}
 
-def run_curl(port, url, timeout=15, mark=None):
+def run_curl(port, url, timeout=15):
     cmd = ["curl", "-x", "socks5h://127.0.0.1:%d" % port,
            url, "-I", "--max-time", str(timeout), "--connect-timeout", "8", "-s", "-S"]
-    
-    # Добавляем маркер файрвола для изоляции трафика внутри пула
-    if mark is not None:
-        cmd.extend(["--interface", "fwmark:%d" % mark])
-        
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
         out = (p.stdout or "") + (p.stderr or "")
-        ok  = p.returncode == 0 and bool(re.search(r"HTTP/\S+", p.stdout))
+        ok  = p.returncode == 0 and bool(re.search(r"HTTP/\S+ [23]", p.stdout))
         return {"ok": ok, "rc": p.returncode, "output": out.strip()}
     except FileNotFoundError:
         return {"ok": False, "rc": -1, "output": "curl не найден"}
@@ -331,14 +327,13 @@ class PoolSwitcher:
             return s["name"], s["nfqws_opt"]
 
     def _check_all_slots(self):
-        """Тестирует каждый активный слот и заменяет нерабочие."""
+        """Тестирует каждый активный слот изолированно."""
         pool_status = self._pool.get_status()
         if not pool_status:
             return
 
         with self._lock:
             url       = self.test_url
-            port      = SOCKS_PORT or 1181
             threshold = self.fail_threshold
             enabled   = self.enabled
 
@@ -353,14 +348,10 @@ class PoolSwitcher:
             if not slot_info["alive"]:
                 continue
             idx  = slot_info["index"]
-            qnum = slot_info["qnum"]
             name = slot_info["strategy"] or "slot%d" % idx
 
-            # Вычисляем марку для iptables хука (1000 + qnum)
-            test_mark = 1000 + qnum
-
-            # Передаем маркер в curl, чтобы принудительно направить трафик в этот слот
-            result = run_curl(port, url, timeout=12, mark=test_mark)
+            # Изолированный тест — трафик идёт строго через NFQUEUE этого слота
+            result = self._pool.test_slot_isolated(idx, url)
             self._pool.set_slot_health(idx, result["ok"])
 
             if result["ok"]:
@@ -372,15 +363,15 @@ class PoolSwitcher:
                     self._slot_fails[idx] = self._slot_fails.get(idx, 0) + 1
                     fails = self._slot_fails[idx]
                 self._log_event("warn",
-                    "✗ Слот %d «%s» (rc=%d, провалов: %d/%d)" % (
-                        idx, name, result["rc"], fails, threshold))
+                    "✗ Слот %d «%s» (rc=%d, провалов: %d/%d) %s" % (
+                        idx, name, result["rc"], fails, threshold,
+                        (result["output"] or "")[:60]))
                 all_ok = False
                 if fails >= threshold:
                     self._replace_slot(idx, name)
 
         with self._lock:
             self.state = "ok" if all_ok else "degraded"
-
 
     def _replace_slot(self, index, old_name):
         """Тихо заменяет стратегию в слоте без остановки трафика."""
@@ -603,6 +594,8 @@ def main():
     ap.add_argument("--host",         default="0.0.0.0")
     ap.add_argument("--ss-port",      type=int, default=8388)
     ap.add_argument("--socks-port",   type=int, default=1080)
+    ap.add_argument("--ss-password",  default=os.environ.get("SS_PASSWORD", ""))
+    ap.add_argument("--ss-method",    default=os.environ.get("SS_ENCRYPT_METHOD", "chacha20-ietf-poly1305"))
     ap.add_argument("--restart-cmd",
                     default="/opt/zapret2/init.d/sysv/zapret2 restart-daemons")
     args = ap.parse_args()
@@ -614,6 +607,11 @@ def main():
     RESTART_CMD = args.restart_cmd
     SOCKS_PORT  = args.socks_port
     SS_PORT     = args.ss_port
+
+    # Передаём SS параметры в pool_manager для изолированных тестов
+    _pm._SS_SERVER_PORT = args.ss_port
+    _pm._SS_PASSWORD    = args.ss_password
+    _pm._SS_METHOD      = args.ss_method
 
     def _log(lvl, msg):
         print("[pool][%s] %s" % (lvl.upper(), msg), flush=True)
