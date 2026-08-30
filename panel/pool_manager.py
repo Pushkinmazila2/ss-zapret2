@@ -507,37 +507,48 @@ class PoolManager:
                           "--probability", prob,
                           "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass")
 
-        # 4. Вешаем ZAPRET_POOL в POSTROUTING
-        common = [
-            "-m", "mark", "!", "--mark", "%s/%s" % (desync_mark, desync_mark),
-            "-m", "connbytes", "--connbytes-mode", "packets",
-            "--connbytes-dir", "original",
-            "!", "-m", "set",
-        ]
-
-        for ipset_tcp, ipset_udp, ipset_nz, cmd in [
-            ("zport_tcp",  "zport_udp",  "nozapret",  "iptables"),
-            ("zport_tcp6", "zport_udp6", "nozapret6", "ip6tables"),
+        # 4. Вешаем ZAPRET_POOL в POSTROUTING — копируем точный формат
+        #    существующих правил (num 2 и 3 из вывода iptables)
+        #    и заменяем -j NFQUEUE --queue-num 300 на -j ZAPRET_POOL
+        for cmd, ipset_tcp, ipset_udp, ipset_nz, ipset_nz6 in [
+            ("iptables",  "zport_tcp",  "zport_udp",  "nozapret",  None),
+            ("ip6tables", "zport_tcp6", "zport_udp6", "nozapret6", None),
         ]:
+            nz = ipset_nz
+            # TCP
             try:
-                subprocess.run(
-                    [cmd, "-t", "mangle", "-A", "POSTROUTING",
-                     "-m", "set", "--match-set", ipset_tcp, "dst"] +
-                    common +
-                    ["--connbytes", "1:%s" % tcp_pkt_out,
-                     "--match-set", ipset_nz, "dst",
-                     "-j", "ZAPRET_POOL"],
-                    capture_output=True, timeout=5)
-                subprocess.run(
-                    [cmd, "-t", "mangle", "-A", "POSTROUTING",
-                     "-m", "set", "--match-set", ipset_udp, "dst"] +
-                    common +
-                    ["--connbytes", "1:%s" % udp_pkt_out,
-                     "--match-set", ipset_nz, "dst",
-                     "-j", "ZAPRET_POOL"],
-                    capture_output=True, timeout=5)
+                r = subprocess.run([
+                    cmd, "-t", "mangle", "-A", "POSTROUTING",
+                    "-m", "mark", "!", "--mark", "%s/%s" % (desync_mark, desync_mark),
+                    "-m", "set", "--match-set", ipset_tcp, "dst",
+                    "-m", "connbytes", "--connbytes", "1:%s" % tcp_pkt_out,
+                    "--connbytes-mode", "packets", "--connbytes-dir", "original",
+                    "-m", "set", "--match-set", nz, "dst", "!",
+                    "-j", "ZAPRET_POOL"
+                ], capture_output=True, text=True, timeout=5)
+                if r.returncode != 0:
+                    self._log("error", "%s TCP rc=%d: %s" % (cmd, r.returncode, r.stderr.strip()))
+                else:
+                    self._log("info", "%s TCP POSTROUTING → ZAPRET_POOL OK" % cmd)
             except Exception as e:
-                self._log("error", "POSTROUTING rule: %s" % e)
+                self._log("error", "%s TCP POSTROUTING: %s" % (cmd, e))
+            # UDP
+            try:
+                r = subprocess.run([
+                    cmd, "-t", "mangle", "-A", "POSTROUTING",
+                    "-m", "mark", "!", "--mark", "%s/%s" % (desync_mark, desync_mark),
+                    "-m", "set", "--match-set", ipset_udp, "dst",
+                    "-m", "connbytes", "--connbytes", "1:%s" % udp_pkt_out,
+                    "--connbytes-mode", "packets", "--connbytes-dir", "original",
+                    "-m", "set", "--match-set", nz, "dst", "!",
+                    "-j", "ZAPRET_POOL"
+                ], capture_output=True, text=True, timeout=5)
+                if r.returncode != 0:
+                    self._log("error", "%s UDP rc=%d: %s" % (cmd, r.returncode, r.stderr.strip()))
+                else:
+                    self._log("info", "%s UDP POSTROUTING → ZAPRET_POOL OK" % cmd)
+            except Exception as e:
+                self._log("error", "%s UDP POSTROUTING: %s" % (cmd, e))
 
         self._log("info", "ZAPRET_POOL создана: %d слот(ов) qnum=%s" % (
             n, active_qnums))
