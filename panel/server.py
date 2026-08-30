@@ -365,17 +365,43 @@ class PoolSwitcher:
         with self._lock:
             self.enabled = bool(enabled)
         if self.enabled:
-            # Отключаем стандартный nfqws2, включаем custom.d
+            # 1. Пишем в config: отключаем стандартный nfqws2, включаем custom.d
             lines = read_lines()
             ensure_pool_mode(lines)
             write_lines(lines)
-            restart_zapret()
+
+            # 2. Останавливаем демоны (убивает стандартный nfqws2)
+            subprocess.run(
+                "/opt/zapret2/init.d/sysv/zapret2 stop-daemons",
+                shell=True, capture_output=True, timeout=30)
+            self._log_event("info", "Стандартный nfqws2 остановлен")
+
+            # 3. Перезапускаем firewall — теперь он подхватит custom.d с ZAPRET_POOL
+            subprocess.run(
+                "/opt/zapret2/init.d/sysv/zapret2 restart-fw",
+                shell=True, capture_output=True, timeout=30)
+            self._log_event("info", "Firewall перезагружен с ZAPRET_POOL")
+
+            # 4. Заполняем пул нашими nfqws2
             self._ensure_pool_filled()
             self._ensure_running()
         else:
             self._stop_evt.set()
-        self._log_event("info", "Пул %s (режим: %s)" % (
-            "запущен" if self.enabled else "остановлен", self.mode))
+            # Останавливаем все слоты пула
+            self._pool.stop_all()
+            # Возвращаем стандартный режим zapret2
+            lines = read_lines()
+            def _set(key, val):
+                pat = re.compile(r"^" + re.escape(key) + r"=")
+                for i, ln in enumerate(lines):
+                    if pat.match(ln): lines[i] = key + "=" + val; return
+                lines.append(key + "=" + val)
+            _set("NFQWS2_ENABLE", "1")
+            write_lines(lines)
+            restart_zapret()
+            self._log_event("info", "Стандартный режим zapret2 восстановлен")
+
+        self._log_event("info", "Пул %s" % ("запущен" if self.enabled else "остановлен"))
         return self.get_status()
 
     def force_check(self):

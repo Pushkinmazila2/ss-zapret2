@@ -382,15 +382,16 @@ class PoolManager:
             self._log("warn", "write slots: %s" % e)
 
     def _reload_fw(self):
-        """Перегружает iptables правила пула (вызывает zapret2 restart-fw)."""
+        """Перегружает только iptables правила пула (restart-fw)."""
         try:
             r = subprocess.run(
-                [ZAPRET_INIT, "restart-fw"],
-                capture_output=True, text=True, timeout=30
+                "/opt/zapret2/init.d/sysv/zapret2 restart-fw",
+                shell=True, capture_output=True, text=True, timeout=30
             )
             if r.returncode != 0:
                 self._log("warn", "restart-fw rc=%d: %s" % (r.returncode, r.stderr.strip()[:120]))
             else:
-                self._log("info", "Firewall перегружен (пул: %d слотов)" % len(self._slots))
+                active = [s.qnum for s in self._slots if s.is_alive() and not s._fw_excluded]
+                self._log("info", "Firewall обновлён — активных слотов: %s" % active)
         except Exception as e:
             self._log("error", "reload_fw: %s" % e)
