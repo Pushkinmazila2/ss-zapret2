@@ -412,17 +412,132 @@ class PoolManager:
         except Exception as e:
             self._log("warn", "write slots: %s" % e)
 
-    def _reload_fw(self):
-        """Перегружает только iptables правила пула (restart-fw)."""
+    def _ipt(self, *args):
+        """Выполнить iptables + ip6tables команду. Ошибки игнорируем."""
+        for cmd in ("iptables", "ip6tables"):
+            try:
+                subprocess.run([cmd] + list(args),
+                               capture_output=True, timeout=5)
+            except Exception:
+                pass
+
+    def _ipt4(self, *args):
+        """Только iptables."""
         try:
-            r = subprocess.run(
-                "/opt/zapret2/init.d/sysv/zapret2 restart-fw",
-                shell=True, capture_output=True, text=True, timeout=30
-            )
-            if r.returncode != 0:
-                self._log("warn", "restart-fw rc=%d: %s" % (r.returncode, r.stderr.strip()[:120]))
+            subprocess.run(["iptables"] + list(args),
+                           capture_output=True, timeout=5)
+        except Exception:
+            pass
+
+    def _reload_fw(self):
+        """
+        Управляем iptables напрямую из Python — без custom.d.
+
+        Алгоритм:
+          1. Удаляем старые правила POSTROUTING → NFQUEUE (стандартные qnum=300
+             и наши ZAPRET_POOL если были).
+          2. Удаляем цепочку ZAPRET_POOL.
+          3. Создаём ZAPRET_POOL с random-распределением по активным слотам.
+          4. Вешаем ZAPRET_POOL в POSTROUTING с теми же условиями что zapret2.
+        """
+        desync_mark = os.environ.get("DESYNC_MARK", "0x40000000")
+        tcp_pkt_out = os.environ.get("NFQWS2_TCP_PKT_OUT", "20")
+        udp_pkt_out = os.environ.get("NFQWS2_UDP_PKT_OUT", "5")
+
+        with self._lock:
+            active_qnums = [s.qnum for s in self._slots
+                            if s.is_alive() and not s._fw_excluded]
+
+        # 1. Убираем все наши правила из POSTROUTING (и к ZAPRET_POOL и к NFQUEUE 300)
+        #    Делаем это повторно пока есть что удалять
+        for _ in range(5):
+            r4 = subprocess.run(
+                ["iptables", "-t", "mangle", "-D", "POSTROUTING",
+                 "-j", "ZAPRET_POOL"],
+                capture_output=True)
+            r6 = subprocess.run(
+                ["ip6tables", "-t", "mangle", "-D", "POSTROUTING",
+                 "-j", "ZAPRET_POOL"],
+                capture_output=True)
+            if r4.returncode != 0 and r6.returncode != 0:
+                break
+
+        # Убираем стандартные правила NFQUEUE 300 если остались
+        # (могут быть от zapret2 restart-fw)
+        for ipset_tcp, ipset_udp, cmd in [
+            ("zport_tcp", "zport_udp", "iptables"),
+            ("zport_tcp6", "zport_udp6", "ip6tables"),
+        ]:
+            for ipset, pkt_out in [(ipset_tcp, tcp_pkt_out), (ipset_udp, udp_pkt_out)]:
+                for _ in range(3):
+                    r = subprocess.run(
+                        [cmd, "-t", "mangle", "-D", "POSTROUTING",
+                         "-m", "mark", "!", "--mark", "%s/%s" % (desync_mark, desync_mark),
+                         "-m", "set", "--match-set", ipset, "dst",
+                         "-m", "connbytes", "--connbytes", "1:%s" % pkt_out,
+                         "--connbytes-mode", "packets", "--connbytes-dir", "original",
+                         "!", "-m", "set", "--match-set",
+                         "nozapret" if "6" not in ipset else "nozapret6", "dst",
+                         "-j", "NFQUEUE", "--queue-num", "300", "--queue-bypass"],
+                        capture_output=True)
+                    if r.returncode != 0:
+                        break
+
+        # 2. Пересоздаём цепочку ZAPRET_POOL
+        self._ipt("-t", "mangle", "-F", "ZAPRET_POOL")
+        self._ipt("-t", "mangle", "-X", "ZAPRET_POOL")
+
+        if not active_qnums:
+            self._log("warn", "Нет активных слотов — ZAPRET_POOL не создана")
+            return
+
+        self._ipt("-t", "mangle", "-N", "ZAPRET_POOL")
+
+        # 3. Заполняем ZAPRET_POOL random-правилами
+        n = len(active_qnums)
+        for i, qnum in enumerate(active_qnums):
+            remaining = n - i
+            if remaining == 1:
+                self._ipt("-t", "mangle", "-A", "ZAPRET_POOL",
+                          "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass")
             else:
-                active = [s.qnum for s in self._slots if s.is_alive() and not s._fw_excluded]
-                self._log("info", "Firewall обновлён — активных слотов: %s" % active)
-        except Exception as e:
-            self._log("error", "reload_fw: %s" % e)
+                prob = "%.6f" % (1.0 / remaining)
+                self._ipt("-t", "mangle", "-A", "ZAPRET_POOL",
+                          "-m", "statistic", "--mode", "random",
+                          "--probability", prob,
+                          "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass")
+
+        # 4. Вешаем ZAPRET_POOL в POSTROUTING
+        common = [
+            "-m", "mark", "!", "--mark", "%s/%s" % (desync_mark, desync_mark),
+            "-m", "connbytes", "--connbytes-mode", "packets",
+            "--connbytes-dir", "original",
+            "!", "-m", "set",
+        ]
+
+        for ipset_tcp, ipset_udp, ipset_nz, cmd in [
+            ("zport_tcp",  "zport_udp",  "nozapret",  "iptables"),
+            ("zport_tcp6", "zport_udp6", "nozapret6", "ip6tables"),
+        ]:
+            try:
+                subprocess.run(
+                    [cmd, "-t", "mangle", "-A", "POSTROUTING",
+                     "-m", "set", "--match-set", ipset_tcp, "dst"] +
+                    common +
+                    ["--connbytes", "1:%s" % tcp_pkt_out,
+                     "--match-set", ipset_nz, "dst",
+                     "-j", "ZAPRET_POOL"],
+                    capture_output=True, timeout=5)
+                subprocess.run(
+                    [cmd, "-t", "mangle", "-A", "POSTROUTING",
+                     "-m", "set", "--match-set", ipset_udp, "dst"] +
+                    common +
+                    ["--connbytes", "1:%s" % udp_pkt_out,
+                     "--match-set", ipset_nz, "dst",
+                     "-j", "ZAPRET_POOL"],
+                    capture_output=True, timeout=5)
+            except Exception as e:
+                self._log("error", "POSTROUTING rule: %s" % e)
+
+        self._log("info", "ZAPRET_POOL создана: %d слот(ов) qnum=%s" % (
+            n, active_qnums))
