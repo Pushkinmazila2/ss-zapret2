@@ -448,8 +448,9 @@ class PoolManager:
             r = subprocess.run(["ipset", "list", name], capture_output=True)
             return r.returncode == 0
 
-        # --- 1. Очистка старых правил POSTROUTING ---> ZAPRET_POOL ---
+        # --- 1. Очистка старых правил POSTROUTING (ГРАМОТНАЯ) ---
         for cmd in ["iptables", "ip6tables"]:
+            # Удаляем ВСЕ упоминания ZAPRET_POOL из POSTROUTING
             while True:
                 r = subprocess.run(
                     [cmd, "-t", "mangle", "-D", "POSTROUTING", "-j", "ZAPRET_POOL"],
@@ -458,7 +459,7 @@ class PoolManager:
                 if r.returncode != 0:
                     break
 
-        # Очистка старых правил NFQUEUE 300
+        # Конфигурация для зачистки стандартной очереди 300 (оригинального zapret2)
         configs = [
             {"cmd": "iptables",  "tcp": "zport_tcp",  "udp": "zport_udp",  "nz": "nozapret"},
             {"cmd": "ip6tables", "tcp": "zport_tcp6", "udp": "zport_udp6", "nz": "nozapret6"}
@@ -468,15 +469,10 @@ class PoolManager:
             cmd = conf["cmd"]
             nz_set = conf["nz"]
             
-            # Если базовые сеты не существуют в системе, то и правил таких в iptables нет — пропускаем
-            if not _ipset_exists(conf["tcp"]) and not _ipset_exists(conf["udp"]):
-                continue
-
+            # Чистим старые правила для TCP и UDP (очередь 300)
             for ipset, pkt_out in [(conf["tcp"], tcp_pkt_out), (conf["udp"], udp_pkt_out)]:
-                if not _ipset_exists(ipset):
-                    continue
                 while True:
-                    # ВАЖНО: "!" ставится ПОСЛЕ "-m set"
+                    # ВАЖНО: Синтаксис "ПОСЛЕ -m set" должен строго соответствовать тому, как его ставит система!
                     r = subprocess.run([
                         cmd, "-t", "mangle", "-D", "POSTROUTING",
                         "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
