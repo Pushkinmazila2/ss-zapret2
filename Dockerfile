@@ -44,7 +44,7 @@ RUN cp -a ${ZAPRET_SRC}/init.d ${ZAPRET_SRC}/common ${ZAPRET_SRC}/ipset ${ZAPRET
     find init.d -mindepth 1 -maxdepth 1 -type d \
       ! -name "sysv" \
       ! -name "files" \
-      ! -name "custom.d.examples.*" \
+      ! -name "custom.d.examples.linux.dist" \
       -exec rm -rf {} +
 
 RUN ZAPRET_BASE=${ZAPRET_BUILD} ${ZAPRET_SRC}/install_bin.sh

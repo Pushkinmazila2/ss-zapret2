@@ -72,11 +72,23 @@ class PoolManager:
 
     def get_traffic_stats(self):
         """
-        Читает счётчики пакетов/байт из цепочки ZAPRET_POOL.
-        Возвращает dict: qnum → {pkts, bytes, pkts_delta, bytes_delta}
+        Счётчики активности слотов.
+        Источник 1: iptables ZAPRET_POOL (pkts + bytes) — когда цепочка есть.
+        Источник 2: /proc/net/netfilter/nfnetlink_queue (pkts total) — всегда доступен.
         Дельта считается относительно предыдущего вызова.
         """
-        raw = self._read_zapret_pool_counters()
+        raw_ipt  = self._read_zapret_pool_counters()   # qnum → (pkts, bytes)
+        raw_nfq  = self._read_nfnetlink_queue()         # qnum → pkts_total
+
+        # Объединяем: предпочитаем iptables (есть bytes), fallback на nfnetlink
+        raw = {}
+        all_qnums = set(raw_ipt) | set(raw_nfq)
+        for q in all_qnums:
+            if q in raw_ipt:
+                raw[q] = raw_ipt[q]          # (pkts, bytes)
+            else:
+                raw[q] = (raw_nfq[q], 0)     # (pkts, 0 bytes)
+
         now = time.time()
         result = {}
         with self._lock:
@@ -95,9 +107,30 @@ class PoolManager:
                     "bytes_delta": dbyt,
                     "kbps":       round(dbyt * 8 / 1024 / dt, 1),
                     "pps":        round(dpkts / dt, 1),
+                    "source":     "iptables" if qnum in raw_ipt else "nfnetlink",
                 }
-            self._prev_counters    = raw
+            self._prev_counters     = raw
             self._prev_counter_time = now
+        return result
+
+    def _read_nfnetlink_queue(self):
+        """
+        Читает /proc/net/netfilter/nfnetlink_queue.
+        Формат: queue_num  pid  copy_mode  copy_range  total_pkts  ...
+        Колонка 5 (индекс 4) — total пакетов через очередь.
+        """
+        result = {}
+        try:
+            with open("/proc/net/netfilter/nfnetlink_queue") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) < 5:
+                        continue
+                    qnum = int(parts[0])
+                    pkts = int(parts[4])
+                    result[qnum] = pkts
+        except Exception:
+            pass
         return result
 
     def _read_zapret_pool_counters(self):
@@ -109,13 +142,11 @@ class PoolManager:
                 capture_output=True, text=True, timeout=5
             )
             for line in p.stdout.splitlines():
-                # Строка вида:  pkts bytes target ... NFQUEUE num 300 bypass
                 m = re.search(r"^\s*(\d+)\s+(\d+)\s+NFQUEUE.*?num\s+(\d+)", line)
                 if m:
-                    pkts  = int(m.group(1))
-                    byt   = int(m.group(2))
-                    qnum  = int(m.group(3))
-                    # Суммируем если один qnum встречается несколько раз (ipv4+ipv6)
+                    pkts = int(m.group(1))
+                    byt  = int(m.group(2))
+                    qnum = int(m.group(3))
                     existing = result.get(qnum, (0, 0))
                     result[qnum] = (existing[0] + pkts, existing[1] + byt)
         except Exception:
