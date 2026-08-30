@@ -370,26 +370,24 @@ class PoolSwitcher:
             ensure_pool_mode(lines)
             write_lines(lines)
 
-            # 2. Останавливаем демоны (убивает стандартный nfqws2)
-            subprocess.run(
-                "/opt/zapret2/init.d/sysv/zapret2 stop-daemons",
-                shell=True, capture_output=True, timeout=30)
-            self._log_event("info", "Стандартный nfqws2 остановлен")
+            # 2. Убиваем все nfqws2 процессы запущенные от tpws (стандартный демон)
+            r = subprocess.run("pkill -u tpws nfqws2", shell=True, timeout=5)
+            self._log_event("info", "pkill tpws nfqws2 rc=%d" % r.returncode)
 
-            # 3. Перезапускаем firewall — теперь он подхватит custom.d с ZAPRET_POOL
+            # 3. Заполняем пул — slots файл записывается при старте каждого слота
+            self._ensure_pool_filled()
+
+            # 4. Только теперь reload fw — slots файл уже содержит актуальные qnum
             subprocess.run(
                 "/opt/zapret2/init.d/sysv/zapret2 restart-fw",
                 shell=True, capture_output=True, timeout=30)
             self._log_event("info", "Firewall перезагружен с ZAPRET_POOL")
 
-            # 4. Заполняем пул нашими nfqws2
-            self._ensure_pool_filled()
             self._ensure_running()
         else:
             self._stop_evt.set()
-            # Останавливаем все слоты пула
             self._pool.stop_all()
-            # Возвращаем стандартный режим zapret2
+            # Возвращаем стандартный режим
             lines = read_lines()
             def _set(key, val):
                 pat = re.compile(r"^" + re.escape(key) + r"=")
