@@ -80,6 +80,25 @@ header h1{font-size:15px;font-weight:700;}
 .tbar.live{background:var(--ok);}
 .tbar-label{font-size:10px;color:var(--mut);font-family:monospace;}
 
+/* slot live badge */
+.slot-live{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;
+  border-radius:5px;margin-top:5px;}
+.slot-live.on {background:var(--ok-dim);color:var(--ok);}
+.slot-live.off{background:rgba(255,255,255,.05);color:var(--mut);}
+
+/* traffic ribbon */
+.tf-ribbon{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;margin:10px 0;display:flex;flex-direction:column;gap:6px;}
+.tf-top{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.06em;}
+.tf-top .tf-conns{margin-left:auto;color:var(--tx);text-transform:none;letter-spacing:0;}
+.tf-bars{display:flex;gap:3px;height:14px;align-items:stretch;}
+.tf-seg{border-radius:3px;background:rgba(77,163,255,.35);color:#04111f;
+  font-size:9px;font-weight:700;line-height:14px;text-align:center;overflow:hidden;
+  white-space:nowrap;min-width:3px;}
+.tf-seg.live{background:var(--ok);}
+.tf-empty{font-size:11px;color:var(--mut);}
+
 /* reset monitor */
 .mon-bar-wrap{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;margin:6px 0;}
 .mon-bar{height:100%;border-radius:3px;transition:width .6s ease,background .4s;}
@@ -241,6 +260,16 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
         </div>
       </div>
 
+      <!-- активность трафика сейчас -->
+      <div class="tf-ribbon">
+        <div class="tf-top">
+          <span>Трафик сейчас</span>
+          <span style="color:var(--mut)">срезов: <span id="tfCuts" style="color:var(--tx)">0</span></span>
+          <span class="tf-conns">соед. YT: <span id="tfActiveConns" style="color:var(--tx)">—</span></span>
+        </div>
+        <div class="tf-bars" id="tfBars"><span class="tf-empty">нет данных</span></div>
+      </div>
+
       <!-- слоты -->
       <div class="slots-grid" id="slotsGrid">
         <div style="color:var(--mut);font-size:12px;grid-column:1/-1">Пул не запущен</div>
@@ -263,6 +292,25 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
         <div>
           <label>URL для теста</label>
           <input type="text" id="cfgUrl" value="https://www.youtube.com">
+        </div>
+        <div>
+          <label>Ротация при срезе ТСПУ</label>
+          <select id="cfgCutEn">
+            <option value="1">вкл</option>
+            <option value="0">выкл</option>
+          </select>
+        </div>
+        <div>
+          <label>Мин. lifetime среза (сек)</label>
+          <input type="number" id="cfgCutMin" value="30" min="5">
+        </div>
+        <div>
+          <label>Макс. lifetime среза (сек)</label>
+          <input type="number" id="cfgCutMax" value="60" min="10">
+        </div>
+        <div>
+          <label>Cooldown ротации (сек)</label>
+          <input type="number" id="cfgCutCool" value="30" min="0">
         </div>
       </div>
       <div class="row" style="margin-top:6px">
@@ -375,6 +423,7 @@ async function saveMonitorCfg(){
 
 // ── traffic stats ─────────────────────────────────────────────────────────
 let _maxKbps = 1;
+const _qnumToIndex = {};
 
 async function refreshTraffic(){
   const data = await api('/api/pool/traffic');
@@ -382,14 +431,58 @@ async function refreshTraffic(){
   let maxK = 1;
   for(const s of Object.values(data)) if(s.kbps > maxK) maxK = s.kbps;
   _maxKbps = Math.max(_maxKbps * 0.85, maxK, 1);
+
+  let totalDp = 0;
+  for(const s of Object.values(data)) totalDp += (s.pkts_delta || 0);
+
+  // лента «Трафик сейчас» — сегменты по слотам
+  const box = document.getElementById('tfBars');
+  if(box){
+    const rows = Object.values(data).filter(s => s.pkts > 0);
+    const seen = rows.filter(s => (s.pkts_delta || 0) > 0);
+    box.innerHTML = '';
+    if(!rows.length){
+      box.innerHTML = '<span class="tf-empty">нет трафика</span>';
+    } else if(!seen.length){
+      box.innerHTML = '<span class="tf-empty">нет активного трафика (ждём…)</span>';
+    } else {
+      seen.forEach(s => {
+        const idx = _qnumToIndex[s.qnum] !== undefined ? _qnumToIndex[s.qnum] : '?';
+        const share = totalDp > 0 ? ((s.pkts_delta || 0) / totalDp * 100) : 0;
+        const seg = document.createElement('div');
+        seg.className = 'tf-seg live';
+        seg.style.width = Math.max(share, 4).toFixed(1) + '%';
+        seg.title = 'Слот ' + idx + ' · ' + (s.kbps||0).toFixed(1) + ' kbps · ' +
+                    (s.pps||0).toFixed(1) + ' pps · доля ' + share.toFixed(0) + '%';
+        seg.textContent = share >= 10 ? ('С' + idx) : '';
+        box.appendChild(seg);
+      });
+    }
+  }
+
   for(const [qnum, s] of Object.entries(data)){
     const lbl = document.getElementById('tkbps-' + qnum);
     const bar = document.getElementById('tbar-'  + qnum);
     if(!lbl || !bar) continue;
     const pct = Math.min(100, s.kbps / _maxKbps * 100);
-    lbl.textContent  = s.kbps > 0 ? s.kbps.toFixed(1) + ' kbps' : '—';
+    lbl.textContent = s.kbps > 0
+      ? (s.kbps.toFixed(1) + ' kbps' + (s.bytes_estimated ? '~' : ''))
+      : '—';
     bar.style.width  = pct.toFixed(1) + '%';
     bar.className    = 'tbar' + (s.kbps > 0.5 ? ' live' : '');
+
+    // бейдж активности слота
+    const idx = _qnumToIndex[qnum];
+    if(idx !== undefined){
+      const live = document.getElementById('slotlive-' + idx);
+      if(live){
+        const active = (s.pkts_delta || 0) > 0;
+        live.textContent = active
+          ? ('▶ Активен · ' + (s.kbps||0).toFixed(1) + ' kbps')
+          : 'ожидание';
+        live.className = 'slot-live ' + (active ? 'on' : 'off');
+      }
+    }
   }
 }
 
@@ -401,6 +494,7 @@ function renderSlots(slots){
   }
   grid.innerHTML = '';
   for(const slot of slots){
+    _qnumToIndex[slot.qnum] = slot.index;
     const ok  = slot.healthy === true;
     const bad = slot.healthy === false;
     const excluded = slot.fw_excluded;
@@ -410,11 +504,13 @@ function renderSlots(slots){
     const el = document.createElement('div');
     el.className = 'slot ' + cls;
     el.id = 'slot-' + slot.index;
+    el.dataset.qnum = slot.qnum;
     el.innerHTML =
       '<div><span class="slot-num">Слот ' + slot.index + '</span>' +
       '<span class="slot-qnum"> qnum=' + slot.qnum + '</span></div>' +
       '<div class="slot-name">' + (slot.strategy || '—') + '</div>' +
       '<div class="slot-status ' + stCls + '">' + stTx + '</div>' +
+      '<div class="slot-live off" id="slotlive-' + slot.index + '">ожидание</div>' +
       '<div class="slot-traffic">' +
         '<span class="tbar-label" id="tkbps-' + slot.qnum + '">—</span>' +
         '<div class="tbar-wrap"><div class="tbar" id="tbar-' + slot.qnum + '" style="width:0%"></div></div>' +
@@ -455,11 +551,22 @@ async function refreshPool(){
 
   // settings sync (только если не редактируем)
   const fields = {cfgPoolSize:'pool_size', cfgInterval:'check_interval',
-                  cfgThreshold:'fail_threshold', cfgUrl:'test_url'};
+                  cfgThreshold:'fail_threshold', cfgUrl:'test_url',
+                  cfgCutMin:'cut_min_sec', cfgCutMax:'cut_max_sec',
+                  cfgCutCool:'cut_cooldown'};
   Object.entries(fields).forEach(([id, key]) => {
     const el = document.getElementById(id);
     if(el.dataset.dirty !== '1' && s[key] !== undefined) el.value = s[key];
   });
+  const cutEn = document.getElementById('cfgCutEn');
+  if(cutEn && cutEn.dataset.dirty !== '1' && s.cut_rotate_enabled !== undefined)
+    cutEn.value = s.cut_rotate_enabled ? '1' : '0';
+
+  // индикатор активности / срезов
+  if(s.active_conns !== undefined)
+    document.getElementById('tfActiveConns').textContent = s.active_conns;
+  if(s.total_cuts !== undefined)
+    document.getElementById('tfCuts').textContent = s.total_cuts;
 
   // slots grid
   renderSlots(s.slots || []);
@@ -538,16 +645,22 @@ async function savePoolCfg(){
     check_interval: +document.getElementById('cfgInterval').value,
     fail_threshold: +document.getElementById('cfgThreshold').value,
     test_url:        document.getElementById('cfgUrl').value.trim(),
+    cut_rotate_enabled: +document.getElementById('cfgCutEn').value,
+    cut_min_sec:    +document.getElementById('cfgCutMin').value,
+    cut_max_sec:    +document.getElementById('cfgCutMax').value,
+    cut_cooldown:   +document.getElementById('cfgCutCool').value,
   };
   await post('/api/pool/configure', cfg);
-  ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl'].forEach(id =>
+  ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl',
+   'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool'].forEach(id =>
     document.getElementById(id).dataset.dirty = '0');
   const saved = document.getElementById('cfgSaved');
   saved.style.display = 'inline'; setTimeout(()=> saved.style.display='none', 2000);
   refreshPool();
 }
 
-['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl'].forEach(id =>
+['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl',
+ 'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool'].forEach(id =>
   document.getElementById(id).addEventListener('input', () =>
     document.getElementById(id).dataset.dirty = '1'));
 
@@ -565,7 +678,8 @@ async function loadStrategies(){
     const el = document.createElement('div');
     el.className = 'strat'; el.dataset.name = s.name;
     el.innerHTML = '<div class="sname">' + s.name + '</div>' +
-      (s.description ? '<div class="sdesc">' + s.description + '</div>' : '');
+      (s.description ? '<div class="sdesc">' + s.description + '</div>' : '') +
+      (s.has_nfqws === false ? '<div class="sdesc" style="color:var(--err)">нет NFQWS2_OPT — исключена из ротации</div>' : '');
     box.appendChild(el);
   }
 }

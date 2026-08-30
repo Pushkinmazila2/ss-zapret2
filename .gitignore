@@ -1,5 +1,7 @@
 .env
 config
+__pycache__/
+*.pyc
 
 scripts/
 lua/

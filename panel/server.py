@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pool_manager as _pm
 from pool_manager import PoolManager, MAX_SLOTS
+from conn_tracker import LifetimeTracker
 
 # ── globals ────────────────────────────────────────────────────────────────
 
@@ -94,11 +95,13 @@ def list_strategies():
         with open(fpath, encoding="utf-8") as f:
             flines = f.read().splitlines()
         desc = next((ln.lstrip("#").strip() for ln in flines if ln.strip().startswith("#")), "")
+        nfqws_opt = get_nfqws(flines)
         result.append({
             "name": os.path.splitext(fn)[0],
             "file": fn,
             "description": desc,
-            "nfqws_opt": get_nfqws(flines),
+            "nfqws_opt": nfqws_opt,
+            "has_nfqws": bool((nfqws_opt or "").strip()),
         })
     return result
 
@@ -190,6 +193,8 @@ class ResetMonitor:
         self.total_resets   = 0
         self.total_closes   = 0
         self.on_degraded    = None    # callback fn() при переходе ok → degraded
+        self.on_reset       = None    # callback fn() на каждое reset-событие
+        self.last_reset_ts  = None    # метка последнего reset (для трекера срезов)
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -215,6 +220,7 @@ class ResetMonitor:
                 "total_window":  total,
                 "total_resets":  self.total_resets,
                 "total_closes":  self.total_closes,
+                "last_reset_ts": self.last_reset_ts,
                 "window_sec":    self.window_sec,
                 "threshold":     self.threshold,
                 "min_events":    self.min_events,
@@ -262,6 +268,7 @@ class ResetMonitor:
             self._events.append((now, event))
             if event == "reset":
                 self.total_resets += 1
+                self.last_reset_ts = now
             else:
                 self.total_closes += 1
             # Чистим старые события
@@ -287,6 +294,12 @@ class ResetMonitor:
         if fire and self.on_degraded:
             print("[monitor] degraded edge — triggering immediate check", flush=True)
             threading.Thread(target=self.on_degraded, daemon=True).start()
+
+        if event == "reset" and self.on_reset:
+            try:
+                self.on_reset()
+            except Exception as e:
+                print("[monitor] on_reset: %s" % e, flush=True)
 
     def _window_events(self, now):
         cutoff = now - self.window_sec
@@ -324,11 +337,19 @@ class PoolSwitcher:
         self.settle_time     = 6        # сек после старта нового nfqws2
         self.test_url        = "https://www.youtube.com"
 
+        # ротация при срезе ТСПУ (соединение умерло, прожив 30-60с)
+        self.cut_rotate_enabled = True
+        self.cut_min_sec        = 30
+        self.cut_max_sec        = 60
+        self.cut_cooldown       = 30     # мин. пауза между ротациями по срезу
+        self.cut_require_reset  = True   # подтверждать срез reset-событием из лога
+
         # состояние
         self.state           = "idle"
         self._slot_fails     = {}       # index → consecutive fails
         self._strategy_idx   = 0       # указатель в списке стратегий
         self._used           = set()   # имена уже назначенных стратегий
+        self._cut_last_ts    = None    # метка последней ротации по срезу
         self._log            = collections.deque(maxlen=self.MAX_LOG)
 
     # ── public ────────────────────────────────────────────────────────────
@@ -336,6 +357,7 @@ class PoolSwitcher:
     def get_status(self):
         with self._lock:
             pool_status = self._pool.get_status()
+            tstat = _tracker.get_status() if _tracker is not None else {}
             return {
                 "enabled":        self.enabled,
                 "mode":           self.mode,
@@ -345,6 +367,18 @@ class PoolSwitcher:
                 "fail_threshold": self.fail_threshold,
                 "settle_time":    self.settle_time,
                 "test_url":       self.test_url,
+                # ротация при срезе ТСПУ
+                "cut_rotate_enabled": self.cut_rotate_enabled,
+                "cut_min_sec":        self.cut_min_sec,
+                "cut_max_sec":        self.cut_max_sec,
+                "cut_cooldown":       self.cut_cooldown,
+                "cut_require_reset":  self.cut_require_reset,
+                # статус трекера соединений
+                "tracker": tstat,
+                "active_conns": tstat.get("active_conns", 0),
+                "total_cuts":   tstat.get("total_cuts", 0),
+                "last_cut_ts":  tstat.get("last_cut_ts"),
+                "last_cut_lifetime": tstat.get("last_cut_lifetime"),
                 "slots":          pool_status,
                 "strategy_idx":   self._strategy_idx,
             }
@@ -355,10 +389,26 @@ class PoolSwitcher:
 
     def configure(self, cfg):
         with self._lock:
-            for k in ("mode", "pool_size", "check_interval", "fail_threshold",
-                      "settle_time", "test_url"):
+            valid = ("mode", "pool_size", "check_interval", "fail_threshold",
+                     "settle_time", "test_url",
+                     "cut_rotate_enabled", "cut_min_sec", "cut_max_sec",
+                     "cut_cooldown", "cut_require_reset")
+            for k in valid:
                 if k in cfg:
                     setattr(self, k, cfg[k])
+            self.cut_rotate_enabled  = bool(self.cut_rotate_enabled)
+            lo = min(self.cut_min_sec, self.cut_max_sec)
+            hi = max(self.cut_min_sec, self.cut_max_sec)
+            self.cut_min_sec  = max(5, lo)
+            self.cut_max_sec  = max(max(10, hi), self.cut_min_sec)
+            self.cut_cooldown = max(0, self.cut_cooldown)
+        # синхронизируем лимиты среза с трекером соединений
+        if _tracker is not None:
+            _tracker.configure({
+                "cut_min_sec":   self.cut_min_sec,
+                "cut_max_sec":   self.cut_max_sec,
+                "require_reset": self.cut_require_reset,
+            })
         return self.get_status()
 
     def set_enabled(self, enabled):
@@ -405,11 +455,73 @@ class PoolSwitcher:
     def force_check(self):
         threading.Thread(target=self._check_all_slots, daemon=True).start()
 
+    # ── ротация при срезе ТСПУ (соединение срезано через 30-60с) ───────
+
+    def on_connection_cut(self, lifetime):
+        """
+        Колбэк от LifetimeTracker: соединение срезано ТСПУ, прожив
+        cut_min_sec..cut_max_sec секунд. Инициируем ротацию стратегий.
+        """
+        skip_reason = None
+        with self._lock:
+            if not self.enabled:
+                return
+            if not self.cut_rotate_enabled:
+                return
+            if self.state in ("checking", "replacing"):
+                skip_reason = "идёт %s" % self.state
+            else:
+                now = time.time()
+                if self._cut_last_ts and (now - self._cut_last_ts) < self.cut_cooldown:
+                    skip_reason = "cooldown %ds" % self.cut_cooldown
+                else:
+                    self._cut_last_ts = now
+        if skip_reason:
+            self._log_event("info", "Срез пропущен (%s)" % skip_reason)
+            return
+        self._log_event("warn",
+            "⚡ Срез ТСПУ: соединение прожило %ds — ротация стратегий" % int(lifetime))
+        threading.Thread(target=self._rotate_on_cut, args=(lifetime,), daemon=True).start()
+
+    def _rotate_on_cut(self, lifetime):
+        """
+        Ротация после среза: заменяем самый активный живой слот следующей
+        рабочей стратегией. Слот берём по максимальной дельте пакетов —
+        с наибольшей вероятностью именно он нёс срезанное соединение.
+        """
+        try:
+            stats = self._pool.get_traffic_stats()
+            slots = self._pool.get_status()
+            with self._lock:
+                self.state = "replacing"
+
+            candidates = [s for s in slots if s["alive"] and not s["fw_excluded"]]
+            if not candidates:
+                self._log_event("warn", "Нет живых слотов для ротации по срезу")
+                with self._lock:
+                    self.state = "ok"
+                return
+            def _w(s):
+                st = stats.get(s["qnum"]) or {}
+                return st.get("pkts_delta", 0)
+            target   = max(candidates, key=_w)
+            idx      = target["index"]
+            old_name = target["strategy"] or ("slot%d" % idx)
+            self._log_event("warn",
+                "⚡ Ротация: заменяю слот %d «%s» (самый активный)" % (idx, old_name))
+            self._replace_slot(idx, old_name)
+        except Exception as e:
+            self._log_event("error", "Ротация по срезу упала: %s" % e)
+            with self._lock:
+                self.state = "ok"
+
     def set_slot_strategy(self, index, strategy_name):
         """Ручная смена стратегии в конкретном слоте."""
         nfqws = load_strategy_nfqws(strategy_name)
         if not nfqws:
             return {"error": "стратегия не найдена: " + strategy_name}
+        if not nfqws.strip():
+            return {"error": "стратегия без NFQWS2_OPT (старый формат): " + strategy_name}
         self._pool.replace_slot(index, strategy_name, nfqws)
         with self._lock:
             self._slot_fails[index] = 0
@@ -461,7 +573,7 @@ class PoolSwitcher:
 
     def _ensure_pool_filled(self):
         """Заполняет пул до pool_size слотов стратегиями."""
-        strategies = list_strategies()
+        strategies = [s for s in list_strategies() if (s.get("nfqws_opt") or "").strip()]
         if not strategies:
             self._log_event("warn", "Нет стратегий для заполнения пула")
             return
@@ -478,7 +590,9 @@ class PoolSwitcher:
 
     def _next_strategy(self):
         """Возвращает (name, nfqws_opt) следующей неиспользованной стратегии."""
-        strategies = list_strategies()
+        # Пропускаем стратегии без NFQWS2_OPT (старый формат / пустые) —
+        # слот с пустой стратегией не сможет обрабатывать трафик.
+        strategies = [s for s in list_strategies() if (s.get("nfqws_opt") or "").strip()]
         if not strategies:
             return None, None
         with self._lock:
@@ -514,6 +628,11 @@ class PoolSwitcher:
             enabled   = self.enabled
         if not enabled:
             return
+
+        # Не мешаем идущей ротации по срезу ТСПУ
+        with self._lock:
+            if self.state == "replacing":
+                return
 
         # ── Фаза 1: быстрый тест пула целиком ─────────────────────────────
         with self._lock:
@@ -596,52 +715,67 @@ class PoolSwitcher:
             self.state = "ok" if good_slots else "degraded"
 
     def _replace_slot(self, index, old_name):
-        """Заменяет стратегию в слоте. Слот уже убран из rotation к этому моменту."""
+        """
+        Заменяет стратегию в слоте с проверкой работоспособности.
+        Пробует до max_attempts стратегий подряд, пока не найдёт рабочую.
+        """
         self._log_event("warn", "Слот %d «%s»: подбираю замену…" % (index, old_name))
 
         with self._lock:
             self.state = "replacing"
 
-        new_name, new_nfqws = self._next_strategy()
-        if not new_name:
-            self._log_event("error", "Нет стратегий для замены слота %d" % index)
-            # Возвращаем слот в rotation даже со старой стратегией — лучше чем ничего
-            self._pool.restore_slot_to_fw(index)
-            return
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            new_name, new_nfqws = self._next_strategy()
+            if not new_name:
+                self._log_event("error", "Нет стратегий для замены слота %d" % index)
+                # Возвращаем слот в rotation даже со старой стратегией — лучше чем ничего
+                self._pool.restore_slot_to_fw(index)
+                self._pool.set_slot_health(index, False)
+                with self._lock:
+                    self.state = "degraded"
+                return
 
-        # Заменяем процесс nfqws2
-        self._pool.replace_slot(index, new_name, new_nfqws)
+            # Заменяем процесс nfqws2 (qnum тот же, fw не трогаем — без даунтайма)
+            self._pool.replace_slot(index, new_name, new_nfqws)
 
-        with self._lock:
-            self._slot_fails[index] = 0
-            settle = self.settle_time
+            with self._lock:
+                self._slot_fails[index] = 0
+                settle = self.settle_time
 
-        time.sleep(settle)
+            time.sleep(settle)
 
-        # Тестируем новый слот изолированно
-        r = self._pool.test_slot_isolated(index, self.test_url)
-        self._pool.set_slot_health(index, r["ok"])
+            # Тестируем новый слот изолированно
+            r = self._pool.test_slot_isolated(index, self.test_url)
+            if r["ok"]:
+                self._pool.set_slot_health(index, True)
+                self._log_event("ok",
+                    "✓ Слот %d: «%s» → «%s» — работает, возвращаю в rotation" % (
+                        index, old_name, new_name))
+                self._pool.restore_slot_to_fw(index)
+                with self._lock:
+                    self.state = "ok"
+                return
 
-        if r["ok"]:
-            self._log_event("ok",
-                "✓ Слот %d: «%s» → «%s» — работает, возвращаю в rotation" % (
-                    index, old_name, new_name))
-        else:
             self._log_event("warn",
-                "✗ Слот %d: «%s» не помогла (rc=%d), всё равно возвращаю в rotation" % (
-                    index, new_name, r["rc"]))
+                "✗ Слот %d: «%s» не помогла (rc=%d), попытка %d/%d" % (
+                    index, new_name, r["rc"], attempt, max_attempts))
 
-        # Возвращаем слот в rotation в любом случае
+        # Все попытки провалились — помечаем сбой, слот оставляем в rotation
+        self._pool.set_slot_health(index, False)
+        self._log_event("error",
+            "Слот %d: ни одна из %d стратегий не работает, вернул в rotation" % (
+                index, max_attempts))
         self._pool.restore_slot_to_fw(index)
-
         with self._lock:
-            self.state = "ok"
+            self.state = "degraded"
 
 
 # ── globals init ─────────────────────────────────────────────────────────────
 
-_pool    = None
+_pool     = None
 _switcher = None
+_tracker  = None
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 
@@ -834,7 +968,7 @@ def main():
     args = ap.parse_args()
 
     global CFG_PATH, STRAT_DIR, RESTART_CMD, SOCKS_PORT, SS_PORT
-    global _pool, _switcher
+    global _pool, _switcher, _tracker
     CFG_PATH    = args.config
     STRAT_DIR   = args.strategies
     RESTART_CMD = args.restart_cmd
@@ -849,8 +983,19 @@ def main():
 
     _pool     = PoolManager(log_fn=_log)
     _switcher = PoolSwitcher(_pool)
+
+    # ── трекер времени жизни соединений (срезы ТСПУ 30-60с) ───────────
+    _tracker = LifetimeTracker(
+        ss_port=args.ss_port, socks_port=args.socks_port,
+        panel_port=args.port, log_fn=_log,
+        cut_min_sec=_switcher.cut_min_sec, cut_max_sec=_switcher.cut_max_sec,
+        require_reset=_switcher.cut_require_reset)
+    _tracker.on_cut = _switcher.on_connection_cut
+    reset_monitor.on_reset = _tracker.note_reset
+
     reset_monitor.start()
     reset_monitor.on_degraded = _switcher.force_check
+    _tracker.start()
 
     print("[panel] config=%s  strategies=%s  ss=%d  socks=%d" % (
         CFG_PATH, STRAT_DIR, SS_PORT, SOCKS_PORT), flush=True)

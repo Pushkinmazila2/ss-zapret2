@@ -76,18 +76,22 @@ class PoolManager:
         Источник 1: iptables ZAPRET_POOL (pkts + bytes) — когда цепочка есть.
         Источник 2: /proc/net/netfilter/nfnetlink_queue (pkts total) — всегда доступен.
         Дельта считается относительно предыдущего вызова.
+
+        Если байты недоступны (nfnetlink), оцениваем bytes ≈ pkts × 1500
+        (средний размер пакета), чтобы панель могла показать kbps и долю трафика.
         """
         raw_ipt  = self._read_zapret_pool_counters()   # qnum → (pkts, bytes)
         raw_nfq  = self._read_nfnetlink_queue()         # qnum → pkts_total
 
         # Объединяем: предпочитаем iptables (есть bytes), fallback на nfnetlink
         raw = {}
-        all_qnums = set(raw_ipt) | set(raw_nfq)
-        for q in all_qnums:
+        for q in set(raw_ipt) | set(raw_nfq):
             if q in raw_ipt:
-                raw[q] = raw_ipt[q]          # (pkts, bytes)
+                raw[q] = {"pkts": raw_ipt[q][0], "bytes": raw_ipt[q][1],
+                          "bytes_estimated": False}
             else:
-                raw[q] = (raw_nfq[q], 0)     # (pkts, 0 bytes)
+                raw[q] = {"pkts": raw_nfq[q], "bytes": 0,
+                          "bytes_estimated": True}
 
         now = time.time()
         result = {}
@@ -96,18 +100,33 @@ class PoolManager:
             prev_time = self._prev_counter_time
             dt = now - prev_time if prev_time else 1.0
             dt = max(dt, 0.1)
-            for qnum, (pkts, byt) in raw.items():
-                pp, pb = prev.get(qnum, (0, 0))
-                dpkts = max(0, pkts - pp)
-                dbyt  = max(0, byt  - pb)
+
+            total_dp = 0
+            for qnum, r in raw.items():
+                pp = prev.get(qnum, {}).get("pkts", 0)
+                total_dp += max(0, r["pkts"] - pp)
+
+            for qnum, r in raw.items():
+                pp  = prev.get(qnum, {}).get("pkts", 0)
+                pb  = prev.get(qnum, {}).get("bytes", 0)
+                dpkts = max(0, r["pkts"] - pp)
+                dbyt  = max(0, r["bytes"] - pb)
+                estimated = r["bytes_estimated"]
+                if dbyt == 0 and dpkts > 0:
+                    dbyt = dpkts * 1500   # fallback-оценка байт из пакетов
+                    estimated = True
                 result[qnum] = {
-                    "pkts":       pkts,
-                    "bytes":      byt,
-                    "pkts_delta": dpkts,
-                    "bytes_delta": dbyt,
-                    "kbps":       round(dbyt * 8 / 1024 / dt, 1),
-                    "pps":        round(dpkts / dt, 1),
-                    "source":     "iptables" if qnum in raw_ipt else "nfnetlink",
+                    "qnum":             qnum,
+                    "pkts":             r["pkts"],
+                    "bytes":            r["bytes"],
+                    "pkts_delta":       dpkts,
+                    "bytes_delta":      dbyt,
+                    "kbps":             round(dbyt * 8 / 1024 / dt, 1),
+                    "pps":              round(dpkts / dt, 1),
+                    "active":           dpkts > 0,
+                    "share":            round((dpkts / total_dp * 100) if total_dp else 0, 1),
+                    "bytes_estimated":  estimated,
+                    "source":           "iptables" if qnum in raw_ipt else "nfnetlink",
                 }
             self._prev_counters     = raw
             self._prev_counter_time = now
