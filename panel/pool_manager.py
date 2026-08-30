@@ -443,9 +443,13 @@ class PoolManager:
             active_qnums = [s.qnum for s in self._slots
                             if s.is_alive() and not s._fw_excluded]
 
+        # Вспомогательная функция для проверки существования ipset
+        def _ipset_exists(name):
+            r = subprocess.run(["ipset", "list", name], capture_output=True)
+            return r.returncode == 0
+
         # --- 1. Очистка старых правил POSTROUTING ---> ZAPRET_POOL ---
         for cmd in ["iptables", "ip6tables"]:
-            # Удаляем правила ZAPRET_POOL из POSTROUTING, пока они удаляются
             while True:
                 r = subprocess.run(
                     [cmd, "-t", "mangle", "-D", "POSTROUTING", "-j", "ZAPRET_POOL"],
@@ -454,7 +458,7 @@ class PoolManager:
                 if r.returncode != 0:
                     break
 
-        # Убираем стандартные правила NFQUEUE 300, если остались от оригинального zapret2
+        # Очистка старых правил NFQUEUE 300
         configs = [
             {"cmd": "iptables",  "tcp": "zport_tcp",  "udp": "zport_udp",  "nz": "nozapret"},
             {"cmd": "ip6tables", "tcp": "zport_tcp6", "udp": "zport_udp6", "nz": "nozapret6"}
@@ -463,15 +467,23 @@ class PoolManager:
         for conf in configs:
             cmd = conf["cmd"]
             nz_set = conf["nz"]
+            
+            # Если базовые сеты не существуют в системе, то и правил таких в iptables нет — пропускаем
+            if not _ipset_exists(conf["tcp"]) and not _ipset_exists(conf["udp"]):
+                continue
+
             for ipset, pkt_out in [(conf["tcp"], tcp_pkt_out), (conf["udp"], udp_pkt_out)]:
+                if not _ipset_exists(ipset):
+                    continue
                 while True:
+                    # ВАЖНО: "!" ставится ПОСЛЕ "-m set"
                     r = subprocess.run([
                         cmd, "-t", "mangle", "-D", "POSTROUTING",
                         "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
                         "-m", "set", "--match-set", ipset, "dst",
                         "-m", "connbytes", "--connbytes", f"1:{pkt_out}",
                         "--connbytes-mode", "packets", "--connbytes-dir", "original",
-                        "!", "-m", "set", "--match-set", nz_set, "dst",
+                        "-m", "set", "!", "--match-set", nz_set, "dst",
                         "-j", "NFQUEUE", "--queue-num", "300", "--queue-bypass"
                     ], capture_output=True)
                     if r.returncode != 0:
@@ -479,7 +491,6 @@ class PoolManager:
 
         # --- 2. Пересоздание цепочки ZAPRET_POOL ---
         for cmd in ["iptables", "ip6tables"]:
-            # Смываем правила и удаляем цепочку, игнорируя ошибки, если её не было
             subprocess.run([cmd, "-t", "mangle", "-F", "ZAPRET_POOL"], capture_output=True)
             subprocess.run([cmd, "-t", "mangle", "-X", "ZAPRET_POOL"], capture_output=True)
 
@@ -487,7 +498,6 @@ class PoolManager:
             self._log("warn", "Нет активных слотов — ZAPRET_POOL не создана")
             return
 
-        # Создаем пустые цепочки заново
         for cmd in ["iptables", "ip6tables"]:
             subprocess.run([cmd, "-t", "mangle", "-N", "ZAPRET_POOL"], capture_output=True)
 
@@ -514,19 +524,32 @@ class PoolManager:
             cmd = conf["cmd"]
             nz_set = conf["nz"]
             
-            # Навешиваем правила для TCP и UDP
             for ipset, pkt_out, mode in [(conf["tcp"], tcp_pkt_out, "TCP"), (conf["udp"], udp_pkt_out, "UDP")]:
+                # Если ipset для этого протокола (например, IPv6) не существует, не пытаемся добавить правило
+                if not _ipset_exists(ipset):
+                    self._log("info", f"Пропуск {cmd} {mode}: ipset {ipset} не существует")
+                    continue
+                    
+                # Если список исключений nozapret/nozapret6 почему-то отсутствует, создаем временную проверку
+                actual_nz = nz_set if _ipset_exists(nz_set) else None
+
                 try:
-                    # Внимание: "!" стоит строго ПЕРЕД "-m set"
-                    r = subprocess.run([
+                    # Собираем аргументы динамически в зависимости от наличия списка исключений
+                    args = [
                         cmd, "-t", "mangle", "-A", "POSTROUTING",
                         "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
                         "-m", "set", "--match-set", ipset, "dst",
                         "-m", "connbytes", "--connbytes", f"1:{pkt_out}",
-                        "--connbytes-mode", "packets", "--connbytes-dir", "original",
-                        "!", "-m", "set", "--match-set", nz_set, "dst",
-                        "-j", "ZAPRET_POOL"
-                    ], capture_output=True, text=True, timeout=5)
+                        "--connbytes-mode", "packets", "--connbytes-dir", "original"
+                    ]
+                    
+                    # Добавляем инверсию nozapret, только если сет существует
+                    if actual_nz:
+                        args.extend(["-m", "set", "!", "--match-set", actual_nz, "dst"])
+                        
+                    args.extend(["-j", "ZAPRET_POOL"])
+
+                    r = subprocess.run(args, capture_output=True, text=True, timeout=5)
                     
                     if r.returncode != 0:
                         self._log("error", f"{cmd} {mode} rc={r.returncode}: {r.stderr.strip()}")
