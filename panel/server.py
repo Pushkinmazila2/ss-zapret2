@@ -350,6 +350,7 @@ class PoolSwitcher:
         self._strategy_idx   = 0       # указатель в списке стратегий
         self._used           = set()   # имена уже назначенных стратегий
         self._cut_last_ts    = None    # метка последней ротации по срезу
+        self.strategy_scores = {}   # name → score: +1.0 успех, −2.0 провал, ×0.98 старение
         self._log            = collections.deque(maxlen=self.MAX_LOG)
 
     # ── public ────────────────────────────────────────────────────────────
@@ -380,6 +381,8 @@ class PoolSwitcher:
                 "last_cut_ts":  tstat.get("last_cut_ts"),
                 "last_cut_lifetime": tstat.get("last_cut_lifetime"),
                 "slots":          pool_status,
+                "healthy_count": sum(1 for s in pool_status if s.get("healthy") is True),
+                "strategy_scores": dict(self.strategy_scores),
                 "strategy_idx":   self._strategy_idx,
             }
 
@@ -589,27 +592,77 @@ class PoolSwitcher:
             time.sleep(0.5)
 
     def _next_strategy(self):
-        """Возвращает (name, nfqws_opt) следующей неиспользованной стратегии."""
-        # Пропускаем стратегии без NFQWS2_OPT (старый формат / пустые) —
-        # слот с пустой стратегией не сможет обрабатывать трафик.
+        """Возвращает (name, nfqws_opt) лучшей стратегии по скорингу.
+        Скор: +1.0 за успех, −2.0 за провал, ×0.98 старение за каждую попытку."""
         strategies = [s for s in list_strategies() if (s.get("nfqws_opt") or "").strip()]
         if not strategies:
             return None, None
         with self._lock:
-            # Обход по кругу; если все использованы — сбрасываем
-            total = len(strategies)
-            for _ in range(total):
-                s = strategies[self._strategy_idx % total]
-                self._strategy_idx += 1
-                if s["name"] not in self._used:
-                    self._used.add(s["name"])
-                    return s["name"], s["nfqws_opt"]
-            # Все использованы — начинаем сначала
-            self._used.clear()
-            s = strategies[self._strategy_idx % total]
-            self._strategy_idx += 1
-            self._used.add(s["name"])
-            return s["name"], s["nfqws_opt"]
+            # старение скоров
+            for k in list(self.strategy_scores):
+                self.strategy_scores[k] = max(-20.0, min(20.0, self.strategy_scores[k] * 0.98))
+            unused = [s for s in strategies if s["name"] not in self._used]
+            if not unused:
+                self._used.clear()
+                unused = strategies
+            best = max(unused, key=lambda s: self.strategy_scores.get(s["name"], 0.0))
+            self._used.add(best["name"])
+            return best["name"], best["nfqws_opt"]
+
+    def _next_strategy_batch(self, n):
+        """Возвращает до n уникальных (name, nfqws) кандидатов по скорингу."""
+        strategies = [s for s in list_strategies() if (s.get("nfqws_opt") or "").strip()]
+        out, taken = [], set()
+        with self._lock:
+            for k in list(self.strategy_scores):
+                self.strategy_scores[k] = max(-20.0, min(20.0, self.strategy_scores[k] * 0.98))
+        while len(out) < n and len(taken) < len(strategies):
+            remaining = [s for s in strategies if s["name"] not in taken]
+            if not remaining:
+                break
+            best = max(remaining, key=lambda s: self.strategy_scores.get(s["name"], 0.0))
+            out.append((best["name"], best["nfqws_opt"]))
+            taken.add(best["name"])
+            with self._lock:
+                self._used.add(best["name"])
+        return out
+
+    def _bump_score(self, name, ok):
+        with self._lock:
+            cur = self.strategy_scores.get(name, 0.0)
+            self.strategy_scores[name] = max(-20.0, min(20.0, cur + (1.0 if ok else -2.0)))
+
+    def _probe_curl_ok(self, timeout=6):
+        """Короткий curl через SOCKS (может попасть на теневой слот при random)."""
+        try:
+            cmd = [
+                "curl", "-x", "socks5h://127.0.0.1:%d" % (_SOCKS_PORT or 1080),
+                self.test_url, "-I",
+                "--max-time", str(timeout), "--connect-timeout", "6", "-s", "-S",
+            ]
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 3)
+            return p.returncode == 0 and bool(re.search(r"HTTP/\S+ [23]", p.stdout or ""))
+        except Exception:
+            return False
+
+    def _probe_shadow(self, shadow, window=10, min_pkts=2):
+        """
+        Проверяет теневой слот: получил ли он реальный трафик (pkts) за окно,
+        либо прошёл ли хотя бы один curl-проб. НЕ захватывает весь трафик —
+        случайные соединения сами попадают на теневой qnum.
+        """
+        qnum = shadow["qnum"]
+        time.sleep(1.2)   # дать nfqws2 подняться и попасть в random
+        p0 = self._pool.shadow_pkts(qnum)
+        end = time.time() + window
+        while time.time() < end:
+            p1 = self._pool.shadow_pkts(qnum)
+            if (p1 - p0) >= min_pkts:
+                return True
+            if self._probe_curl_ok():
+                return True
+            time.sleep(1)
+        return False
 
     def _check_all_slots(self):
         """
@@ -661,18 +714,21 @@ class PoolSwitcher:
                 self.state = "ok"
             return
 
-        # ── Фаза 2: диагностика каждого слота изолированно ────────────────
+        # ── Фаза 2: диагностика подозрительных слотов (не всех подряд) ─────
+        # Только слоты с накопленными провалами или помеченные нездоровыми.
+        suspects = [s for s in pool_status
+                    if s["alive"] and not s["fw_excluded"] and (
+                        s["healthy"] is False
+                        or (self._slot_fails.get(s["index"], 0) > 0))]
         self._log_event("warn",
-            "Деградация — диагностирую %d слотов…" % len([s for s in pool_status if s["alive"]]))
+            "Деградация — диагностирую %d подозрительных слотов…" % len(suspects))
         with self._lock:
             self.state = "checking"
 
         good_slots = []
         bad_slots  = []
 
-        for slot_info in pool_status:
-            if not slot_info["alive"]:
-                continue
+        for slot_info in suspects:
             idx  = slot_info["index"]
             name = slot_info["strategy"] or "slot%d" % idx
 
@@ -695,6 +751,10 @@ class PoolSwitcher:
                 if fails >= threshold:
                     bad_slots.append((idx, name))
 
+            # Пауза между изолированными тестами — не «избиваем» соединения серией
+            if len(suspects) > 1 and bad_slots + good_slots < len(suspects):
+                time.sleep(1)
+
         if not bad_slots:
             with self._lock:
                 self.state = "ok"
@@ -714,59 +774,58 @@ class PoolSwitcher:
         with self._lock:
             self.state = "ok" if good_slots else "degraded"
 
-    def _replace_slot(self, index, old_name):
+    def _replace_slot(self, index, old_name, max_attempts=3):
         """
-        Заменяет стратегию в слоте с проверкой работоспособности.
-        Пробует до max_attempts стратегий подряд, пока не найдёт рабочую.
+        Заменяет стратегию слота БЕЗ разрыва через «теневой слот».
+        Слот временно исключается из random; кандидаты проверяются на отдельном
+        qnum, куда случайно попадает часть нового трафика. Когда стратегия
+        подтверждается — устанавливается в слот и он возвращается в rotation.
         """
-        self._log_event("warn", "Слот %d «%s»: подбираю замену…" % (index, old_name))
+        self._log_event("warn",
+            "Слот %d «%s»: подбираю замену (теневой подбор)…" % (index, old_name))
 
         with self._lock:
             self.state = "replacing"
 
-        max_attempts = 3
-        for attempt in range(1, max_attempts + 1):
-            new_name, new_nfqws = self._next_strategy()
-            if not new_name:
-                self._log_event("error", "Нет стратегий для замены слота %d" % index)
-                # Возвращаем слот в rotation даже со старой стратегией — лучше чем ничего
-                self._pool.restore_slot_to_fw(index)
-                self._pool.set_slot_health(index, False)
-                with self._lock:
-                    self.state = "degraded"
-                return
+        # На время подбора слот выпадает из random-распределения
+        self._pool.remove_slots_from_fw([index])
 
-            # Заменяем процесс nfqws2 (qnum тот же, fw не трогаем — без даунтайма)
-            self._pool.replace_slot(index, new_name, new_nfqws)
+        candidates = self._next_strategy_batch(max_attempts)
+        chosen = None
+        for name, nfqws in candidates:
+            shadow = self._pool.start_shadow(name, nfqws)
+            if not shadow:
+                continue
+            try:
+                ok = self._probe_shadow(shadow)
+            finally:
+                self._pool.stop_shadow(shadow["qnum"])
+            self._bump_score(name, ok)
+            if ok:
+                chosen = (name, nfqws)
+                break
+            self._log_event("warn",
+                "✗ Слот %d: «%s» на теневом тесте не сработала" % (index, name))
 
+        if chosen:
+            name, nfqws = chosen
+            self._pool.replace_slot(index, name, nfqws)
+            self._pool.set_slot_health(index, True)
+            self._pool.restore_slot_to_fw(index)
             with self._lock:
                 self._slot_fails[index] = 0
-                settle = self.settle_time
+                self.state = "ok"
+            self._log_event("ok",
+                "✓ Слот %d: «%s» → «%s» — теневой тест прошёл, в rotation" % (
+                    index, old_name, name))
+            return
 
-            time.sleep(settle)
-
-            # Тестируем новый слот изолированно
-            r = self._pool.test_slot_isolated(index, self.test_url)
-            if r["ok"]:
-                self._pool.set_slot_health(index, True)
-                self._log_event("ok",
-                    "✓ Слот %d: «%s» → «%s» — работает, возвращаю в rotation" % (
-                        index, old_name, new_name))
-                self._pool.restore_slot_to_fw(index)
-                with self._lock:
-                    self.state = "ok"
-                return
-
-            self._log_event("warn",
-                "✗ Слот %d: «%s» не помогла (rc=%d), попытка %d/%d" % (
-                    index, new_name, r["rc"], attempt, max_attempts))
-
-        # Все попытки провалились — помечаем сбой, слот оставляем в rotation
+        # Ни одна не подтвердилась — слот остаётся в rotation со старой стратегией
         self._pool.set_slot_health(index, False)
-        self._log_event("error",
-            "Слот %d: ни одна из %d стратегий не работает, вернул в rotation" % (
-                index, max_attempts))
         self._pool.restore_slot_to_fw(index)
+        self._log_event("error",
+            "Слот %d «%s»: ни одна из %d стратегий не прошла теневой тест — вернул в rotation" % (
+                index, old_name, max_attempts))
         with self._lock:
             self.state = "degraded"
 

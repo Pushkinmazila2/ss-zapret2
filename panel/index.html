@@ -29,6 +29,9 @@ header h1{font-size:15px;font-weight:700;}
   cursor:default;transition:border-color .13s,background .13s;position:relative;}
 .strat .sname{font-weight:700;font-size:12px;}
 .strat .sdesc{color:var(--mut);font-size:11px;margin-top:1px;}
+.strat .sscore{position:absolute;right:8px;bottom:8px;font-size:10px;color:var(--mut);}
+.strat .sscore.hot{color:var(--ok);}
+.strat .sscore.cold{color:var(--err);}
 .strat .sbadge{position:absolute;right:8px;top:50%;transform:translateY(-50%);
   font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;}
 .sbadge.ok  {background:var(--ok-dim);color:var(--ok);}
@@ -264,6 +267,7 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
       <div class="tf-ribbon">
         <div class="tf-top">
           <span>Трафик сейчас</span>
+          <span style="color:var(--mut)">здоровых: <span id="tfHealthy" style="color:var(--ok)">-/-</span></span>
           <span style="color:var(--mut)">срезов: <span id="tfCuts" style="color:var(--tx)">0</span></span>
           <span class="tf-conns">соед. YT: <span id="tfActiveConns" style="color:var(--tx)">—</span></span>
         </div>
@@ -567,6 +571,25 @@ async function refreshPool(){
     document.getElementById('tfActiveConns').textContent = s.active_conns;
   if(s.total_cuts !== undefined)
     document.getElementById('tfCuts').textContent = s.total_cuts;
+  if(s.healthy_count !== undefined && s.slots)
+    document.getElementById('tfHealthy').textContent =
+      s.healthy_count + '/' + s.slots.length;
+
+  // скоринг стратегий в левом списке
+  if(s.strategy_scores){
+    document.querySelectorAll('.strat').forEach(el => {
+      const sc = el.querySelector('.sscore');
+      const nm = el.dataset.name;
+      if(!sc) return;
+      if(nm in s.strategy_scores){
+        const v = s.strategy_scores[nm];
+        sc.textContent = 'скор ' + (v > 0 ? '+' : '') + v.toFixed(1);
+        sc.className = 'sscore ' + (v > 0.5 ? 'hot' : v < -0.5 ? 'cold' : '');
+      } else {
+        sc.textContent = '';
+      }
+    });
+  }
 
   // slots grid
   renderSlots(s.slots || []);
@@ -679,7 +702,8 @@ async function loadStrategies(){
     el.className = 'strat'; el.dataset.name = s.name;
     el.innerHTML = '<div class="sname">' + s.name + '</div>' +
       (s.description ? '<div class="sdesc">' + s.description + '</div>' : '') +
-      (s.has_nfqws === false ? '<div class="sdesc" style="color:var(--err)">нет NFQWS2_OPT — исключена из ротации</div>' : '');
+      (s.has_nfqws === false ? '<div class="sdesc" style="color:var(--err)">нет NFQWS2_OPT — исключена из ротации</div>' : '') +
+      '<div class="sscore"></div>';
     box.appendChild(el);
   }
 }

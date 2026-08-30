@@ -59,6 +59,7 @@ class PoolManager:
     def __init__(self, log_fn=None):
         self._lock   = threading.Lock()
         self._slots  = []
+        self._shadows = []   # теневые слоты для безопасного подбора стратегий
         self._log    = log_fn or (lambda lvl, msg: print("[pool][%s] %s" % (lvl, msg), flush=True))
         self._prev_counters     = {}   # qnum → (pkts, bytes)
         self._prev_counter_time = None
@@ -195,33 +196,20 @@ class PoolManager:
 
     def replace_slot(self, index, strategy_name, nfqws_opt):
         """
-        Запустить новый nfqws2 в слоте не останавливая старый.
-        Старый убиваем только после того как новый поднялся (1с grace).
+        Заменяет стратегию слота.
+        Останавливаем старый nfqws2 (освобождаем NFQUEUE), затем запускаем новый
+        на том же qnum с ретраями на 'nfq_create_queue' (гонка очереди).
+        Слот при этом уже должен быть исключён из fw rotation (fw_excluded),
+        поэтому разрыва соединений пользователя не происходит.
         """
         with self._lock:
             slot = self._get_or_create(index)
-            old_proc = slot.proc
-
-            # Запускаем новый
+            self._stop_slot_proc(slot)          # terminate + wait, освобождает очередь
             slot.strategy  = strategy_name
             slot.nfqws_opt = nfqws_opt
-            slot.proc      = None
+            slot.healthy   = None
             self._start_slot_proc(slot)
-
-        # Grace period — новый поднимается, старый ещё работает
-        time.sleep(1)
-
-        # Убиваем старый
-        if old_proc and old_proc.poll() is None:
-            try:
-                old_proc.terminate()
-                old_proc.wait(timeout=3)
-            except Exception:
-                try:
-                    old_proc.kill()
-                except Exception:
-                    pass
-        self._log("info", "Слот %d заменён на «%s» (graceful)" % (index, strategy_name))
+        self._log("info", "Слот %d заменён на «%s»" % (index, strategy_name))
 
     def set_slot_health(self, index, healthy):
         with self._lock:
@@ -295,11 +283,62 @@ class PoolManager:
         except Exception as e:
             return {"ok": False, "rc": -1, "output": str(e)}
 
+    # ── теневой слот (безопасный подбор стратегий без захвата трафика) ──────
+
+    def _next_free_qnum(self):
+        used = {s.qnum for s in self._slots} | {s.qnum for s in self._shadows}
+        q = QNUM_BASE
+        while q < QNUM_BASE + 100 and q in used:
+            q += 1
+        return q
+
+    def start_shadow(self, strategy_name, nfqws_opt):
+        """
+        Стартует теневой слот с новой стратегией.
+        Теневой слот получает отдельный qnum и включается в random-распределение
+        наравне с основными — без «захвата» всего трафика. Реальные соединения
+        продолжают жить: лишь часть новых соединений случайно уходит на теневой слот.
+        """
+        if not (nfqws_opt or "").strip():
+            return None
+        with self._lock:
+            shadow = Slot(100 + len(self._shadows))   # index вне диапазона 0-9
+            shadow.qnum      = self._next_free_qnum()
+            shadow.strategy  = strategy_name
+            shadow.nfqws_opt = nfqws_opt
+            shadow.healthy   = None
+            self._shadows.append(shadow)
+            self._start_slot_proc(shadow)
+            self._write_size()
+        self._reload_fw()
+        self._log("info", "Теневой слот «%s»: qnum=%d (участвует в random)" % (
+            strategy_name, shadow.qnum))
+        return {"index": shadow.index, "qnum": shadow.qnum}
+
+    def stop_shadow(self, qnum):
+        """Останавливает теневой слот и возвращает fw в исходное состояние."""
+        with self._lock:
+            for i, s in enumerate(self._shadows):
+                if s.qnum == qnum:
+                    self._stop_slot_proc(s)
+                    del self._shadows[i]
+                    break
+            self._write_size()
+        self._reload_fw()
+        self._log("info", "Теневой слот qnum=%d остановлен" % qnum)
+
+    def shadow_pkts(self, qnum):
+        """Текущий total пакетов через очередь теневого слота."""
+        return self._read_nfnetlink_queue().get(qnum, 0)
+
     def stop_all(self):
         with self._lock:
             for slot in self._slots:
                 self._stop_slot_proc(slot)
             self._slots.clear()
+            for sh in self._shadows:
+                self._stop_slot_proc(sh)
+            self._shadows.clear()
             self._write_size()
         self._reload_fw()
 
@@ -357,7 +396,7 @@ class PoolManager:
             return
 
         # Базовые аргументы
-        cmd = [
+        base = [
             NFQWS2_BIN,
             "--qnum=%d" % slot.qnum,
             "--user=%s" % WS_USER,
@@ -368,43 +407,55 @@ class PoolManager:
         ]
 
         # nfqws_opt — многострочная строка, каждая строка = отдельный --new профиль
-        # Внутри строки аргументы разделены пробелами, но значения с = не трогаем
         import shlex
+        args = []
         for line in slot.nfqws_opt.strip().splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             try:
-                cmd.extend(shlex.split(line))
+                args.extend(shlex.split(line))
             except ValueError:
-                cmd.extend(line.split())
+                args.extend(line.split())
 
         self._log("info", "Слот %d старт: qnum=%d strategy=%s" % (
             slot.index, slot.qnum, slot.strategy or "custom"))
-        self._log("info", "CMD: %s" % " ".join(cmd))
+        self._log("info", "CMD: %s" % " ".join(base + args))
 
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            # Даём секунду и проверяем не упал ли сразу
-            time.sleep(0.5)
-            rc = proc.poll()
-            if rc is not None:
-                err = proc.stderr.read() if proc.stderr else ""
-                self._log("error", "Слот %d упал сразу (rc=%d): %s" % (
-                    slot.index, rc, err.strip()[:200]))
-                slot.proc    = None
-                slot.healthy = False
+        # Антигонка NFQUEUE: очередь может ещё удерживаться старым процессом —
+        # nfqws2 падает с "nfq_create_queue(): Operation not permitted". Ретраим.
+        last_err = ""
+        for attempt in range(1, 4):
+            try:
+                proc = subprocess.Popen(
+                    base + args,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                time.sleep(0.6)
+                rc = proc.poll()
+                if rc is not None:
+                    err = proc.stderr.read() if proc.stderr else ""
+                    last_err = err.strip()
+                    self._log("warn", "Слот %d старт попытка %d/3: rc=%d %s" % (
+                        slot.index, attempt, rc, last_err[:160]))
+                    if "nfq_create_queue" in last_err and attempt < 3:
+                        time.sleep(1.0)
+                        continue
+                    slot.proc    = None
+                    slot.healthy = False
+                    return
+                slot.proc    = proc
+                slot.started = time.strftime("%H:%M:%S")
+                slot.healthy = None
+                self._log("info", "Слот %d (qnum=%d) запущен" % (slot.index, slot.qnum))
                 return
-            slot.proc    = proc
-            slot.started = time.strftime("%H:%M:%S")
-            slot.healthy = None
-        except Exception as e:
-            self._log("error", "Слот %d не запустился: %s" % (slot.index, e))
+            except Exception as e:
+                last_err = str(e)
+                if attempt < 3:
+                    time.sleep(1.0)
+        self._log("error", "Слот %d не запустился после 3 попыток: %s" % (slot.index, last_err))
 
     def _stop_slot_proc(self, slot):
         if slot.proc and slot.proc.poll() is None:
@@ -420,12 +471,16 @@ class PoolManager:
         slot.healthy = None
 
     def _write_size(self):
-        """Записывает активные (не исключённые) qnum для fw скрипта."""
+        """Записывает активные (не исключённые) qnum для fw скрипта.
+        Нездоровые слоты (healthy is False) НЕ включаются — они выпадают
+        из random-распределения, чтобы не перехватывать трафик мёртвыми
+        стратегиями. Теневые слоты для подбора стратегий включаются."""
         os.makedirs(POOL_RUN_DIR, exist_ok=True)
         slots_path = os.path.join(POOL_RUN_DIR, "slots")
         try:
             qnums = [str(s.qnum) for s in self._slots
-                     if s.is_alive() and not s._fw_excluded]
+                     if s.is_alive() and not s._fw_excluded and s.healthy is not False]
+            qnums += [str(s.qnum) for s in self._shadows if s.is_alive()]
             with open(slots_path, "w") as f:
                 f.write("\n".join(qnums) + "\n" if qnums else "")
         except Exception as e:
@@ -460,7 +515,8 @@ class PoolManager:
 
         with self._lock:
             active_qnums = [s.qnum for s in self._slots
-                            if s.is_alive() and not s._fw_excluded]
+                            if s.is_alive() and not s._fw_excluded and s.healthy is not False]
+            active_qnums += [s.qnum for s in self._shadows if s.is_alive()]
 
         # Вспомогательная функция для проверки существования ipset
         def _ipset_exists(name):

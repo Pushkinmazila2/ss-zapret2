@@ -1,0 +1,506 @@
+[zapret2-proxy] 2026-08-30T21:44:45.855558986Z [SS-SERVER]  2026-08-30 21:44:45 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:45.855659465Z [SS-SERVER]  2026-08-30 21:44:45 INFO: new connection to remote, 19 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:45.890473594Z [SS-SERVER]  2026-08-30 21:44:45 ERROR: remote recv: Connection reset by peer
+[zapret2-proxy] 2026-08-30T21:44:45.891793253Z [SS-SERVER]  2026-08-30 21:44:45 INFO: close a connection to remote, 18 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:45.891821377Z [SS-SERVER]  2026-08-30 21:44:45 INFO: close a connection from client, 18 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:45.907715845Z [PANEL] [switcher][WARN] ✗ Слот 4 «youtube_com_004» — не работает (rc=35, провалов: 2/2)
+[zapret2-proxy] 2026-08-30T21:44:45.907835788Z [PANEL] [switcher][INFO] Тестирую слот 5 «youtube_com_005»…
+[zapret2-proxy] 2026-08-30T21:44:45.914198741Z  2026-08-30 21:44:45 INFO: connection from 127.0.0.1:55152
+[zapret2-proxy] 2026-08-30T21:44:45.914422393Z  2026-08-30 21:44:45 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:45.914428595Z  2026-08-30 21:44:45 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:45.916867178Z [SS-SERVER]  2026-08-30 21:44:45 INFO: new connection from client, 19 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:45.917243502Z [SS-SERVER]  2026-08-30 21:44:45 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:45.917252211Z [SS-SERVER]  2026-08-30 21:44:45 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:45.917257791Z [SS-SERVER]  2026-08-30 21:44:45 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:45.917262112Z [SS-SERVER]  2026-08-30 21:44:45 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:45.917281428Z [SS-SERVER]  2026-08-30 21:44:45 INFO: new connection to remote, 19 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:46.110158941Z [SS-SERVER]  2026-08-30 21:44:46 INFO: close a connection to remote, 18 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:46.110185700Z [SS-SERVER]  2026-08-30 21:44:46 INFO: close a connection from client, 18 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:46.122555686Z [PANEL] [switcher][OK] ✓ Слот 5 «youtube_com_005» — работает
+[zapret2-proxy] 2026-08-30T21:44:46.122641338Z [PANEL] [switcher][INFO] Тестирую слот 6 «youtube_com_006»…
+[zapret2-proxy] 2026-08-30T21:44:46.128977321Z  2026-08-30 21:44:46 INFO: connection from 127.0.0.1:55156
+[zapret2-proxy] 2026-08-30T21:44:46.129810843Z  2026-08-30 21:44:46 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:46.129836295Z  2026-08-30 21:44:46 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:46.133567143Z [SS-SERVER]  2026-08-30 21:44:46 INFO: new connection from client, 19 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:46.133596356Z [SS-SERVER]  2026-08-30 21:44:46 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:46.133600642Z [SS-SERVER]  2026-08-30 21:44:46 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:46.133603818Z [SS-SERVER]  2026-08-30 21:44:46 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:46.133606852Z [SS-SERVER]  2026-08-30 21:44:46 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:46.133609991Z [SS-SERVER]  2026-08-30 21:44:46 INFO: new connection to remote, 19 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:46.176524312Z [PANEL] [monitor] reset ratio=0.07 (3/41)
+[zapret2-proxy] 2026-08-30T21:44:46.320191230Z [SS-SERVER]  2026-08-30 21:44:46 INFO: close a connection to remote, 18 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:46.320218419Z [SS-SERVER]  2026-08-30 21:44:46 INFO: close a connection from client, 18 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:46.335860559Z [PANEL] [switcher][OK] ✓ Слот 6 «youtube_com_006» — работает
+[zapret2-proxy] 2026-08-30T21:44:46.335896862Z [PANEL] [switcher][INFO] Тестирую слот 7 «youtube_com_007»…
+[zapret2-proxy] 2026-08-30T21:44:46.341662212Z  2026-08-30 21:44:46 INFO: connection from 127.0.0.1:55164
+[zapret2-proxy] 2026-08-30T21:44:46.341927519Z  2026-08-30 21:44:46 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:46.341953200Z  2026-08-30 21:44:46 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:46.346954673Z [SS-SERVER]  2026-08-30 21:44:46 INFO: new connection from client, 19 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:46.346977497Z [SS-SERVER]  2026-08-30 21:44:46 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:46.346980637Z [SS-SERVER]  2026-08-30 21:44:46 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:46.346982993Z [SS-SERVER]  2026-08-30 21:44:46 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:46.346985694Z [SS-SERVER]  2026-08-30 21:44:46 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:46.346988255Z [SS-SERVER]  2026-08-30 21:44:46 INFO: new connection to remote, 19 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:46.817770999Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:46.821569640Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:47.817218401Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:47.817734977Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:47.875387581Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:48.825684967Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:48.873078508Z [SS-SERVER]  2026-08-30 21:44:48 INFO: close a connection to remote, 18 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:48.873106281Z [SS-SERVER]  2026-08-30 21:44:48 INFO: close a connection from client, 18 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:49.713815287Z  2026-08-30 21:44:49 INFO: connection from 172.19.0.2:36640
+[zapret2-proxy] 2026-08-30T21:44:49.713881848Z  2026-08-30 21:44:49 INFO: connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:44:49.714049057Z  2026-08-30 21:44:49 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:49.714586409Z [SS-SERVER]  2026-08-30 21:44:49 INFO: new connection from client, 19 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:49.714593989Z [SS-SERVER]  2026-08-30 21:44:49 INFO: [8388] connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:44:49.735448779Z [SS-SERVER]  2026-08-30 21:44:49 INFO: found address name v4 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:44:49.736473505Z [SS-SERVER]  2026-08-30 21:44:49 INFO: found address name v6 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:44:49.736490128Z [SS-SERVER]  2026-08-30 21:44:49 INFO: successfully resolved r2---sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:44:49.736492667Z [SS-SERVER]  2026-08-30 21:44:49 INFO: new connection to remote, 19 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:49.836361350Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:50.211252382Z [PANEL] [pool][WARN] ⚡ Срез соединения: прожило 36s — вызываю on_cut
+[zapret2-proxy] 2026-08-30T21:44:50.211606324Z [PANEL] [switcher][WARN] ⚡ Срез ТСПУ: соединение прожило 36s — ротация стратегий
+[zapret2-proxy] 2026-08-30T21:44:50.214612481Z [PANEL] [switcher][WARN] ⚡ Ротация: заменяю слот 0 «nfqws-youtube» (самый активный)
+[zapret2-proxy] 2026-08-30T21:44:50.215911764Z [PANEL] [switcher][WARN] Слот 0 «nfqws-youtube»: подбираю замену…
+[zapret2-proxy] 2026-08-30T21:44:50.250476199Z [PANEL] [pool][INFO] Слот 0 старт: qnum=300 strategy=youtube_com_010
+[zapret2-proxy] 2026-08-30T21:44:50.250507663Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=300 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=fake:blob=fake_default_tls:ip_autottl=-4,3-20:tls_mod=rnd,dupsid,padencap:repeats=1 --lua-desync=fakeddisorder:pos=midsld:ip_autottl=-4,3-20 --payload=empty --out-range=s1<d1 --lua-desync=pktmod:ip_ttl=1
+[zapret2-proxy] 2026-08-30T21:44:50.753637830Z [PANEL] [pool][ERROR] Слот 0 упал сразу (rc=1): nfq_create_queue(): Operation not permitted
+[zapret2-proxy] 2026-08-30T21:44:50.828647135Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:50.829345428Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:50.830376899Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:50.831764792Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:50.899873134Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:51.757305362Z [PANEL] [pool][INFO] Слот 0 заменён на «youtube_com_010» (graceful)
+[zapret2-proxy] 2026-08-30T21:44:52.824011522Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:53.820073104Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:53.820254171Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:53.875572130Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:54.345624443Z [SS-SERVER]  2026-08-30 21:44:54 INFO: close a connection to remote, 18 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:54.345662597Z [SS-SERVER]  2026-08-30 21:44:54 INFO: close a connection from client, 18 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:54.368980800Z [PANEL] [switcher][WARN] ✗ Слот 7 «youtube_com_007» — не работает (rc=28, провалов: 2/2)
+[zapret2-proxy] 2026-08-30T21:44:54.369019909Z [PANEL] [switcher][INFO] Тестирую слот 8 «youtube_com_008»…
+[zapret2-proxy] 2026-08-30T21:44:54.376234059Z  2026-08-30 21:44:54 INFO: connection from 127.0.0.1:58842
+[zapret2-proxy] 2026-08-30T21:44:54.376362432Z  2026-08-30 21:44:54 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:54.376368816Z  2026-08-30 21:44:54 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:54.379084341Z [SS-SERVER]  2026-08-30 21:44:54 INFO: new connection from client, 19 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:54.379187778Z [SS-SERVER]  2026-08-30 21:44:54 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:54.379235063Z [SS-SERVER]  2026-08-30 21:44:54 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:54.379237613Z [SS-SERVER]  2026-08-30 21:44:54 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:54.379239080Z [SS-SERVER]  2026-08-30 21:44:54 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:54.379240543Z [SS-SERVER]  2026-08-30 21:44:54 INFO: new connection to remote, 19 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:54.671772388Z [SS-SERVER]  2026-08-30 21:44:54 INFO: close a connection to remote, 18 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:54.671799715Z [SS-SERVER]  2026-08-30 21:44:54 INFO: close a connection from client, 18 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:54.691899020Z [PANEL] [switcher][OK] ✓ Слот 8 «youtube_com_008» — работает
+[zapret2-proxy] 2026-08-30T21:44:54.691960048Z [PANEL] [switcher][INFO] Тестирую слот 9 «youtube_com_009»…
+[zapret2-proxy] 2026-08-30T21:44:54.697960565Z  2026-08-30 21:44:54 INFO: connection from 127.0.0.1:58854
+[zapret2-proxy] 2026-08-30T21:44:54.698239378Z  2026-08-30 21:44:54 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:54.698266857Z  2026-08-30 21:44:54 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:54.701553528Z [SS-SERVER]  2026-08-30 21:44:54 INFO: new connection from client, 19 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:54.701860816Z [SS-SERVER]  2026-08-30 21:44:54 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:54.701875472Z [SS-SERVER]  2026-08-30 21:44:54 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:54.701878757Z [SS-SERVER]  2026-08-30 21:44:54 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:54.701881321Z [SS-SERVER]  2026-08-30 21:44:54 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:54.701884153Z [SS-SERVER]  2026-08-30 21:44:54 INFO: new connection to remote, 19 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:54.839646318Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:54.840877506Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:54.843602095Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:55.562426916Z  2026-08-30 21:44:55 INFO: connection from 172.19.0.2:36642
+[zapret2-proxy] 2026-08-30T21:44:55.562910272Z  2026-08-30 21:44:55 INFO: connect to 172.217.171.99:443
+[zapret2-proxy] 2026-08-30T21:44:55.562930104Z  2026-08-30 21:44:55 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:55.563354851Z [SS-SERVER]  2026-08-30 21:44:55 INFO: new connection from client, 20 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:55.563593566Z [SS-SERVER]  2026-08-30 21:44:55 INFO: [8388] connect to 172.217.171.99:443
+[zapret2-proxy] 2026-08-30T21:44:55.563659624Z [SS-SERVER]  2026-08-30 21:44:55 INFO: new connection to remote, 20 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:55.760879837Z  2026-08-30 21:44:55 INFO: connection from 172.19.0.2:36656
+[zapret2-proxy] 2026-08-30T21:44:55.760913336Z  2026-08-30 21:44:55 INFO: connection from 172.19.0.2:36654
+[zapret2-proxy] 2026-08-30T21:44:55.761197139Z  2026-08-30 21:44:55 INFO: connect to 172.217.23.227:443
+[zapret2-proxy] 2026-08-30T21:44:55.761211449Z  2026-08-30 21:44:55 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:55.761432558Z  2026-08-30 21:44:55 INFO: connect to 172.217.23.227:443
+[zapret2-proxy] 2026-08-30T21:44:55.761444162Z  2026-08-30 21:44:55 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:55.761986083Z [SS-SERVER]  2026-08-30 21:44:55 INFO: new connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:55.762002470Z [SS-SERVER]  2026-08-30 21:44:55 INFO: [8388] connect to 172.217.23.227:443
+[zapret2-proxy] 2026-08-30T21:44:55.762005043Z [SS-SERVER]  2026-08-30 21:44:55 INFO: new connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:55.762007039Z [SS-SERVER]  2026-08-30 21:44:55 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:55.762008847Z [SS-SERVER]  2026-08-30 21:44:55 INFO: [8388] connect to 172.217.23.227:443
+[zapret2-proxy] 2026-08-30T21:44:55.762107562Z [SS-SERVER]  2026-08-30 21:44:55 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:56.825830731Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:56.826302990Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:56.829591561Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:56.876172092Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:57.765499892Z  2026-08-30 21:44:57 INFO: connection from 127.0.0.1:58856
+[zapret2-proxy] 2026-08-30T21:44:57.765530113Z  2026-08-30 21:44:57 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:57.765533847Z  2026-08-30 21:44:57 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:44:57.770841003Z [SS-SERVER]  2026-08-30 21:44:57 INFO: new connection from client, 23 opened client connections
+[zapret2-proxy] 2026-08-30T21:44:57.770879583Z [SS-SERVER]  2026-08-30 21:44:57 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:44:57.770883470Z [SS-SERVER]  2026-08-30 21:44:57 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:57.770886878Z [SS-SERVER]  2026-08-30 21:44:57 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:57.770890236Z [SS-SERVER]  2026-08-30 21:44:57 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:44:57.770893911Z [SS-SERVER]  2026-08-30 21:44:57 INFO: new connection to remote, 23 opened remote connections
+[zapret2-proxy] 2026-08-30T21:44:58.823681209Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:58.826543958Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:59.833967546Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:59.834452323Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:59.836373554Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:44:59.896939931Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:00.836288113Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:02.702737370Z [SS-SERVER]  2026-08-30 21:45:02 INFO: close a connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:02.702764855Z [SS-SERVER]  2026-08-30 21:45:02 INFO: close a connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:02.729078887Z [PANEL] [switcher][WARN] ✗ Слот 9 «youtube_com_009» — не работает (rc=28, провалов: 2/2)
+[zapret2-proxy] 2026-08-30T21:45:02.729127925Z [PANEL] [switcher][WARN] Убираю нерабочие слоты из rotation: [0, 3, 4, 7, 9]
+[zapret2-proxy] 2026-08-30T21:45:02.796678225Z [PANEL] [pool][INFO] iptables TCP POSTROUTING → ZAPRET_POOL OK
+[zapret2-proxy] 2026-08-30T21:45:02.801131478Z [PANEL] [pool][INFO] iptables UDP POSTROUTING → ZAPRET_POOL OK
+[zapret2-proxy] 2026-08-30T21:45:02.802356727Z [PANEL] [pool][INFO] Пропуск ip6tables TCP: ipset zport_tcp6 не существует
+[zapret2-proxy] 2026-08-30T21:45:02.803904025Z [PANEL] [pool][INFO] Пропуск ip6tables UDP: ipset zport_udp6 не существует
+[zapret2-proxy] 2026-08-30T21:45:02.803927686Z [PANEL] [pool][INFO] ZAPRET_POOL создана: 5 слот(ов) qnum=[301, 302, 305, 306, 308]
+[zapret2-proxy] 2026-08-30T21:45:02.803930679Z [PANEL] [pool][INFO] Слоты [0, 3, 4, 7, 9] убраны из rotation
+[zapret2-proxy] 2026-08-30T21:45:02.803933038Z [PANEL] [switcher][WARN] Слот 0 «nfqws-youtube»: подбираю замену…
+[zapret2-proxy] 2026-08-30T21:45:02.827510260Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:02.828135550Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:02.828950715Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:02.832664799Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:02.853515242Z [PANEL] [pool][INFO] Слот 0 старт: qnum=300 strategy=youtube_com_011
+[zapret2-proxy] 2026-08-30T21:45:02.853567048Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=300 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=fake:blob=fake_default_tls:ip_autottl=-1,3-20:tls_mod=rnd,dupsid,padencap:repeats=1 --lua-desync=multidisorder:pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1
+[zapret2-proxy] 2026-08-30T21:45:03.355034516Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:04.354784068Z [PANEL] [pool][INFO] Слот 0 заменён на «youtube_com_011» (graceful)
+[zapret2-proxy] 2026-08-30T21:45:04.821637958Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:04.825985780Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:05.014401065Z  2026-08-30 21:45:05 INFO: connection from 172.19.0.2:41046
+[zapret2-proxy] 2026-08-30T21:45:05.014737728Z  2026-08-30 21:45:05 INFO: connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:05.015268662Z  2026-08-30 21:45:05 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:05.015555311Z [SS-SERVER]  2026-08-30 21:45:05 INFO: new connection from client, 23 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:05.015918078Z [SS-SERVER]  2026-08-30 21:45:05 INFO: [8388] connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:05.015927327Z [SS-SERVER]  2026-08-30 21:45:05 INFO: found address name v4 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:05.015929511Z [SS-SERVER]  2026-08-30 21:45:05 INFO: found address name v6 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:05.015931316Z [SS-SERVER]  2026-08-30 21:45:05 INFO: successfully resolved r2---sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:05.015933173Z [SS-SERVER]  2026-08-30 21:45:05 INFO: new connection to remote, 23 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:05.665825483Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:05.666066667Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:05.681764281Z  2026-08-30 21:45:05 INFO: connection from 172.19.0.2:41058
+[zapret2-proxy] 2026-08-30T21:45:05.681894360Z  2026-08-30 21:45:05 INFO: connect to 172.217.23.227:443
+[zapret2-proxy] 2026-08-30T21:45:05.681906791Z  2026-08-30 21:45:05 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:05.682517795Z [SS-SERVER]  2026-08-30 21:45:05 INFO: new connection from client, 23 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:05.682528356Z [SS-SERVER]  2026-08-30 21:45:05 INFO: [8388] connect to 172.217.23.227:443
+[zapret2-proxy] 2026-08-30T21:45:05.682530482Z [SS-SERVER]  2026-08-30 21:45:05 INFO: new connection to remote, 23 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:05.769759155Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:05.769783526Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:05.783939730Z [PANEL] [switcher][WARN] ✗ Слот 0: «youtube_com_010» не помогла (rc=28), попытка 1/3
+[zapret2-proxy] 2026-08-30T21:45:05.808858980Z [PANEL] [pool][INFO] Слот 0 старт: qnum=300 strategy=youtube_com_012
+[zapret2-proxy] 2026-08-30T21:45:05.808915758Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=300 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=fake:blob=0x00000000:tcp_ts=-1000:repeats=1 --lua-desync=fake:blob=fake_default_tls:tcp_ts=-1000:tls_mod=rnd,dupsid:repeats=1 --lua-desync=fakeddisorder:pos=midsld:tcp_ts=-1000
+[zapret2-proxy] 2026-08-30T21:45:05.826973028Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:05.857214510Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:05.857234434Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:05.859905519Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection to remote, 20 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:05.860003686Z [SS-SERVER]  2026-08-30 21:45:05 INFO: close a connection from client, 20 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:06.310006273Z [PANEL] [pool][ERROR] Слот 0 упал сразу (rc=1): nfq_create_queue(): Operation not permitted
+[zapret2-proxy] 2026-08-30T21:45:06.310258997Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:06.367880382Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:06.828840500Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:06.833561908Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:07.314251664Z [PANEL] [pool][INFO] Слот 0 заменён на «youtube_com_012» (graceful)
+[zapret2-proxy] 2026-08-30T21:45:08.819075457Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:08.819533768Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:08.824116125Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:08.882686555Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:09.054499499Z [SS-SERVER]  2026-08-30 21:45:09 INFO: new connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:09.054645580Z [SS-SERVER]  2026-08-30 21:45:09 INFO: close a connection from client, 20 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:09.830229861Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:10.374412983Z  2026-08-30 21:45:10 INFO: connection from 127.0.0.1:50966
+[zapret2-proxy] 2026-08-30T21:45:10.374466560Z  2026-08-30 21:45:10 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:10.374470028Z  2026-08-30 21:45:10 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:10.377835398Z [SS-SERVER]  2026-08-30 21:45:10 INFO: new connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:10.377865598Z [SS-SERVER]  2026-08-30 21:45:10 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:10.377868568Z [SS-SERVER]  2026-08-30 21:45:10 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:10.377870795Z [SS-SERVER]  2026-08-30 21:45:10 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:10.377873008Z [SS-SERVER]  2026-08-30 21:45:10 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:10.377875345Z [SS-SERVER]  2026-08-30 21:45:10 INFO: new connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:10.833290797Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:10.836589057Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:11.819043810Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:11.819492429Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:11.869742167Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:12.825818968Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:13.321280041Z  2026-08-30 21:45:13 INFO: connection from 127.0.0.1:50970
+[zapret2-proxy] 2026-08-30T21:45:13.321815008Z  2026-08-30 21:45:13 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:13.321831478Z  2026-08-30 21:45:13 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:13.324202572Z [SS-SERVER]  2026-08-30 21:45:13 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:13.324317019Z [SS-SERVER]  2026-08-30 21:45:13 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:13.324328627Z [SS-SERVER]  2026-08-30 21:45:13 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:13.324330718Z [SS-SERVER]  2026-08-30 21:45:13 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:13.324332530Z [SS-SERVER]  2026-08-30 21:45:13 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:13.324334607Z [SS-SERVER]  2026-08-30 21:45:13 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:14.817918125Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:14.818456001Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:14.818718349Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:14.820854400Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:14.821798317Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:14.866525291Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:16.824789273Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:17.823118793Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:17.823779368Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:17.870572947Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:18.145155441Z  2026-08-30 21:45:18 INFO: connection from 172.19.0.2:43630
+[zapret2-proxy] 2026-08-30T21:45:18.145604022Z  2026-08-30 21:45:18 INFO: connect to 142.251.150.119:443
+[zapret2-proxy] 2026-08-30T21:45:18.145621613Z  2026-08-30 21:45:18 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:18.146784837Z [SS-SERVER]  2026-08-30 21:45:18 INFO: new connection from client, 23 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:18.146836675Z [SS-SERVER]  2026-08-30 21:45:18 INFO: [8388] connect to 142.251.150.119:443
+[zapret2-proxy] 2026-08-30T21:45:18.146839656Z [SS-SERVER]  2026-08-30 21:45:18 INFO: new connection to remote, 23 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:18.376496702Z [SS-SERVER]  2026-08-30 21:45:18 INFO: close a connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:18.376527425Z [SS-SERVER]  2026-08-30 21:45:18 INFO: close a connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:18.397943715Z [PANEL] [switcher][WARN] ✗ Слот 0: «youtube_com_011» не помогла (rc=28), попытка 1/3
+[zapret2-proxy] 2026-08-30T21:45:18.439623260Z [PANEL] [pool][INFO] Слот 0 старт: qnum=300 strategy=youtube_com_013
+[zapret2-proxy] 2026-08-30T21:45:18.439667431Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=300 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=fakeddisorder:pos=midsld:tcp_flags_set=SYN
+[zapret2-proxy] 2026-08-30T21:45:18.985599822Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:18.989829090Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:19.940687174Z [PANEL] [pool][INFO] Слот 0 заменён на «youtube_com_013» (graceful)
+[zapret2-proxy] 2026-08-30T21:45:19.991562585Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:20.643279774Z [SS-SERVER]  2026-08-30 21:45:20 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:20.643309157Z [SS-SERVER]  2026-08-30 21:45:20 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:20.704211401Z  2026-08-30 21:45:20 INFO: connection from 172.19.0.2:35926
+[zapret2-proxy] 2026-08-30T21:45:20.704647829Z  2026-08-30 21:45:20 INFO: connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:20.704667166Z  2026-08-30 21:45:20 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:20.705493724Z [SS-SERVER]  2026-08-30 21:45:20 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:20.705627173Z [SS-SERVER]  2026-08-30 21:45:20 INFO: [8388] connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:20.705650735Z [SS-SERVER]  2026-08-30 21:45:20 INFO: found address name v4 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:20.705660027Z [SS-SERVER]  2026-08-30 21:45:20 INFO: found address name v6 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:20.705663685Z [SS-SERVER]  2026-08-30 21:45:20 INFO: successfully resolved r2---sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:20.705667556Z [SS-SERVER]  2026-08-30 21:45:20 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:20.989645131Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:20.991154119Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:20.995538178Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:21.072944732Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:21.325126953Z [SS-SERVER]  2026-08-30 21:45:21 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:21.325163236Z [SS-SERVER]  2026-08-30 21:45:21 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:21.339893307Z [PANEL] [switcher][WARN] ✗ Слот 0: «youtube_com_012» не помогла (rc=28), попытка 2/3
+[zapret2-proxy] 2026-08-30T21:45:21.365311757Z [PANEL] [pool][INFO] Слот 0 старт: qnum=300 strategy=youtube_com_014
+[zapret2-proxy] 2026-08-30T21:45:21.365345478Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=300 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=fake:blob=fake_default_tls:tcp_ts=-1000:tls_mod=rnd,dupsid,padencap:repeats=1 --lua-desync=multisplit:pos=host+1
+[zapret2-proxy] 2026-08-30T21:45:21.867686621Z [PANEL] [pool][ERROR] Слот 0 упал сразу (rc=1): nfq_create_queue(): Operation not permitted
+[zapret2-proxy] 2026-08-30T21:45:22.869137002Z [PANEL] [pool][INFO] Слот 0 заменён на «youtube_com_014» (graceful)
+[zapret2-proxy] 2026-08-30T21:45:22.996911194Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:22.998668248Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:24.000968913Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:24.001019158Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:24.070999145Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:24.992239595Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:24.996193827Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:25.948873837Z  2026-08-30 21:45:25 INFO: connection from 127.0.0.1:48918
+[zapret2-proxy] 2026-08-30T21:45:25.949407943Z  2026-08-30 21:45:25 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:25.949471234Z  2026-08-30 21:45:25 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:25.953214071Z [SS-SERVER]  2026-08-30 21:45:25 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:25.953936206Z [SS-SERVER]  2026-08-30 21:45:25 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:25.953980342Z [SS-SERVER]  2026-08-30 21:45:25 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:25.953984861Z [SS-SERVER]  2026-08-30 21:45:25 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:25.953988517Z [SS-SERVER]  2026-08-30 21:45:25 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:25.953992405Z [SS-SERVER]  2026-08-30 21:45:25 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:26.996713366Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:26.999590718Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:26.999637754Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:27.004829953Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:27.047206681Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:28.203700736Z [SS-SERVER]  2026-08-30 21:45:28 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:28.203781489Z [SS-SERVER]  2026-08-30 21:45:28 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:28.838030638Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:28.876072653Z  2026-08-30 21:45:28 INFO: connection from 127.0.0.1:48924
+[zapret2-proxy] 2026-08-30T21:45:28.876291799Z  2026-08-30 21:45:28 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:28.876823929Z  2026-08-30 21:45:28 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:28.879450068Z [SS-SERVER]  2026-08-30 21:45:28 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:28.879460572Z [SS-SERVER]  2026-08-30 21:45:28 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:28.879462541Z [SS-SERVER]  2026-08-30 21:45:28 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:28.879464294Z [SS-SERVER]  2026-08-30 21:45:28 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:28.879465920Z [SS-SERVER]  2026-08-30 21:45:28 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:28.879467447Z [SS-SERVER]  2026-08-30 21:45:28 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:29.819573983Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:29.819608444Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:29.819611919Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:29.892735765Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:30.821894695Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:30.826569965Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:32.818088141Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:32.818585332Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:32.822347488Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:32.887063563Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:32.993163610Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:33.015818325Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:33.016002814Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:33.019115015Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:33.020835919Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:33.089161395Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:33.953831931Z [SS-SERVER]  2026-08-30 21:45:33 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:33.954576397Z [SS-SERVER]  2026-08-30 21:45:33 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:33.976900459Z [PANEL] [switcher][WARN] ✗ Слот 0: «youtube_com_013» не помогла (rc=28), попытка 2/3
+[zapret2-proxy] 2026-08-30T21:45:34.002862700Z [PANEL] [pool][INFO] Слот 0 старт: qnum=300 strategy=youtube_com_015
+[zapret2-proxy] 2026-08-30T21:45:34.002897884Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=300 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=fake:blob=fake_default_tls:tcp_md5:repeats=1 --lua-desync=multidisorder:pos=midsld
+[zapret2-proxy] 2026-08-30T21:45:34.822249606Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:34.822280218Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:34.822282658Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:35.504225097Z [PANEL] [pool][INFO] Слот 0 заменён на «youtube_com_015» (graceful)
+[zapret2-proxy] 2026-08-30T21:45:35.831133956Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:35.831593970Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:35.885127611Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:35.949275185Z [SS-SERVER]  2026-08-30 21:45:35 INFO: close a connection to remote, 20 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:35.949301057Z [SS-SERVER]  2026-08-30 21:45:35 INFO: close a connection from client, 20 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:36.447946059Z  2026-08-30 21:45:36 INFO: connection from 172.19.0.2:58180
+[zapret2-proxy] 2026-08-30T21:45:36.448232593Z  2026-08-30 21:45:36 INFO: connect to redirector.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:36.448243049Z  2026-08-30 21:45:36 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:36.448902142Z [SS-SERVER]  2026-08-30 21:45:36 INFO: new connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:36.448913733Z [SS-SERVER]  2026-08-30 21:45:36 INFO: [8388] connect to redirector.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:36.468138793Z [SS-SERVER]  2026-08-30 21:45:36 INFO: found address name v4 address wide-youtube.l.google.com
+[zapret2-proxy] 2026-08-30T21:45:36.470060030Z [SS-SERVER]  2026-08-30 21:45:36 INFO: found address name v6 address wide-youtube.l.google.com
+[zapret2-proxy] 2026-08-30T21:45:36.470144026Z [SS-SERVER]  2026-08-30 21:45:36 INFO: successfully resolved redirector.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:36.470154161Z [SS-SERVER]  2026-08-30 21:45:36 INFO: new connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:36.680016091Z  2026-08-30 21:45:36 INFO: connection from 172.19.0.2:58192
+[zapret2-proxy] 2026-08-30T21:45:36.680065400Z  2026-08-30 21:45:36 INFO: connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:36.680069702Z  2026-08-30 21:45:36 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:36.680515083Z [SS-SERVER]  2026-08-30 21:45:36 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:36.680895359Z [SS-SERVER]  2026-08-30 21:45:36 INFO: [8388] connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:36.680928012Z [SS-SERVER]  2026-08-30 21:45:36 INFO: found address name v4 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:36.680930642Z [SS-SERVER]  2026-08-30 21:45:36 INFO: found address name v6 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:36.681004623Z [SS-SERVER]  2026-08-30 21:45:36 INFO: successfully resolved r2---sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:36.681009707Z [SS-SERVER]  2026-08-30 21:45:36 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:36.835394967Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:36.881328146Z [SS-SERVER]  2026-08-30 21:45:36 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:36.881379704Z [SS-SERVER]  2026-08-30 21:45:36 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:36.903384096Z [PANEL] [switcher][WARN] ✗ Слот 0: «youtube_com_014» не помогла (rc=28), попытка 3/3
+[zapret2-proxy] 2026-08-30T21:45:36.903407077Z [PANEL] [switcher][ERROR] Слот 0: ни одна из 3 стратегий не работает, вернул в rotation
+[zapret2-proxy] 2026-08-30T21:45:36.980667503Z [PANEL] [pool][INFO] iptables TCP POSTROUTING → ZAPRET_POOL OK
+[zapret2-proxy] 2026-08-30T21:45:36.985831113Z [PANEL] [pool][INFO] iptables UDP POSTROUTING → ZAPRET_POOL OK
+[zapret2-proxy] 2026-08-30T21:45:36.987050298Z [PANEL] [pool][INFO] Пропуск ip6tables TCP: ipset zport_tcp6 не существует
+[zapret2-proxy] 2026-08-30T21:45:36.988321627Z [PANEL] [pool][INFO] Пропуск ip6tables UDP: ipset zport_udp6 не существует
+[zapret2-proxy] 2026-08-30T21:45:36.988346224Z [PANEL] [pool][INFO] ZAPRET_POOL создана: 6 слот(ов) qnum=[300, 301, 302, 305, 306, 308]
+[zapret2-proxy] 2026-08-30T21:45:36.988350331Z [PANEL] [pool][INFO] Слот 0 возвращён в rotation
+[zapret2-proxy] 2026-08-30T21:45:38.822029385Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:38.823351240Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:38.823692111Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:38.826267281Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:38.880292320Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:39.111159228Z [SS-SERVER]  2026-08-30 21:45:39 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:39.111302238Z [SS-SERVER]  2026-08-30 21:45:39 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:39.825955903Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:40.826877953Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:41.510942398Z  2026-08-30 21:45:41 INFO: connection from 127.0.0.1:43710
+[zapret2-proxy] 2026-08-30T21:45:41.511165420Z  2026-08-30 21:45:41 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:41.512905040Z  2026-08-30 21:45:41 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:41.513640136Z [SS-SERVER]  2026-08-30 21:45:41 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:41.514141258Z [SS-SERVER]  2026-08-30 21:45:41 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:41.514157627Z [SS-SERVER]  2026-08-30 21:45:41 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:41.514159926Z [SS-SERVER]  2026-08-30 21:45:41 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:41.514161744Z [SS-SERVER]  2026-08-30 21:45:41 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:41.514163371Z [SS-SERVER]  2026-08-30 21:45:41 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:41.823870005Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:41.824118258Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:41.843149359Z [SS-SERVER]  2026-08-30 21:45:41 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:41.843844457Z [SS-SERVER]  2026-08-30 21:45:41 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:41.859976775Z [PANEL] [switcher][OK] ✓ Слот 0: «nfqws-youtube» → «youtube_com_015» — работает, возвращаю в rotation
+[zapret2-proxy] 2026-08-30T21:45:41.878363083Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:41.924226463Z [PANEL] [pool][INFO] iptables TCP POSTROUTING → ZAPRET_POOL OK
+[zapret2-proxy] 2026-08-30T21:45:41.928551932Z [PANEL] [pool][INFO] iptables UDP POSTROUTING → ZAPRET_POOL OK
+[zapret2-proxy] 2026-08-30T21:45:41.929961880Z [PANEL] [pool][INFO] Пропуск ip6tables TCP: ipset zport_tcp6 не существует
+[zapret2-proxy] 2026-08-30T21:45:41.930943349Z [PANEL] [pool][INFO] Пропуск ip6tables UDP: ipset zport_udp6 не существует
+[zapret2-proxy] 2026-08-30T21:45:41.931089902Z [PANEL] [pool][INFO] ZAPRET_POOL создана: 6 слот(ов) qnum=[300, 301, 302, 305, 306, 308]
+[zapret2-proxy] 2026-08-30T21:45:41.931097808Z [PANEL] [pool][INFO] Слот 0 возвращён в rotation
+[zapret2-proxy] 2026-08-30T21:45:41.931099845Z [PANEL] [switcher][WARN] Слот 3 «youtube_com_003»: подбираю замену…
+[zapret2-proxy] 2026-08-30T21:45:41.967438336Z [PANEL] [pool][INFO] Слот 3 старт: qnum=303 strategy=youtube_com_016
+[zapret2-proxy] 2026-08-30T21:45:41.967474741Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=303 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=multisplit:blob=fake_default_tls:ip_autottl=-1,3-20:pos=2:nodrop:repeats=1 --lua-desync=fakeddisorder:pos=midsld:ip_autottl=-1,3-20
+[zapret2-proxy] 2026-08-30T21:45:42.470472840Z [PANEL] [pool][ERROR] Слот 3 упал сразу (rc=1): nfq_create_queue(): Operation not permitted
+[zapret2-proxy] 2026-08-30T21:45:42.820468534Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:42.824001852Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:43.474441582Z [PANEL] [pool][INFO] Слот 3 заменён на «youtube_com_016» (graceful)
+[zapret2-proxy] 2026-08-30T21:45:44.835334446Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:44.836128946Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:44.837674431Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:44.840161783Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:44.887452511Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:45.846131624Z [PANEL] [pool][WARN] Слот 3 (qnum=303) упал, перезапускаю
+[zapret2-proxy] 2026-08-30T21:45:45.846268846Z [PANEL] [pool][INFO] Слот 3 старт: qnum=303 strategy=youtube_com_016
+[zapret2-proxy] 2026-08-30T21:45:45.846413552Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=303 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=multisplit:blob=fake_default_tls:ip_autottl=-1,3-20:pos=2:nodrop:repeats=1 --lua-desync=fakeddisorder:pos=midsld:ip_autottl=-1,3-20
+[zapret2-proxy] 2026-08-30T21:45:46.820008486Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:46.822716078Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:47.816708262Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:47.816923530Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:47.862300400Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:48.833235520Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:49.481344562Z  2026-08-30 21:45:49 INFO: connection from 127.0.0.1:42460
+[zapret2-proxy] 2026-08-30T21:45:49.481707253Z  2026-08-30 21:45:49 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:49.483036589Z  2026-08-30 21:45:49 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:49.485046272Z [SS-SERVER]  2026-08-30 21:45:49 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:49.485062371Z [SS-SERVER]  2026-08-30 21:45:49 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:45:49.485284310Z [SS-SERVER]  2026-08-30 21:45:49 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:49.485293652Z [SS-SERVER]  2026-08-30 21:45:49 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:49.485296348Z [SS-SERVER]  2026-08-30 21:45:49 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:45:49.485298689Z [SS-SERVER]  2026-08-30 21:45:49 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:49.820529495Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:50.819108130Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:50.820253806Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:50.820706811Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:50.823312190Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:50.875036616Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:51.630039618Z [SS-SERVER]  2026-08-30 21:45:51 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:51.630066558Z [SS-SERVER]  2026-08-30 21:45:51 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:52.464478813Z [SS-SERVER]  2026-08-30 21:45:52 INFO: close a connection to remote, 20 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:52.464503248Z [SS-SERVER]  2026-08-30 21:45:52 INFO: close a connection from client, 20 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:52.835075751Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:53.827626758Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:53.827933338Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:53.872457763Z  2026-08-30 21:45:53 INFO: connection from 172.19.0.2:58592
+[zapret2-proxy] 2026-08-30T21:45:53.872506716Z  2026-08-30 21:45:53 INFO: connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:53.872591294Z  2026-08-30 21:45:53 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:45:53.873356202Z [SS-SERVER]  2026-08-30 21:45:53 INFO: new connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:53.873387701Z [SS-SERVER]  2026-08-30 21:45:53 INFO: [8388] connect to r2---sn-4g5lznle.googlevideo.com:443
+[zapret2-proxy] 2026-08-30T21:45:53.873392568Z [SS-SERVER]  2026-08-30 21:45:53 INFO: found address name v4 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:53.873396153Z [SS-SERVER]  2026-08-30 21:45:53 INFO: found address name v6 address r2.sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:53.873398505Z [SS-SERVER]  2026-08-30 21:45:53 INFO: successfully resolved r2---sn-4g5lznle.googlevideo.com
+[zapret2-proxy] 2026-08-30T21:45:53.873401482Z [SS-SERVER]  2026-08-30 21:45:53 INFO: new connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:53.881858101Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:54.821578536Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:54.823819854Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:54.825461517Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:56.833004305Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:56.833187675Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:56.836532767Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:56.879351997Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:57.484321696Z [SS-SERVER]  2026-08-30 21:45:57 INFO: close a connection to remote, 20 opened remote connections
+[zapret2-proxy] 2026-08-30T21:45:57.484340784Z [SS-SERVER]  2026-08-30 21:45:57 INFO: close a connection from client, 20 opened client connections
+[zapret2-proxy] 2026-08-30T21:45:57.502910868Z [PANEL] [switcher][WARN] ✗ Слот 3: «youtube_com_016» не помогла (rc=28), попытка 1/3
+[zapret2-proxy] 2026-08-30T21:45:57.529141458Z [PANEL] [pool][INFO] Слот 3 старт: qnum=303 strategy=youtube_com_017
+[zapret2-proxy] 2026-08-30T21:45:57.529209374Z [PANEL] [pool][INFO] CMD: /opt/zapret2/nfq2/nfqws2 --qnum=303 --user=nobody --fwmark=0x40000000 --lua-init=@/opt/zapret2/lua/zapret-lib.lua --lua-init=@/opt/zapret2/lua/zapret-antidpi.lua --lua-init=@/opt/zapret2/lua/zapret-auto.lua --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=multisplit:blob=fake_default_tls:tcp_seq=1000000:pos=2:nodrop:repeats=1 --lua-desync=multidisorder:pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1
+[zapret2-proxy] 2026-08-30T21:45:58.030435784Z [PANEL] [pool][ERROR] Слот 3 упал сразу (rc=1): nfq_create_queue(): Operation not permitted
+[zapret2-proxy] 2026-08-30T21:45:58.816834595Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:58.820432265Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:59.034296328Z [PANEL] [pool][INFO] Слот 3 заменён на «youtube_com_017» (graceful)
+[zapret2-proxy] 2026-08-30T21:45:59.816754077Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:59.816947500Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:59.818184232Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:45:59.895924292Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:00.831536567Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:02.827776101Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:02.828773533Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:02.830927624Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:02.831587620Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:02.885552530Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:04.833910930Z [PANEL] [panel] 77.37.196.126 "GET /api/connections HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:04.836320424Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:05.042093565Z  2026-08-30 21:46:05 INFO: connection from 127.0.0.1:46882
+[zapret2-proxy] 2026-08-30T21:46:05.042124123Z  2026-08-30 21:46:05 INFO: connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:46:05.042160778Z  2026-08-30 21:46:05 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:46:05.046418595Z [SS-SERVER]  2026-08-30 21:46:05 INFO: new connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:46:05.046497638Z [SS-SERVER]  2026-08-30 21:46:05 INFO: [8388] connect to www.youtube.com:443
+[zapret2-proxy] 2026-08-30T21:46:05.046552653Z [SS-SERVER]  2026-08-30 21:46:05 INFO: found address name v4 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:46:05.047815045Z [SS-SERVER]  2026-08-30 21:46:05 INFO: found address name v6 address www.youtube.com
+[zapret2-proxy] 2026-08-30T21:46:05.047844484Z [SS-SERVER]  2026-08-30 21:46:05 INFO: successfully resolved www.youtube.com
+[zapret2-proxy] 2026-08-30T21:46:05.047847950Z [SS-SERVER]  2026-08-30 21:46:05 INFO: new connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:46:05.232943648Z  2026-08-30 21:46:05 INFO: connection from 172.19.0.2:51988
+[zapret2-proxy] 2026-08-30T21:46:05.235027799Z  2026-08-30 21:46:05 INFO: connect to 142.251.150.119:443
+[zapret2-proxy] 2026-08-30T21:46:05.235059950Z  2026-08-30 21:46:05 INFO: remote: 127.0.0.1:8388
+[zapret2-proxy] 2026-08-30T21:46:05.235557744Z [SS-SERVER]  2026-08-30 21:46:05 INFO: new connection from client, 22 opened client connections
+[zapret2-proxy] 2026-08-30T21:46:05.235573982Z [SS-SERVER]  2026-08-30 21:46:05 INFO: [8388] connect to 142.251.150.119:443
+[zapret2-proxy] 2026-08-30T21:46:05.235577718Z [SS-SERVER]  2026-08-30 21:46:05 INFO: new connection to remote, 22 opened remote connections
+[zapret2-proxy] 2026-08-30T21:46:05.981441738Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:05.981906156Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:06.054910954Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:06.993292553Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/log HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:06.997314043Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:07.598877486Z [SS-SERVER]  2026-08-30 21:46:07 INFO: close a connection to remote, 21 opened remote connections
+[zapret2-proxy] 2026-08-30T21:46:07.598919247Z [SS-SERVER]  2026-08-30 21:46:07 INFO: close a connection from client, 21 opened client connections
+[zapret2-proxy] 2026-08-30T21:46:08.989396151Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:08.990114841Z [PANEL] [panel] 77.37.196.126 "GET /api/monitor/status HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:08.993643877Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
+[zapret2-proxy] 2026-08-30T21:46:09.038597521Z [PANEL] [panel] 77.37.196.126 "GET /api/pool/traffic HTTP/1.1" 200 -
