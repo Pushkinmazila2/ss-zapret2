@@ -45,13 +45,19 @@ class LifetimeTracker:
         self.require_reset    = bool(require_reset)
         self.reset_window_sec = float(reset_window_sec)
 
-        self._lock     = threading.Lock()
+        self._lock      = threading.Lock()
         self._conns    = {}           # (local_port, remote_ip, remote_port) -> first_seen
         self._reset_ts = collections.deque(maxlen=50)  # метки reset из ss-server лога
         self._thread   = None
         self._stop_evt = threading.Event()
 
         self.on_cut = None            # callback fn(lifetime_sec)
+
+        # «сессия YouTube» — период с активными :443 соединениями
+        self._session_start  = None   # когда сессия началась
+        self._last_activity  = None   # время последнего :443 соединения
+        self._yt_active      = False  # есть ли сейчас :443 соединения
+        self._yt_grace_sec   = 5      # пауза без :443 перед объявлением «сессия кончилась»
 
         # статус для UI
         self.active_conns      = 0
@@ -63,11 +69,14 @@ class LifetimeTracker:
     # ── public ─────────────────────────────────────────────────────────
 
     def start(self):
+        print("[DIAG] tracker.start() called, ss_port=%s, socks_port=%s, panel_port=%s" % (
+            self.ss_port, self.socks_port, self.panel_port), flush=True)
         if self._thread and self._thread.is_alive():
             return
         self._stop_evt.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+        print("[DIAG] tracker thread started", flush=True)
         self._log("info", "Tracker запущен (poll=%ss, cut %d-%ds, require_reset=%s)" % (
             self.poll_interval, self.cut_min_sec, self.cut_max_sec, self.require_reset))
 
@@ -102,6 +111,9 @@ class LifetimeTracker:
                 "last_cut_lifetime": self.last_cut_lifetime,
                 "last_cut_ts":       self.last_cut_ts,
                 "total_cuts":        self.total_cuts,
+                "yt_active":         self._yt_active,
+                "session_start":     self._session_start,
+                "last_activity":     self._last_activity,
             }
 
     # ── internals ──────────────────────────────────────────────────────
@@ -118,15 +130,24 @@ class LifetimeTracker:
         для ESTABLISHED исходящих HTTPS-соединений (remote :443, не loopback).
         """
         result = set()
+        first_tick = not hasattr(self, "_diag_logged")
+        if first_tick:
+            self._diag_logged = True
         for path in self._tcp_paths():
             try:
                 with open(path) as f:
                     lines = f.readlines()
-            except (OSError, IOError):
+            except (OSError, IOError) as e:
+                if first_tick:
+                    print("[DIAG] cannot read %s: %s" % (path, e), flush=True)
                 continue
+            if first_tick:
+                print("[DIAG] read %s: %d lines" % (path, len(lines)), flush=True)
             for line in lines[1:]:
                 parts = line.split()
-                if len(parts) < 4 or parts[3] != "01":   # 01 = ESTABLISHED
+                if len(parts) < 4:
+                    continue
+                if parts[3] != "01":   # 01 = ESTABLISHED
                     continue
                 try:
                     local       = parts[1].split(":")
@@ -139,6 +160,15 @@ class LifetimeTracker:
                 # только исходящие на внешние адреса:443
                 if remote_port != 443:
                     continue
+                if first_tick:
+                    is_excluded = (
+                        remote_ip in ("00000000", "00000000000000000000000000000000",
+                                      "0100007F", "00000000000000000000000001000000") or
+                        local_port in (self.ss_port, self.socks_port, self.panel_port)
+                    )
+                    print("[DIAG] :443 ESTABLISHED: local_port=%d remote=%s:%d (%s)" % (
+                        local_port, remote_ip, remote_port,
+                        "EXCLUDED" if is_excluded else "TRACKED"), flush=True)
                 if remote_ip in ("00000000", "00000000000000000000000000000000",
                                  "0100007F", "00000000000000000000000001000000"):
                     continue
@@ -158,52 +188,70 @@ class LifetimeTracker:
     def _tick(self):
         now   = time.time()
         conns = self._read_tcp_conns()
+        yt_active = len(conns) > 0
+        
+        print("[DIAG] tick: found %d :443 conns" % len(conns), flush=True)
 
-        dead = []
+        need_cut = False
+        cut_lifetime = 0.0
+
         with self._lock:
-            for c in conns:
-                if c not in self._conns:
-                    self._conns[c] = now
-            dead = [(c, first) for c, first in self._conns.items() if c not in conns]
-            for c, _ in dead:
-                self._conns.pop(c, None)
+            # Обновляем сессию YouTube
+            if yt_active:
+                if self._session_start is None:
+                    self._session_start = now
+                    print("[DIAG] YouTube session START", flush=True)
+                self._last_activity = now
+                self._yt_active = True
+            else:
+                self._yt_active = False
+                # Проверяем: активность пропала на сколько секунд?
+                if self._last_activity is not None and self._session_start is not None:
+                    idle_time = now - self._last_activity
+                    session_duration = self._last_activity - self._session_start
+                    
+                    if idle_time >= self._yt_grace_sec:
+                        # Активность пропала на grace_sec — сессия может быть оборвана
+                        print("[DIAG] YouTube inactive for %.1fs (session was %.1fs)" % (
+                            idle_time, session_duration), flush=True)
+                        
+                        if session_duration >= self.cut_min_sec:
+                            # Сессия длилась достаточно долго → потенциальный срез
+                            cut_lifetime = session_duration + idle_time
+                            if not self.require_reset or self._has_recent_reset(now):
+                                need_cut = True
+                            else:
+                                print("[DIAG] Срез не подтверждён reset-ом (require_reset=True)", flush=True)
+                        
+                        # Сбрасываем сессию
+                        self._session_start = None
+                        self._last_activity = None
+            
+            self.active_conns = len(conns)
+            self.tracked = len(conns)
 
-            # чистим «забытые» хвосты (соединения, которые так и не закрылись)
-            stale_cutoff = now - max(self.cut_max_sec * 8, 300)
-            for c, first in list(self._conns.items()):
-                if first < stale_cutoff:
-                    self._conns.pop(c, None)
+        if need_cut:
+            self._do_cut(cut_lifetime)
 
-            self.active_conns = len(self._conns)
-            self.tracked      = len(self._conns)
+    def _has_recent_reset(self, now):
+        """Проверяет, был ли reset в логе ss-server недавно."""
+        with self._lock:
+            reset_ts = list(self._reset_ts)
+        for rs in reset_ts:
+            # reset может прийти до исчезновения :443, или сразу после
+            if -self.poll_interval * 2 - 5 <= (rs - now) <= self.reset_window_sec * 3:
+                return True
+        return False
 
-        for c, first in dead:
-            self._check_cut(now - first)
-
-    def _check_cut(self, lifetime):
-        """Классифицирует смерть соединения по времени жизни."""
-        if not (self.cut_min_sec <= lifetime <= self.cut_max_sec):
-            return   # слишком короткое (сам закрыл) или здоровое
-
-        if self.require_reset:
-            now = time.time()
-            with self._lock:
-                reset_ts = list(self._reset_ts)
-            ok = False
-            for rs in reset_ts:
-                # reset может прийти чуть раньше исчезновения (до poll) или сразу после
-                if -self.poll_interval * 2 - 1 <= (rs - now) <= self.reset_window_sec * 2:
-                    ok = True
-                    break
-            if not ok:
-                return   # нет подтверждения reset — наверное клиент сам закрыл
-
+    def _do_cut(self, lifetime):
+        """Выполняет срез: обновляет статус и вызывает on_cut callback."""
+        now = time.time()
         with self._lock:
             self.last_cut_lifetime = round(lifetime, 1)
-            self.last_cut_ts       = time.time()
-            self.total_cuts        += 1
+            self.last_cut_ts = now
+            self.total_cuts += 1
             cb = self.on_cut
-        self._log("warn", "⚡ Срез соединения: прожило %ds — вызываю on_cut" % int(lifetime))
+        self._log("warn", "⚡ Срез сессии YouTube: активность была %.1fs — вызываю on_cut" % lifetime)
         if cb:
             try:
                 cb(lifetime)

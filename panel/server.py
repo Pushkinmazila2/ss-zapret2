@@ -1040,21 +1040,31 @@ def main():
     def _log(lvl, msg):
         print("[pool][%s] %s" % (lvl.upper(), msg), flush=True)
 
-    _pool     = PoolManager(log_fn=_log)
+        _pool     = PoolManager(log_fn=_log)
     _switcher = PoolSwitcher(_pool)
+    print("[DIAG] _switcher created, cut_min=%s, cut_max=%s, cut_require_reset=%s" % (
+        _switcher.cut_min_sec, _switcher.cut_max_sec, _switcher.cut_require_reset), flush=True)
 
     # ── трекер времени жизни соединений (срезы ТСПУ 30-60с) ───────────
     _tracker = LifetimeTracker(
         ss_port=args.ss_port, socks_port=args.socks_port,
         panel_port=args.port, log_fn=_log,
         cut_min_sec=_switcher.cut_min_sec, cut_max_sec=_switcher.cut_max_sec,
-        require_reset=_switcher.cut_require_reset)
+        require_reset=False)  # временно: отключаем требование reset для диагностики
+    print("[DIAG] _tracker created", flush=True)
     _tracker.on_cut = _switcher.on_connection_cut
     reset_monitor.on_reset = _tracker.note_reset
+    print("[DIAG] callbacks wired", flush=True)
+    print("[DIAG] reset_monitor type=%s, SS_LOG_PATH=%s, exists=%s" % (
+        type(reset_monitor).__name__, SS_LOG_PATH,
+        os.path.exists(SS_LOG_PATH)), flush=True)
 
     reset_monitor.start()
+    print("[DIAG] reset_monitor.start() done", flush=True)
     reset_monitor.on_degraded = _switcher.force_check
+    print("[DIAG] before _tracker.start()", flush=True)
     _tracker.start()
+    print("[DIAG] after _tracker.start()", flush=True)
 
     print("[panel] config=%s  strategies=%s  ss=%d  socks=%d" % (
         CFG_PATH, STRAT_DIR, SS_PORT, SOCKS_PORT), flush=True)
