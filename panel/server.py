@@ -73,8 +73,10 @@ def _remove_key(lines, key):
 def ensure_pool_mode(lines):
     """
     Устанавливает в config:
-      NFQWS2_ENABLE=0  — отключает стандартный nfqws2 демон
-      DISABLE_CUSTOM=0 — включает наш custom.d хук
+      NFQWS2_ENABLE=0  — отключает стандартный nfqws2 демон (не создаёт правила)
+      DISABLE_CUSTOM=1 — отключает custom.d хуки, чтобы init-скрипт zapret2
+                         НЕ пересоздавал стандартные NFQUEUE num 300 поверх пула.
+                         Всеми правилами firewall управляет pool_manager напрямую.
     """
     def _set_simple(key, val):
         pat = re.compile(r"^" + re.escape(key) + r"=")
@@ -82,7 +84,7 @@ def ensure_pool_mode(lines):
             if pat.match(ln): lines[i] = key + "=" + val; return
         lines.append(key + "=" + val)
     _set_simple("NFQWS2_ENABLE", "0")
-    _set_simple("DISABLE_CUSTOM", "0")
+    _set_simple("DISABLE_CUSTOM", "1")
 
 # ── strategies ──────────────────────────────────────────────────────────────
 
@@ -453,6 +455,9 @@ class PoolSwitcher:
                     if pat.match(ln): lines[i] = key + "=" + val; return
                 lines.append(key + "=" + val)
             _set("NFQWS2_ENABLE", "1")
+            # custom.d отключаем и здесь: стандартный zapret сам создаст свои правила,
+            # а наш пул должен полностью уйти из цепочки POSTROUTING.
+            _set("DISABLE_CUSTOM", "1")
             write_lines(lines)
             restart_zapret()
             self._log_event("info", "Стандартный режим zapret2 восстановлен")
@@ -1070,6 +1075,24 @@ def main():
     print("[DIAG] before _tracker.start()", flush=True)
     _tracker.start()
     print("[DIAG] after _tracker.start()", flush=True)
+
+    # ── само-восстановление после перезапуска ───────────────────────────
+    # Если конфиг остался в пул-режиме (NFQWS2_ENABLE=0), контейнер мог
+    # перезапуститься с «грязными» правилами: стандартные NFQUEUE num 300
+    # перехватывают трафик до ZAPRET_POOL. Поднимаем пул автоматически
+    # и принудительно перепривязываем ZAPRET_POOL.
+    _startup_lines = read_lines()
+    _pool_cfg_on = any(ln.startswith("NFQWS2_ENABLE=0") for ln in _startup_lines)
+    if _pool_cfg_on:
+        print("[panel] Конфиг в пул-режиме — авто-восстановление пула и FW", flush=True)
+        def _autostart():
+            try:
+                _switcher.set_enabled(True)
+            except Exception as e:
+                print("[panel] авто-старт пула упал: %s" % e, flush=True)
+        threading.Thread(target=_autostart, daemon=True).start()
+    else:
+        print("[panel] Конфиг в стандартном режиме — пул не поднимаем", flush=True)
 
     print("[panel] config=%s  strategies=%s  ss=%d  socks=%d" % (
         CFG_PATH, STRAT_DIR, SS_PORT, SOCKS_PORT), flush=True)
