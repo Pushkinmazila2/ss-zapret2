@@ -508,6 +508,12 @@ class PoolManager:
     def _reload_fw(self):
         """
         Управляем iptables напрямую из Python — без custom.d.
+
+        Чистка правил выполняется ПО НОМЕРАМ строк в POSTROUTING:
+        находим все правила, содержащие 'NFQUEUE' с queue-num из диапазона
+        пула (300..399) или 'ZAPRET_POOL', и удаляем их с конца.
+        Это устойчиво к изменению точного синтаксиса (mark/set/connbytes),
+        в отличие от `iptables -D ПО ПОЛНОЙ СПЕКЕ`.
         """
         desync_mark = os.environ.get("DESYNC_MARK", "0x40000000")
         tcp_pkt_out = os.environ.get("NFQWS2_TCP_PKT_OUT", "20")
@@ -518,47 +524,52 @@ class PoolManager:
                             if s.is_alive() and not s._fw_excluded and s.healthy is not False]
             active_qnums += [s.qnum for s in self._shadows if s.is_alive()]
 
-        # Вспомогательная функция для проверки существования ipset
         def _ipset_exists(name):
             r = subprocess.run(["ipset", "list", name], capture_output=True)
             return r.returncode == 0
 
-        # --- 1. Очистка старых правил POSTROUTING (ГРАМОТНАЯ) ---
-        for cmd in ["iptables", "ip6tables"]:
-            # Удаляем ВСЕ упоминания ZAPRET_POOL из POSTROUTING
+        def _delete_pool_rules(cmd):
+            """Удаляет из POSTROUTING все правила, относящиеся к пулу."""
             while True:
-                r = subprocess.run(
-                    [cmd, "-t", "mangle", "-D", "POSTROUTING", "-j", "ZAPRET_POOL"],
-                    capture_output=True
-                )
-                if r.returncode != 0:
-                    break
+                try:
+                    r = subprocess.run(
+                        [cmd, "-t", "mangle", "-L", "POSTROUTING", "--line-numbers", "-n"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                except Exception:
+                    return
+                nums = []
+                for line in r.stdout.splitlines():
+                    # Формат: "num  target ...  NFQUEUE ... num 300" или "num  ZAPRET_POOL"
+                    if "ZAPRET_POOL" in line:
+                        m = re.match(r"^\s*(\d+)", line)
+                        if m:
+                            nums.append(int(m.group(1)))
+                        continue
+                    # NFQUEUE с num 300..399 (слоты пула) — но НЕ чужие очереди
+                    m = re.match(r"^\s*(\d+)\s+\S+\s+.*NFQUEUE.*num\s+(\d+)", line)
+                    if m:
+                        qnum = int(m.group(2))
+                        if QNUM_BASE <= qnum < QNUM_BASE + 100:
+                            nums.append(int(m.group(1)))
+                if not nums:
+                    return
+                # Удаляем с конца, чтобы номера не сдвигались
+                for num in sorted(nums, reverse=True):
+                    subprocess.run(
+                        [cmd, "-t", "mangle", "-D", "POSTROUTING", str(num)],
+                        capture_output=True, timeout=5
+                    )
+                # повторяем, т.к. после удаления могли появиться новые с одинаковыми номерами
 
-        # Конфигурация для зачистки стандартной очереди 300 (оригинального zapret2)
+        for cmd in ["iptables", "ip6tables"]:
+            _delete_pool_rules(cmd)
+
+        # Конфигурация для привязки ZAPRET_POOL (ipset-имена могли отличаться)
         configs = [
             {"cmd": "iptables",  "tcp": "zport_tcp",  "udp": "zport_udp",  "nz": "nozapret"},
             {"cmd": "ip6tables", "tcp": "zport_tcp6", "udp": "zport_udp6", "nz": "nozapret6"}
         ]
-
-        for conf in configs:
-            cmd = conf["cmd"]
-            nz_set = conf["nz"]
-            
-            # Чистим старые правила для TCP и UDP (очередь 300)
-            for ipset, pkt_out in [(conf["tcp"], tcp_pkt_out), (conf["udp"], udp_pkt_out)]:
-                while True:
-                    # ВАЖНО: Синтаксис "ПОСЛЕ -m set" должен строго соответствовать тому, как его ставит система!
-                    r = subprocess.run([
-                        cmd, "-t", "mangle", "-D", "POSTROUTING",
-                        "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
-                        "-m", "set", "--match-set", ipset, "dst",
-                        "-m", "connbytes", "--connbytes", f"1:{pkt_out}",
-                        "--connbytes-mode", "packets", "--connbytes-dir", "original",
-                        "-m", "set", "!", "--match-set", nz_set, "dst",
-                        "-j", "NFQUEUE", "--queue-num", "300", "--queue-bypass"
-                    ], capture_output=True)
-                    if r.returncode != 0:
-                        break
 
         # --- 2. Пересоздание цепочки ZAPRET_POOL ---
         for cmd in ["iptables", "ip6tables"]:

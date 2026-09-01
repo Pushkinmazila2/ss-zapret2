@@ -434,7 +434,12 @@ class PoolSwitcher:
             subprocess.run(
                 "/opt/zapret2/init.d/sysv/zapret2 restart-fw",
                 shell=True, capture_output=True, timeout=30)
-            self._log_event("info", "Firewall перезагружен с ZAPRET_POOL")
+            self._log_event("info", "Firewall перезагружен, перепривязываю ZAPRET_POOL")
+            # restart-fw восстанавливает стандартные правила NFQUEUE num 300.
+            # Поэтому после него ОБЯЗАТЕЛЬНО ещё раз перепривязываем пул,
+            # чтобы стандартная очередь не «забрала» трафик.
+            self._pool._reload_fw()
+            self._log_event("info", "Firewall: ZAPRET_POOL перепривязана после restart-fw")
 
             self._ensure_running()
         else:

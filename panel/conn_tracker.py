@@ -45,7 +45,7 @@ class LifetimeTracker:
         self.require_reset    = bool(require_reset)
         self.reset_window_sec = float(reset_window_sec)
 
-        self._lock      = threading.Lock()
+        self._lock      = threading.RLock()   # RLock: _tick вложенно вызывает _has_recent_reset
         self._conns    = {}           # (local_port, remote_ip, remote_port) -> first_seen
         self._reset_ts = collections.deque(maxlen=50)  # метки reset из ss-server лога
         self._thread   = None
