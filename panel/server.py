@@ -1040,7 +1040,7 @@ def main():
     def _log(lvl, msg):
         print("[pool][%s] %s" % (lvl.upper(), msg), flush=True)
 
-        _pool     = PoolManager(log_fn=_log)
+    _pool     = PoolManager(log_fn=_log)
     _switcher = PoolSwitcher(_pool)
     print("[DIAG] _switcher created, cut_min=%s, cut_max=%s, cut_require_reset=%s" % (
         _switcher.cut_min_sec, _switcher.cut_max_sec, _switcher.cut_require_reset), flush=True)
