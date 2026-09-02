@@ -404,6 +404,7 @@ class PoolManager:
             "--lua-init=@/opt/zapret2/lua/zapret-lib.lua",
             "--lua-init=@/opt/zapret2/lua/zapret-antidpi.lua",
             "--lua-init=@/opt/zapret2/lua/zapret-auto.lua",
+            "--debug",
         ]
 
         # nfqws_opt — многострочная строка, каждая строка = отдельный --new профиль
@@ -420,36 +421,39 @@ class PoolManager:
 
         self._log("info", "Слот %d старт: qnum=%d strategy=%s" % (
             slot.index, slot.qnum, slot.strategy or "custom"))
-        self._log("info", "CMD: %s" % " ".join(base + args))
+        self._log("info", "CMD: %s" % " ". join(base + args))
 
         # Антигонка NFQUEUE: очередь может ещё удерживаться старым процессом —
         # nfqws2 падает с "nfq_create_queue(): Operation not permitted". Ретраим.
         last_err = ""
         for attempt in range(1, 4):
             try:
+                # Перенаправляем stdout в консоль (None), а stderr объединяем с stdout
                 proc = subprocess.Popen(
                     base + args,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
+                    stdout=None,
+                    stderr=None,
                     text=True,
                 )
                 time.sleep(0.6)
                 rc = proc.poll()
                 if rc is not None:
-                    err = proc.stderr.read() if proc.stderr else ""
-                    last_err = err.strip()
+                    # Так как мы выводим всё напрямую в консоль контейнера, 
+                    # детальный текст ошибки про nfq_create_queue напечатается в Docker-логи сам.
+                    last_err = "Процесс завершился с кодом %d. Проверьте логи выше." % rc
                     self._log("warn", "Слот %d старт попытка %d/3: rc=%d %s" % (
-                        slot.index, attempt, rc, last_err[:160]))
-                    if "nfq_create_queue" in last_err and attempt < 3:
+                        slot.index, attempt, rc, last_err))
+                    
+                    if attempt < 3:
                         time.sleep(1.0)
                         continue
-                    slot.proc    = None
+                    slot.proc = None
                     slot.healthy = False
                     return
-                slot.proc    = proc
+                slot.proc = proc
                 slot.started = time.strftime("%H:%M:%S")
                 slot.healthy = None
-                self._log("info", "Слот %d (qnum=%d) запущен" % (slot.index, slot.qnum))
+                self._log("info", "Слот %d (qnum=%d) успешно запущен" % (slot.index, slot.qnum))
                 return
             except Exception as e:
                 last_err = str(e)
