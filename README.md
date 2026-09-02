@@ -6,7 +6,7 @@ Docker-контейнер на основе [zapret2 от bol-van](https://githu
 - Изоляция zapret2 в отдельном контейнере
 - Простая интеграция с sing-box, Xray и другими прокси-клиентами
 <p align="center">
-  <img src="https://github.com/Pushkinmazila2/ss-zapret2/blob/master/Pulzapret.PNG" alt="Веб панель с авто сменой стратегий">
+  <img src="https://github.com/Pushkinmazila2/ss-zapret2/blob/master/Pulzapret.png" alt="Веб панель с авто сменой стратегий">
 </p>
 
 Проект больше не дублирует функции встроенного `--quorum` в zapret2, а является самостоятельной экосистемой выживания трафика в реальном времени против ТСПУ.
