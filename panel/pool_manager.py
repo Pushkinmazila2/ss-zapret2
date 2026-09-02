@@ -692,3 +692,32 @@ class PoolManager:
                     self._log("error", f"{cmd} {mode} POSTROUTING: {e}")
 
         self._log("info", f"ZAPRET_POOL создана: {n} слот(ов) qnum={active_qnums}")
+
+        # --- 5. Исправление входящего трафика (INPUT) для авто-TTL ---
+        for cmd in ["iptables", "ip6tables"]:
+            # Очищаем цепочку INPUT от старых жестких правил 
+            # (Внимание: если у вас там есть другие важные системные правила, 
+            # лучше удалять точечно, обычно в mangle-INPUT контейнера чисто но всеже ...)
+            subprocess.run([cmd, "-t", "mangle", "-F", "INPUT"], capture_output=True)
+            
+            # Восстанавливаем метку соединения для входящих пакетов
+            subprocess.run([
+                cmd, "-t", "mangle", "-A", "INPUT",
+                "-j", "CONNMARK", "--restore-mark", "--nfmask", "0xFFFF", "--ctmask", "0xFFFF"
+            ], capture_output=True)
+            
+            # Раскидываем входящие пакеты по родным слотам пула
+            for qnum in active_qnums:
+                hex_mark = f"{qnum:#x}"
+                # Для TCP
+                subprocess.run([
+                    cmd, "-t", "mangle", "-A", "INPUT",
+                    "-p", "tcp", "-m", "mark", "--mark", f"{hex_mark}/0xFFFF",
+                    "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+                ], capture_output=True)
+                # Для UDP
+                subprocess.run([
+                    cmd, "-t", "mangle", "-A", "INPUT",
+                    "-p", "udp", "-m", "mark", "--mark", f"{hex_mark}/0xFFFF",
+                    "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+                ], capture_output=True)
