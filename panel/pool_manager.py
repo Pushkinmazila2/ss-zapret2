@@ -423,23 +423,34 @@ class PoolManager:
             slot.index, slot.qnum, slot.strategy or "custom"))
         self._log("info", "CMD: %s" % " ". join(base + args))
 
-        # Антигонка NFQUEUE: очередь может ещё удерживаться старым процессом —
-        # nfqws2 падает с "nfq_create_queue(): Operation not permitted". Ретраим.
+        # Антигонка NFQUEUE: очередь может ещё удерживаться старым процессом
         last_err = ""
         for attempt in range(1, 4):
             try:
-                # Перенаправляем stdout в консоль (None), а stderr объединяем с stdout
+                # Направляем stdout и stderr в PIPE, чтобы Python мог читать и модифицировать строки
                 proc = subprocess.Popen(
                     base + args,
-                    stdout=None,
-                    stderr=None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,  # Объединяем логи и ошибки в один поток
                     text=True,
+                    bufsize=1,                 # Построчная буферизация
                 )
+                
+                # Функция для чтения логов процесса в реальном времени и добавления префикса
+                def log_reader(p, qnum, slot_idx):
+                    prefix = "[NFQWS2][SLOT-%d][QNUM-%d]" % (slot_idx, qnum)
+                    for line in p.stdout:
+                        # Печатаем строку в Docker с вашим кастомным префиксом
+                        print("%s %s" % (prefix, line.strip()), flush=True)
+
+                # Запускаем фоновый поток чтения логов для этого конкретного процесса
+                import threading
+                t = threading.Thread(target=log_reader, args=(proc, slot.qnum, slot.index), daemon=True)
+                t.start()
+
                 time.sleep(0.6)
                 rc = proc.poll()
                 if rc is not None:
-                    # Так как мы выводим всё напрямую в консоль контейнера, 
-                    # детальный текст ошибки про nfq_create_queue напечатается в Docker-логи сам.
                     last_err = "Процесс завершился с кодом %d. Проверьте логи выше." % rc
                     self._log("warn", "Слот %d старт попытка %d/3: rc=%d %s" % (
                         slot.index, attempt, rc, last_err))
