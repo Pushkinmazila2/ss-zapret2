@@ -599,22 +599,58 @@ class PoolManager:
             subprocess.run([cmd, "-t", "mangle", "-N", "ZAPRET_POOL"], capture_output=True)
 
         # --- 3. Наполнение ZAPRET_POOL random-распределением ---
+        # --- 3. Наполнение ZAPRET_POOL сессионным (CONNMARK) распределением ---
+        for cmd in ["iptables", "ip6tables"]:
+            # 3.1. Если у соединения УЖЕ есть сохраненная метка очереди, восстанавливаем ее в маркер пакета
+            subprocess.run([
+                cmd, "-t", "mangle", "-A", "ZAPRET_POOL",
+                "-j", "CONNMARK", "--restore-mark", "--nfmask", "0xFFFF", "--ctmask", "0xFFFF"
+            ], capture_output=True)
+
+            # 3.2. Если маркер пакета совпадает с одним из номеров очередей, сразу отправляем в NFQUEUE
+            for qnum in active_qnums:
+                hex_mark = f"{qnum:#x}"  # Переводим qnum в hex (например, 300 -> 0x12c)
+                subprocess.run([
+                    cmd, "-t", "mangle", "-A", "ZAPRET_POOL",
+                    "-m", "mark", "--mark", f"{hex_mark}/0xFFFF",
+                    "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+                ], capture_output=True)
+
+        # 3.3. Если метки еще не было (новое соединение), крутим random балансировщик
         n = len(active_qnums)
         for i, qnum in enumerate(active_qnums):
             remaining = n - i
+            hex_mark = f"{qnum:#x}"
+            prob = f"{(1.0 / remaining):.6f}"
+
             for cmd in ["iptables", "ip6tables"]:
                 if remaining == 1:
+                    # Последний/единственный слот — забирает остаток трафика
                     subprocess.run([
                         cmd, "-t", "mangle", "-A", "ZAPRET_POOL",
-                        "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+                        "-j", "MARK", "--set-mark", f"{hex_mark}/0xFFFF"
                     ], capture_output=True)
                 else:
-                    prob = f"{(1.0 / remaining):.6f}"
+                    # Распределяем с заданной вероятностью
                     subprocess.run([
                         cmd, "-t", "mangle", "-A", "ZAPRET_POOL",
                         "-m", "statistic", "--mode", "random", "--probability", prob,
-                        "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+                        "-j", "MARK", "--set-mark", f"{hex_mark}/0xFFFF"
                     ], capture_output=True)
+
+                # Сохраняем выбранный маркер в CONNMARK, чтобы все пакеты этого соединения шли сюда
+                subprocess.run([
+                    cmd, "-t", "mangle", "-A", "ZAPRET_POOL",
+                    "-m", "mark", "--mark", f"{hex_mark}/0xFFFF",
+                    "-j", "CONNMARK", "--save-mark", "--nfmask", "0xFFFF", "--ctmask", "0xFFFF"
+                ], capture_output=True)
+
+                # И окончательно отправляем пакет в выбранную очередь
+                subprocess.run([
+                    cmd, "-t", "mangle", "-A", "ZAPRET_POOL",
+                    "-m", "mark", "--mark", f"{hex_mark}/0xFFFF",
+                    "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+                ], capture_output=True)
 
         # --- 4. Привязка ZAPRET_POOL к POSTROUTING ---
         for conf in configs:
