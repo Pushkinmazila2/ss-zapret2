@@ -9,6 +9,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pool_manager as _pm
+from tspу_log import get_log as _get_tlog
+_tlog = _get_tlog()
+
 from pool_manager import PoolManager, MAX_SLOTS
 from conn_tracker import LifetimeTracker
 
@@ -293,6 +296,16 @@ class ResetMonitor:
                 print("[monitor] reset ratio=%.2f (%d/%d)" % (
                     self.last_ratio, resets, total), flush=True)
 
+        if fire:
+            try:
+                _tlog.degraded(
+                    ratio=self.last_ratio,
+                    resets=resets,
+                    total=total,
+                    window_sec=self.window_sec,
+                )
+            except Exception:
+                pass
         if fire and self.on_degraded:
             print("[monitor] degraded edge — triggering immediate check", flush=True)
             threading.Thread(target=self.on_degraded, daemon=True).start()
@@ -568,6 +581,11 @@ class PoolSwitcher:
         with self._lock:
             self._log.append(entry)
         print("[switcher][%s] %s" % (level.upper(), msg), flush=True)
+        try:
+            if level in ("warn", "error"):
+                _tlog.info(msg, level=level)
+        except Exception:
+            pass
 
     def _ensure_running(self):
         if self._thread and self._thread.is_alive():
@@ -894,6 +912,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_pool.get_traffic_stats())
         elif p == "/api/monitor/status":
             self._json(reset_monitor.get_status())
+        elif p == "/api/tspу-log":
+            n = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
+            self._json({"events": _tlog.get_recent(n)})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -1060,7 +1081,7 @@ def main():
         ss_port=args.ss_port, socks_port=args.socks_port,
         panel_port=args.port, log_fn=_log,
         cut_min_sec=_switcher.cut_min_sec, cut_max_sec=_switcher.cut_max_sec,
-        require_reset=False)  # временно: отключаем требование reset для диагностики
+        require_reset=True)   # RST-срез подтверждается reset-событием из лога
     print("[DIAG] _tracker created", flush=True)
     _tracker.on_cut = _switcher.on_connection_cut
     reset_monitor.on_reset = _tracker.note_reset
