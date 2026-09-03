@@ -9,6 +9,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pool_manager as _pm
+from tspу_log import get_log as _get_tlog, conn_ctx, slot_ctx, monitor_ctx
+_tlog = _get_tlog()
+
 from tspу_log import get_log as _get_tlog
 _tlog = _get_tlog()
 
@@ -269,6 +272,10 @@ class ResetMonitor:
             event = "close"
         if not event:
             return
+        # keep last 5 raw ss-server lines for context
+        if not hasattr(self, "_recent_ss_lines"):
+            self._recent_ss_lines = collections.deque(maxlen=5)
+        self._recent_ss_lines.append(line.strip())
         with self._lock:
             self._events.append((now, event))
             if event == "reset":
@@ -306,6 +313,17 @@ class ResetMonitor:
                 )
             except Exception:
                 pass
+        if fire:
+            try:
+                _tlog.degraded(
+                    ratio=self.last_ratio,
+                    resets=resets,
+                    closes=closes,
+                    window_sec=self.window_sec,
+                    ss_lines=list(getattr(self, "_recent_ss_lines", [])),
+                )
+            except Exception as _e:
+                print("[tspу_log] degraded log error: %s" % _e, flush=True)
         if fire and self.on_degraded:
             print("[monitor] degraded edge — triggering immediate check", flush=True)
             threading.Thread(target=self.on_degraded, daemon=True).start()
@@ -506,7 +524,42 @@ class PoolSwitcher:
             self._log_event("info", "Срез пропущен (%s)" % skip_reason)
             return
         self._log_event("warn",
-            "⚡ Срез ТСПУ: соединение прожило %ds — ротация стратегий" % int(lifetime))
+            "TSPУ cut: conn lived %ds, rotating strategies" % int(lifetime))
+        # log full context to tspу.log
+        try:
+            _stats   = self._pool.get_traffic_stats()
+            _slots   = self._pool.get_status()
+            _mon_st  = reset_monitor.get_status()
+            _candidates = [s for s in _slots if s.get("alive") and not s.get("fw_excluded")]
+            def _w(s): return (_stats.get(s["qnum"]) or {}).get("pkts_delta", 0)
+            _top     = max(_candidates, key=_w) if _candidates else {}
+            _tstat   = (_stats.get(_top.get("qnum")) or {}) if _top else {}
+            _cut_type = getattr(self, "_last_cut_type", "rst")
+            _log_fn  = _tlog.idle if _cut_type == "idle" else _tlog.cut
+            _log_fn(
+                conn=conn_ctx(
+                    lifetime_sec=lifetime,
+                    active_conns=len(_candidates),
+                ),
+                slot=slot_ctx(
+                    index=_top.get("index"),
+                    qnum=_top.get("qnum"),
+                    strategy=_top.get("strategy"),
+                    pid=_top.get("pid"),
+                    pkts_delta=_tstat.get("pkts_delta"),
+                    bytes_delta=_tstat.get("bytes_delta"),
+                    kbps=_tstat.get("kbps"),
+                ),
+                monitor=monitor_ctx(
+                    ratio=_mon_st.get("ratio"),
+                    resets=_mon_st.get("resets_window"),
+                    closes=_mon_st.get("closes_window"),
+                    window_sec=_mon_st.get("window_sec"),
+                    ss_lines=list(getattr(reset_monitor, "_recent_ss_lines", [])),
+                ),
+            )
+        except Exception as _e:
+            print("[tspу_log] cut log error: %s" % _e, flush=True)
         threading.Thread(target=self._rotate_on_cut, args=(lifetime,), daemon=True).start()
 
     def _rotate_on_cut(self, lifetime):
@@ -576,11 +629,16 @@ class PoolSwitcher:
 
     # ── internals ─────────────────────────────────────────────────────────
 
-    def _log_event(self, level, msg):
+    def _log_event(self, level, msg, source="panel"):
         entry = {"ts": time.strftime("%H:%M:%S"), "level": level, "msg": msg}
         with self._lock:
             self._log.append(entry)
         print("[switcher][%s] %s" % (level.upper(), msg), flush=True)
+        if level in ("warn", "error", "ok"):
+            try:
+                _tlog.info(msg, source=source, level=level)
+            except Exception:
+                pass
         try:
             if level in ("warn", "error"):
                 _tlog.info(msg, level=level)
@@ -833,7 +891,18 @@ class PoolSwitcher:
                 chosen = (name, nfqws)
                 break
             self._log_event("warn",
-                "✗ Слот %d: «%s» на теневом тесте не сработала" % (index, name))
+                "slot %d: strategy '%s' failed shadow test (attempt %d/%d)" % (
+                    index, name, len(candidates) - len(candidates) + 1, max_attempts))
+            try:
+                _tlog.test_fail(
+                    slot_index=index,
+                    strategy=name,
+                    nfqws_opt=nfqws,
+                    attempt=candidates.index((name, nfqws)) + 1 if (name, nfqws) in candidates else None,
+                    max_attempts=max_attempts,
+                )
+            except Exception:
+                pass
 
         if chosen:
             name, nfqws = chosen
@@ -844,16 +913,51 @@ class PoolSwitcher:
                 self._slot_fails[index] = 0
                 self.state = "ok"
             self._log_event("ok",
-                "✓ Слот %d: «%s» → «%s» — теневой тест прошёл, в rotation" % (
+                "slot %d: '%s' -> '%s' - shadow test passed, back in rotation" % (
                     index, old_name, name))
+            try:
+                _stats  = self._pool.get_traffic_stats()
+                _slots  = self._pool.get_status()
+                _slot_d = next((s for s in _slots if s.get("index") == index), {})
+                _tstat  = (_stats.get(_slot_d.get("qnum")) or {})
+                _mon_st = reset_monitor.get_status()
+                _tlog.test_ok(slot_index=index, strategy=name, nfqws_opt=nfqws,
+                              pkts=_tstat.get("pkts_delta"))
+                _tlog.rotation(
+                    old_slot=slot_ctx(
+                        index=index,
+                        strategy=old_name,
+                        pkts_delta=_tstat.get("pkts_delta"),
+                        kbps=_tstat.get("kbps"),
+                    ),
+                    new_strategy=name,
+                    reason=getattr(self, "_last_cut_type", "cut"),
+                    monitor=monitor_ctx(
+                        ratio=_mon_st.get("ratio"),
+                        resets=_mon_st.get("resets_window"),
+                        closes=_mon_st.get("closes_window"),
+                        window_sec=_mon_st.get("window_sec"),
+                    ),
+                )
+            except Exception as _e:
+                print("[tspу_log] rotation log error: %s" % _e, flush=True)
             return
 
         # Ни одна не подтвердилась — слот остаётся в rotation со старой стратегией
         self._pool.set_slot_health(index, False)
         self._pool.restore_slot_to_fw(index)
         self._log_event("error",
-            "Слот %d «%s»: ни одна из %d стратегий не прошла теневой тест — вернул в rotation" % (
+            "slot %d '%s': all %d strategies failed shadow test, staying in rotation" % (
                 index, old_name, max_attempts))
+        try:
+            _mon_st = reset_monitor.get_status()
+            _tlog.test_fail(
+                slot_index=index, strategy=old_name,
+                attempt=max_attempts, max_attempts=max_attempts,
+                reason="all %d candidates failed" % max_attempts,
+            )
+        except Exception:
+            pass
         with self._lock:
             self.state = "degraded"
 
@@ -915,6 +1019,13 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/tspу-log":
             n = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
             self._json({"events": _tlog.get_recent(n)})
+        elif p == "/api/tspу-log":
+            try:
+                n   = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
+                evt = self.path.split("event=")[-1].split("&")[0] if "event=" in self.path else None
+            except (ValueError, IndexError):
+                n, evt = 200, None
+            self._json({"events": _tlog.get_recent(n, event_type=evt)})
         else:
             self._json({"error": "not found"}, 404)
 

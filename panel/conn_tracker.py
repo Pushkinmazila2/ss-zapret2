@@ -1,32 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LifetimeTracker — отслеживает время жизни исходящих TCP-соединений.
+conn_tracker.py  -  LifetimeTracker
 
-Детектирует три типа блокировки ТСПУ:
+Detects two TSPУ block patterns:
 
-  1. RST-срез (cut_type="rst")
-     Соединение прожило cut_min_sec..cut_max_sec, затем получило TCP RST
-     (ss-server пишет "Connection reset by peer" или "server_recv_cb_recv").
-     Это классический и самый быстрый срез ТСПУ.
+  1. RST drop (cut_type="rst")
+     Connection lived cut_min_sec..cut_max_sec, then received TCP RST.
+     Detected via: session lifetime tracking + ResetMonitor.note_reset().
 
-  2. Тихий дроп / throttle (cut_type="idle")
-     Соединение ESTABLISHED, но байт через него не шло больше idle_threshold_sec.
-     ТСПУ просто дропает пакеты без RST — соединение «зависает» до SS_TIMEOUT.
-     Детект: /proc/net/tcp не даёт счётчик байт напрямую; используем
-     /proc/net/sockstat + per-socket /proc/self/net/tcp через inode-сопоставление
-     со счётчиками в /proc/net/tcp_diag (если доступно), иначе — косвенно
-     через отсутствие изменения tx_queue/rx_queue в /proc/net/tcp за N тиков.
+  2. Silent drop / throttle (cut_type="idle")
+     Connection stays ESTABLISHED but tx_queue and rx_queue in /proc/net/tcp
+     do not change for idle_threshold_sec.  TSPУ drops packets without RST.
 
-  3. Деградация (delegated to ResetMonitor в server.py)
-     Учитывается отдельно через ratio RST/close.
-
-Архитектура:
-  - _read_tcp_conns()  — снимок ESTABLISHED :443 (как раньше)
-  - _read_queue_map()  — snимок (local_port, remote) → (tx_queue, rx_queue)
-  - _tick()            — сравнивает очереди между тиками, детектирует idle
-  - on_cut(lifetime, cut_type)  — единый колбэк для обоих типов среза
-  - TspuLog            — пишет структурированные события в tspу.log
+Both types call  on_cut(lifetime, cut_type)  and write to tspу_log with
+full context (tx_queue, rx_queue, idle_sec, active_conns).
 """
 
 import collections
@@ -35,20 +23,18 @@ import threading
 import time
 
 try:
-    from tspу_log import get_log as _get_tlog
+    from tspу_log import get_log as _get_tlog, conn_ctx, slot_ctx, monitor_ctx
 except ImportError:
     _get_tlog = None
+    def conn_ctx(**kw): return kw
+    def slot_ctx(**kw): return kw
+    def monitor_ctx(**kw): return kw
 
+# How many consecutive ticks with unchanged queues = silent drop.
+IDLE_TICKS = 5
 
-# ── константы ────────────────────────────────────────────────────────
-
-# Через сколько тиков без изменения очередей считаем соединение «мёртвым»
-IDLE_TICKS = 5   # 5 × poll_interval (по умолчанию 2с → 10с idle)
-
-# Минимальное время жизни соединения перед тем как idle считается подозрительным.
-# Короткие соединения (< idle_min_lifetime_sec) игнорируем — они могут быть
-# просто keepalive или маленькие запросы, которые быстро закрылись.
-IDLE_MIN_LIFETIME = 15.0   # сек
+# Connections younger than this are not considered for idle detection.
+IDLE_MIN_LIFETIME = 15.0
 
 
 class LifetimeTracker:
@@ -58,6 +44,7 @@ class LifetimeTracker:
                  require_reset=True, reset_window_sec=10.0,
                  idle_threshold_sec=None,
                  proc_root=""):
+
         self.ss_port       = int(ss_port)
         self.socks_port    = int(socks_port)
         self.panel_port    = int(panel_port)
@@ -70,56 +57,56 @@ class LifetimeTracker:
         self.cut_max_sec      = float(cut_max_sec)
         self.require_reset    = bool(require_reset)
         self.reset_window_sec = float(reset_window_sec)
-
-        # idle_threshold_sec: сколько секунд без изменения очередей → idle-дроп
-        # None = автоматически: IDLE_TICKS × poll_interval
         self._idle_threshold  = (float(idle_threshold_sec)
                                  if idle_threshold_sec is not None
                                  else IDLE_TICKS * self.poll_interval)
 
         self._lock      = threading.RLock()
-        self._conns     = {}   # key → first_seen
-        self._queues    = {}   # key → {"tx": int, "rx": int, "idle_ticks": int,
-                               #         "first_seen": float, "last_changed": float}
+        self._queues    = {}   # key -> {tx, rx, idle_ticks, first_seen, last_changed}
         self._reset_ts  = collections.deque(maxlen=50)
         self._thread    = None
         self._stop_evt  = threading.Event()
 
-        # колбэки
-        # on_cut(lifetime, cut_type) — cut_type: "rst" | "idle"
+        # on_cut(lifetime, cut_type)  -  cut_type: "rst" | "idle"
         self.on_cut = None
 
-        # статистика для UI
+        # stats
         self.active_conns      = 0
         self.tracked           = 0
         self.last_cut_lifetime = None
         self.last_cut_ts       = None
         self.total_cuts        = 0
-        self.total_idle_cuts   = 0   # отдельный счётчик idle-дропов
         self.total_rst_cuts    = 0
+        self.total_idle_cuts   = 0
 
-        # сессионный трекер (как раньше — для среза по сессии)
+        # session tracking (for RST detection)
         self._session_start  = None
         self._last_activity  = None
         self._yt_active      = False
         self._yt_grace_sec   = 5
 
-        # ТСПУ лог
         self._tlog = _get_tlog() if _get_tlog else None
 
-    # ── public ───────────────────────────────────────────────────────
+        # pool_manager reference - set by server.py after init
+        # used to enrich idle events with slot context
+        self.pool_ref   = None
+        self.monitor_ref = None
+
+    # ------------------------------------------------------------------ #
+    # Public                                                               #
+    # ------------------------------------------------------------------ #
 
     def start(self):
-        print("[DIAG] tracker.start() ss=%s socks=%s panel=%s" % (
-            self.ss_port, self.socks_port, self.panel_port), flush=True)
+        print("[tracker] start ss=%s socks=%s panel=%s idle_thresh=%.1fs" % (
+            self.ss_port, self.socks_port, self.panel_port, self._idle_threshold),
+            flush=True)
         if self._thread and self._thread.is_alive():
             return
         self._stop_evt.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        print("[DIAG] tracker thread started", flush=True)
         self._log("info",
-            "Tracker запущен (poll=%.1fс, cut %d-%dс, idle=%.1fс, require_reset=%s)" % (
+            "tracker started poll=%.1fs cut=%d-%ds idle=%.1fs require_reset=%s" % (
                 self.poll_interval, self.cut_min_sec, self.cut_max_sec,
                 self._idle_threshold, self.require_reset))
 
@@ -127,7 +114,7 @@ class LifetimeTracker:
         self._stop_evt.set()
 
     def note_reset(self):
-        """Вызывается из ResetMonitor при событии reset в ss-server логе."""
+        """Called by ResetMonitor on each reset event from ss-server log."""
         with self._lock:
             self._reset_ts.append(time.time())
 
@@ -146,26 +133,28 @@ class LifetimeTracker:
     def get_status(self):
         with self._lock:
             return {
-                "active_conns":      self.active_conns,
-                "tracked":           self.tracked,
-                "poll_interval":     self.poll_interval,
-                "cut_min_sec":       self.cut_min_sec,
-                "cut_max_sec":       self.cut_max_sec,
-                "require_reset":     self.require_reset,
-                "reset_window_sec":  self.reset_window_sec,
+                "active_conns":       self.active_conns,
+                "tracked":            self.tracked,
+                "poll_interval":      self.poll_interval,
+                "cut_min_sec":        self.cut_min_sec,
+                "cut_max_sec":        self.cut_max_sec,
+                "require_reset":      self.require_reset,
+                "reset_window_sec":   self.reset_window_sec,
                 "idle_threshold_sec": self._idle_threshold,
-                "recent_resets":     len(self._reset_ts),
-                "last_cut_lifetime": self.last_cut_lifetime,
-                "last_cut_ts":       self.last_cut_ts,
-                "total_cuts":        self.total_cuts,
-                "total_rst_cuts":    self.total_rst_cuts,
-                "total_idle_cuts":   self.total_idle_cuts,
-                "yt_active":         self._yt_active,
-                "session_start":     self._session_start,
-                "last_activity":     self._last_activity,
+                "recent_resets":      len(self._reset_ts),
+                "last_cut_lifetime":  self.last_cut_lifetime,
+                "last_cut_ts":        self.last_cut_ts,
+                "total_cuts":         self.total_cuts,
+                "total_rst_cuts":     self.total_rst_cuts,
+                "total_idle_cuts":    self.total_idle_cuts,
+                "yt_active":          self._yt_active,
+                "session_start":      self._session_start,
+                "last_activity":      self._last_activity,
             }
 
-    # ── internals ────────────────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+    # Internal                                                             #
+    # ------------------------------------------------------------------ #
 
     def _tcp_paths(self):
         if self._proc_root:
@@ -175,19 +164,14 @@ class LifetimeTracker:
 
     def _read_tcp_conns(self):
         """
-        Читает /proc/net/tcp и /proc/net/tcp6.
-        Возвращает dict:
-          (local_port, remote_ip, remote_port) → {"tx": int, "rx": int}
-        для ESTABLISHED исходящих HTTPS (remote :443, не loopback).
-
-        Колонки /proc/net/tcp:
-          sl  local_addr  rem_addr  st  tx_queue:rx_queue  ...
-          0   1           2         3   4                   ...
-        tx_queue:rx_queue — hex, байт в буфере отправки/приёма ядра.
+        Read /proc/net/tcp{,6}.
+        Returns dict: (local_port, remote_ip, remote_port) -> {tx, rx}
+        tx/rx = tx_queue:rx_queue from column 4 (hex kernel socket buffers).
+        Only ESTABLISHED (state=01), remote port 443, non-loopback.
         """
         result = {}
-        first_tick = not hasattr(self, "_diag_logged")
-        if first_tick:
+        first = not hasattr(self, "_diag_logged")
+        if first:
             self._diag_logged = True
 
         for path in self._tcp_paths():
@@ -195,18 +179,17 @@ class LifetimeTracker:
                 with open(path) as f:
                     lines = f.readlines()
             except (OSError, IOError) as e:
-                if first_tick:
-                    print("[DIAG] cannot read %s: %s" % (path, e), flush=True)
+                if first:
+                    print("[tracker] cannot read %s: %s" % (path, e), flush=True)
                 continue
-
-            if first_tick:
-                print("[DIAG] read %s: %d lines" % (path, len(lines)), flush=True)
+            if first:
+                print("[tracker] read %s: %d lines" % (path, len(lines)), flush=True)
 
             for line in lines[1:]:
                 parts = line.split()
                 if len(parts) < 5:
                     continue
-                if parts[3] != "01":   # 01 = ESTABLISHED
+                if parts[3] != "01":
                     continue
                 try:
                     local       = parts[1].split(":")
@@ -214,16 +197,14 @@ class LifetimeTracker:
                     local_port  = int(local[1], 16)
                     remote_ip   = remote[0]
                     remote_port = int(remote[1], 16)
-                    # tx_queue:rx_queue
-                    qparts = parts[4].split(":")
-                    tx_q = int(qparts[0], 16)
-                    rx_q = int(qparts[1], 16) if len(qparts) > 1 else 0
+                    qparts      = parts[4].split(":")
+                    tx_q        = int(qparts[0], 16)
+                    rx_q        = int(qparts[1], 16) if len(qparts) > 1 else 0
                 except (ValueError, IndexError):
                     continue
 
                 if remote_port != 443:
                     continue
-                # исключаем loopback и свои порты
                 if remote_ip in ("00000000",
                                  "00000000000000000000000000000000",
                                  "0100007F",
@@ -232,9 +213,8 @@ class LifetimeTracker:
                 if local_port in (self.ss_port, self.socks_port, self.panel_port):
                     continue
 
-                key = (local_port, remote_ip, remote_port)
-                result[key] = {"tx": tx_q, "rx": rx_q}
-
+                result[(local_port, remote_ip, remote_port)] = {
+                    "tx": tx_q, "rx": rx_q}
         return result
 
     def _loop(self):
@@ -246,58 +226,45 @@ class LifetimeTracker:
             self._stop_evt.wait(timeout=self.poll_interval)
 
     def _tick(self):
-        now     = time.time()
-        conns   = self._read_tcp_conns()   # key → {tx, rx}
+        now   = time.time()
+        conns = self._read_tcp_conns()
         yt_active = len(conns) > 0
 
-        # ── обновляем очереди и детектим idle ────────────────────────
-
-        idle_cuts = []   # [(key, lifetime, idle_sec)]
+        idle_events = []   # list of (key, lifetime, idle_sec, tx_q, rx_q)
 
         with self._lock:
             new_queues = {}
-
-            for key, qvals in conns.items():
-                tx, rx = qvals["tx"], qvals["rx"]
+            for key, qv in conns.items():
+                tx, rx = qv["tx"], qv["rx"]
                 prev = self._queues.get(key)
-
                 if prev is None:
-                    # новое соединение
                     new_queues[key] = {
-                        "tx":           tx,
-                        "rx":           rx,
-                        "idle_ticks":   0,
-                        "first_seen":   now,
+                        "tx": tx, "rx": rx,
+                        "idle_ticks": 0,
+                        "first_seen": now,
                         "last_changed": now,
                     }
                 else:
-                    # сравниваем очереди с предыдущим тиком
-                    changed = (tx != prev["tx"] or rx != prev["rx"])
+                    changed    = (tx != prev["tx"] or rx != prev["rx"])
                     idle_ticks = 0 if changed else prev["idle_ticks"] + 1
-                    last_changed = now if changed else prev["last_changed"]
-
+                    last_chg   = now if changed else prev["last_changed"]
                     new_queues[key] = {
-                        "tx":           tx,
-                        "rx":           rx,
+                        "tx": tx, "rx": rx,
                         "idle_ticks":   idle_ticks,
                         "first_seen":   prev["first_seen"],
-                        "last_changed": last_changed,
+                        "last_changed": last_chg,
                     }
-
-                    # детект тихого дропа
-                    lifetime  = now - prev["first_seen"]
-                    idle_sec  = now - last_changed
-
-                    if (idle_sec >= self._idle_threshold
+                    lifetime = now - prev["first_seen"]
+                    idle_sec = now - last_chg
+                    # fire exactly once when ticks threshold is crossed
+                    if (idle_ticks == IDLE_TICKS
                             and lifetime >= IDLE_MIN_LIFETIME
-                            and idle_ticks == IDLE_TICKS):
-                        # срабатываем ровно один раз при пересечении порога
-                        idle_cuts.append((key, lifetime, idle_sec))
+                            and idle_sec >= self._idle_threshold):
+                        idle_events.append((key, lifetime, idle_sec, tx, rx))
 
-            # удалённые соединения — обработаем ниже через сессию
             self._queues = new_queues
 
-            # ── сессия ───────────────────────────────────────────────
+            # RST session tracking
             if yt_active:
                 if self._session_start is None:
                     self._session_start = now
@@ -309,34 +276,71 @@ class LifetimeTracker:
                         and self._session_start is not None):
                     idle_time        = now - self._last_activity
                     session_duration = self._last_activity - self._session_start
-
                     if idle_time >= self._yt_grace_sec:
                         if session_duration >= self.cut_min_sec:
-                            # RST-срез: сессия прожила cut_min..cut_max и оборвалась
-                            lifetime = session_duration + idle_time
                             if (not self.require_reset
                                     or self._has_recent_reset(now)):
-                                self._do_cut(lifetime, cut_type="rst")
+                                self._do_rst_cut(session_duration + idle_time)
                         self._session_start = None
                         self._last_activity = None
 
             self.active_conns = len(conns)
             self.tracked      = len(conns)
 
-        # ── idle-дропы вне лока ───────────────────────────────────────
-        for key, lifetime, idle_sec in idle_cuts:
-            self._do_idle_drop(lifetime, idle_sec)
+        for (key, lifetime, idle_sec, tx_q, rx_q) in idle_events:
+            self._do_idle_cut(lifetime, idle_sec, tx_q, rx_q, len(conns))
 
     def _has_recent_reset(self, now):
         with self._lock:
-            reset_ts = list(self._reset_ts)
-        for rs in reset_ts:
+            ts_list = list(self._reset_ts)
+        for rs in ts_list:
             if -self.poll_interval * 2 - 5 <= (rs - now) <= self.reset_window_sec * 3:
                 return True
         return False
 
-    def _do_cut(self, lifetime, cut_type="rst"):
-        """RST-срез: классический детект по времени сессии + TCP RST."""
+    def _get_top_slot_ctx(self):
+        """Return slot_ctx for the most active pool slot (best-effort)."""
+        try:
+            if self.pool_ref is None:
+                return {}
+            stats = self.pool_ref.get_traffic_stats()
+            slots = self.pool_ref.get_status()
+            candidates = [s for s in slots
+                          if s.get("alive") and not s.get("fw_excluded")]
+            if not candidates:
+                return {}
+            top = max(candidates,
+                      key=lambda s: (stats.get(s["qnum"]) or {}).get("pkts_delta", 0))
+            tstat = stats.get(top["qnum"]) or {}
+            return slot_ctx(
+                index=top.get("index"),
+                qnum=top.get("qnum"),
+                strategy=top.get("strategy"),
+                pid=top.get("pid"),
+                pkts_delta=tstat.get("pkts_delta"),
+                bytes_delta=tstat.get("bytes_delta"),
+                kbps=tstat.get("kbps"),
+            )
+        except Exception:
+            return {}
+
+    def _get_monitor_ctx(self):
+        """Return monitor_ctx from ResetMonitor (best-effort)."""
+        try:
+            if self.monitor_ref is None:
+                return {}
+            st = self.monitor_ref.get_status()
+            return monitor_ctx(
+                ratio=st.get("ratio"),
+                resets=st.get("resets_window"),
+                closes=st.get("closes_window"),
+                window_sec=st.get("window_sec"),
+                ss_lines=list(getattr(self.monitor_ref, "_recent_ss_lines", [])),
+            )
+        except Exception:
+            return {}
+
+    def _do_rst_cut(self, lifetime):
         now = time.time()
         with self._lock:
             self.last_cut_lifetime = round(lifetime, 1)
@@ -345,23 +349,31 @@ class LifetimeTracker:
             self.total_rst_cuts   += 1
             cb = self.on_cut
 
-        self._log("warn",
-            "✂ RST-срез ТСПУ: сессия %.1fс" % lifetime)
+        self._log("warn", "[CUT/RST] conn lived %.1fs" % lifetime)
 
         if self._tlog:
-            self._tlog.cut(lifetime=lifetime, cut_type=cut_type)
+            try:
+                self._tlog.cut(
+                    conn=conn_ctx(
+                        lifetime_sec=lifetime,
+                        active_conns=self.active_conns,
+                    ),
+                    slot=self._get_top_slot_ctx(),
+                    monitor=self._get_monitor_ctx(),
+                )
+            except Exception as e:
+                print("[tracker] tspу_log.cut error: %s" % e, flush=True)
 
         if cb:
             try:
-                cb(lifetime)
-            except Exception as e:
-                self._log("error", "on_cut(rst): %s" % e)
+                cb(lifetime, "rst")
+            except TypeError:
+                try:
+                    cb(lifetime)
+                except Exception as e:
+                    self._log("error", "on_cut(rst): %s" % e)
 
-    def _do_idle_drop(self, lifetime, idle_sec):
-        """
-        Тихий дроп: трафик встал на idle_sec при живом ESTABLISHED соединении.
-        ТСПУ дропает пакеты без RST; соединение зависает до таймаута SS.
-        """
+    def _do_idle_cut(self, lifetime, idle_sec, tx_q, rx_q, active_conns):
         now = time.time()
         with self._lock:
             self.last_cut_lifetime = round(lifetime, 1)
@@ -371,14 +383,30 @@ class LifetimeTracker:
             cb = self.on_cut
 
         self._log("warn",
-            "⏸ Тихий дроп ТСПУ: трафик встал на %.1fс (соединение живёт %.1fс)"
-            % (idle_sec, lifetime))
+            "[CUT/IDLE] traffic stalled %.1fs  lifetime=%.1fs  tx_q=%d rx_q=%d"
+            % (idle_sec, lifetime, tx_q, rx_q))
 
         if self._tlog:
-            self._tlog.idle_drop(lifetime=lifetime, idle_sec=idle_sec)
+            try:
+                self._tlog.idle(
+                    conn=conn_ctx(
+                        lifetime_sec=lifetime,
+                        idle_sec=idle_sec,
+                        active_conns=active_conns,
+                        tx_queue=tx_q,
+                        rx_queue=rx_q,
+                    ),
+                    slot=self._get_top_slot_ctx(),
+                    monitor=self._get_monitor_ctx(),
+                )
+            except Exception as e:
+                print("[tracker] tspу_log.idle error: %s" % e, flush=True)
 
         if cb:
             try:
-                cb(lifetime)
-            except Exception as e:
-                self._log("error", "on_cut(idle): %s" % e)
+                cb(lifetime, "idle")
+            except TypeError:
+                try:
+                    cb(lifetime)
+                except Exception as e:
+                    self._log("error", "on_cut(idle): %s" % e)
