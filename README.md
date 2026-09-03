@@ -1,12 +1,12 @@
 ![Zapret2 Version](https://img.shields.io/badge/zapret2-v1.0.2-red)
 ![Docker Pulls](https://img.shields.io/docker/pulls/vernette/ss-zapret2?logo=docker)
 
-Docker-контейнер на основе [zapret2 от bol-van](https://github.com/bol-van/zapret2) с интегрированным Shadowsocks и SOCKS5 для подключения к контейнеру. Предназначен для удобной маршрутизации трафика через изолированную среду без модификации основной сети. Продолжение [ss-zapret](https://github.com/vernette/ss-zapret).
+Docker-контейнер на основе [zapret2 от bol-van](https://github.com/bol-van/zapret2) с интегрированным Shadowsocks и SOCKS5 для подключения к контейнеру. Предназначен для удобной маршрутизации трафика через изолированную среду без модификации основной сети, автоматической замены стратегий, автоматическим роутингом трафиком на разные стратегий и с наличием веб панели. Продолжение [ss-zapret](https://github.com/vernette/ss-zapret).
 
 - Изоляция zapret2 в отдельном контейнере
 - Простая интеграция с sing-box, Xray и другими прокси-клиентами
 <p align="center">
-  <img src="https://github.com/Pushkinmazila2/ss-zapret2/blob/master/WebPanel.PNG" alt="Веб панель со сменой стратегий">
+  <img src="https://github.com/Pushkinmazila2/ss-zapret2/blob/master/Pulzapret.PNG" alt="Веб панель с авто сменой стратегий">
 </p>
 
 Проект больше не дублирует функции встроенного `--quorum` в zapret2, а является самостоятельной экосистемой выживания трафика в реальном времени против ТСПУ.
