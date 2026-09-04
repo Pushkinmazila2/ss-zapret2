@@ -12,6 +12,8 @@ services:
       - SOCKS_PORT=${SOCKS_PORT}
       - SS_VERBOSE=${SS_VERBOSE:-0}
       - PANEL_PORT=${PANEL_PORT:-1888}
+      - CUT_LOG_PATH=${CUT_LOG_PATH:-}
+      - NFQWS2_EXTRA_ARGS=${NFQWS2_EXTRA_ARGS:-}
     ports:
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/tcp"
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/udp"
@@ -25,6 +27,7 @@ services:
       - ./strategies:/opt/zapret2/strategies
       - ./scripts/examples:/opt/zapret2/init.d/custom.d.examples.linux
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
+      - ./logs:/opt/zapret2/logs
     networks:
       - default
       - s-ui_network

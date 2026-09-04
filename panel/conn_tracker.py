@@ -111,6 +111,11 @@ class LifetimeTracker:
                         setattr(self, k, max(2, float(cfg[k])))
                     else:
                         setattr(self, k, float(cfg[k]))
+            # защитная нормализация границ среза (swap + клампы)
+            lo = min(self.cut_min_sec, self.cut_max_sec)
+            hi = max(self.cut_min_sec, self.cut_max_sec)
+            self.cut_min_sec = max(5.0, lo)
+            self.cut_max_sec = max(max(10.0, hi), self.cut_min_sec)
         return self.get_status()
 
     def get_status(self):

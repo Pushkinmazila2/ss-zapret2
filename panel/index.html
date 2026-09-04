@@ -812,7 +812,12 @@ async function refreshCuts(){
     const ip   = conn.remote_ip || '?';
     const dp   = conn.local_port || '?';
     const slot = e.slot;
-    const slotTxt = slot ? ('слот ' + (slot.index!==undefined?slot.index:'?') + ' · ' + (slot.strategy||'?') + (slot.qnum!==undefined?(' · q'+slot.qnum):'')) : 'слот ?';
+    let slotTxt = 'слот ?';
+    if (slot && slot.index !== undefined) {
+      slotTxt = 'слот ' + slot.index + ' · ' + (slot.strategy || '?') +
+        (slot.qnum !== undefined ? (' · q' + slot.qnum) : '') +
+        (e.slot_resolved === false ? ' (guess)' : '');
+    }
     const kind = e.event_kind || e.kind || '?';
     const ts  = (e.ts || '').toString().slice(11,19) || '';
     const rot = e.pool && e.pool.rotation_triggered ? '⟳' : (e.pool && e.pool.skip_reason ? '⧗' : '');

@@ -64,6 +64,9 @@ class PoolManager:
         self._log    = log_fn or (lambda lvl, msg: print("[pool][%s] %s" % (lvl, msg), flush=True))
         self._prev_counters     = {}   # qnum → (pkts, bytes)
         self._prev_counter_time = None
+        # путь procfs conntrack (переопределяется env NF_CONNTRACK_PROC)
+        self._nf_conntrack_path = os.environ.get("NF_CONNTRACK_PROC",
+                                                 "/proc/net/nf_conntrack")
         os.makedirs(POOL_RUN_DIR, exist_ok=True)
 
     # ── public ────────────────────────────────────────────────────────────
@@ -386,38 +389,48 @@ class PoolManager:
         Best-effort: сопоставляет соединение (local_port, remote_ip_hex, 443)
         со слотом пула по метке conntrack.
 
-        Читает /proc/net/nf_conntrack, ищет запись с dst=remote_ip,
-        dport=443 и sport=local_port, берёт mark. По mark (qnum) находит слот.
-        Возвращает dict описания слота или None, если сопоставить не удалось.
+        Читает procfs conntrack (путь — self._nf_conntrack_path, env
+        NF_CONNTRACK_PROC), ищет запись с dst=remote_ip, dport=443 и
+        sport=local_port, берёт mark. По mark (qnum) находит слот.
+
+        Возвращает (slot_dict_or_None, fail_reason).
+        fail_reason = None, если слот найден.
         """
         try:
             local_port, remote_ip_hex, remote_port = conn
         except (ValueError, TypeError):
-            return None
+            return None, "bad conn tuple"
         wanted = self._hexip_to_str(remote_ip_hex)
         if not wanted or int(remote_port or 443) != 443:
-            return None
+            return None, "bad ip/port"
         mark = None
         try:
-            with open("/proc/net/nf_conntrack") as f:
+            with open(self._nf_conntrack_path) as f:
                 for line in f:
                     d = {}
                     for tok in line.split():
                         if "=" in tok:
                             k, v = tok.split("=", 1)
                             d[k] = v
-                    if (d.get("dport") == "443" and d.get("cust_dport") != "443" and
-                        d.get("dst") == wanted and d.get("sport") == str(local_port)):
+                    # conntrack-строка содержит оба направления; пару ищем
+                    # в любом: (dst=remote, dport=443, sport=local) или reply
+                    if ((d.get("dport") == "443" and
+                         d.get("dst") == wanted and
+                         d.get("sport") == str(local_port)) or
+                        (d.get("sport") == "443" and
+                         d.get("src") == wanted and
+                         d.get("dport") == str(local_port))):
                         mark = d.get("mark")
                         break
-        except Exception:
-            return None
+        except (IOError, OSError):
+            return None, "nf_conntrack procfs unavailable"
+        except Exception as e:
+            return None, "nf_conntrack read error: %s" % e
         if not mark:
-            return None
-        try:
-            qnum = int(mark, 16)
-        except ValueError:
-            return None
+            return None, "conntrack entry not found"
+        qnum = self._parse_mark(mark)
+        if qnum is None:
+            return None, "bad mark %r" % mark
         with self._lock:
             for s in self._slots:
                 if s.qnum == qnum:
@@ -429,8 +442,21 @@ class PoolManager:
                         "nfqws_opt": s.nfqws_opt,
                         "healthy":  s.healthy,
                         "fw_excluded": s._fw_excluded,
-                    }
-        return {"qnum": qnum, "strategy": None}
+                    }, None
+        return {"qnum": qnum, "strategy": None}, None
+
+    @staticmethod
+    def _parse_mark(mark):
+        """mark из conntrack: '0x12d' / '12d' / '301' → int, иначе None."""
+        try:
+            m = str(mark).strip()
+            if m.lower().startswith("0x"):
+                return int(m, 16)
+            if any(c in "abcdef" for c in m.lower()):
+                return int(m, 16)
+            return int(m, 10)
+        except (ValueError, TypeError):
+            return None
 
     def slot_log_tail(self, index, limit=80):
         """Хвост вывода nfqws2 слота для журнала срезов."""
@@ -500,13 +526,25 @@ class PoolManager:
             except ValueError:
                 args.extend(line.split())
 
+        # дополнительные аргументы для каждого nfqws2 (например, отладка):
+        # env NFQWS2_EXTRA_ARGS, например "--debug=2 --log-dpkt"
+        extra_args = os.environ.get("NFQWS2_EXTRA_ARGS", "").strip()
+        if extra_args:
+            try:
+                args.extend(shlex.split(extra_args))
+            except ValueError:
+                args.extend(extra_args.split())
+
         self._log("info", "Слот %d старт: qnum=%d strategy=%s" % (
             slot.index, slot.qnum, slot.strategy or "custom"))
         self._log("info", "CMD: %s" % " ". join(base + args))
+        # маркеры жизненного цикла — попадают в журнал срезов даже без трафика
+        slot.log_tail.append("START CMD: %s" % " ".join(base + args))
 
         # Антигонка NFQUEUE: очередь может ещё удерживаться старым процессом
         last_err = ""
         for attempt in range(1, 4):
+            slot.log_tail.append("START attempt %d/3" % attempt)
             try:
                 # Направляем stdout и stderr в PIPE, чтобы Python мог читать и модифицировать строки
                 proc = subprocess.Popen(
@@ -542,7 +580,8 @@ class PoolManager:
                     last_err = "Процесс завершился с кодом %d. Проверьте логи выше." % rc
                     self._log("warn", "Слот %d старт попытка %d/3: rc=%d %s" % (
                         slot.index, attempt, rc, last_err))
-                    
+                    slot.log_tail.append("EXIT rc=%d (attempt %d/3)" % (rc, attempt))
+
                     if attempt < 3:
                         time.sleep(1.0)
                         continue
@@ -553,12 +592,14 @@ class PoolManager:
                 slot.started = time.strftime("%H:%M:%S")
                 slot.healthy = None
                 self._log("info", "Слот %d (qnum=%d) успешно запущен" % (slot.index, slot.qnum))
+                slot.log_tail.append("STARTED pid=%d qnum=%d" % (proc.pid, slot.qnum))
                 return
             except Exception as e:
                 last_err = str(e)
                 if attempt < 3:
                     time.sleep(1.0)
         self._log("error", "Слот %d не запустился после 3 попыток: %s" % (slot.index, last_err))
+        slot.log_tail.append("FAILED after 3 attempts: %s" % last_err)
 
     def _stop_slot_proc(self, slot):
         if slot.proc and slot.proc.poll() is None:

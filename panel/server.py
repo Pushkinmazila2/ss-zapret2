@@ -323,8 +323,15 @@ class ResetMonitor:
 # глобальный экземпляр
 reset_monitor = ResetMonitor()
 
-# отдельный журнал «оборванных» соединений (срезы ТСПУ)
-CUT_LOG_PATH = os.environ.get("CUT_LOG_PATH", "/run/zapret-pool/cuts.log")
+# отдельный журнал «оборванных» соединений (срезы ТСПУ).
+# Путь: CUT_LOG_PATH, иначе — /opt/zapret2/logs/cuts.log, если каталог
+# смонтирован (переживает рестарт контейнера), иначе /run/zapret-pool/cuts.log
+_log_dir = os.environ.get("CUT_LOG_DIR", "/opt/zapret2/logs")
+if os.path.isdir(_log_dir):
+    CUT_LOG_DEFAULT = os.path.join(_log_dir, "cuts.log")
+else:
+    CUT_LOG_DEFAULT = "/run/zapret-pool/cuts.log"
+CUT_LOG_PATH = os.environ.get("CUT_LOG_PATH") or CUT_LOG_DEFAULT
 cut_logger = CutLogger(path=CUT_LOG_PATH)
 
 class PoolSwitcher:
@@ -545,14 +552,16 @@ class PoolSwitcher:
         # ── собираем контекст для журнала ─────────────────────────────────
         local_port = remote_hex = remote_ip = remote_port = None
         slot_info  = None
+        resolve_reason = None
         if isinstance(conn, (tuple, list)) and len(conn) == 3:
             local_port, remote_hex, remote_port = conn
             remote_ip = (_pm.PoolManager._hexip_to_str(remote_hex)
                          if remote_hex else None)
             try:
-                slot_info = self._pool.slot_for_conn(conn)
-            except Exception:
+                slot_info, resolve_reason = self._pool.slot_for_conn(conn)
+            except Exception as e:
                 slot_info = None
+                resolve_reason = "slot_for_conn error: %s" % e
 
         qnum = slot_info.get("qnum") if isinstance(slot_info, dict) else None
         traffic = {}
@@ -581,11 +590,45 @@ class PoolSwitcher:
         except Exception:
             ss_tail = []
         nfqws_tail = []
+        nfqws_all  = {}
+        try:
+            alive_slots = [s for s in self._pool.get_status()
+                           if s.get("alive") and s.get("index") is not None]
+        except Exception:
+            alive_slots = []
         if isinstance(slot_info, dict) and slot_info.get("index") is not None:
             try:
                 nfqws_tail = self._pool.slot_log_tail(slot_info["index"], 40)
             except Exception:
                 nfqws_tail = []
+        else:
+            # conntrack не смог определить слот — берём самый активный живой
+            try:
+                stats = self._pool.get_traffic_stats()
+
+                def _act(s):
+                    st = stats.get(s.get("qnum")) or {}
+                    return st.get("pkts_delta", 0)
+                best = max(alive_slots, key=_act) if alive_slots else None
+                if best is not None:
+                    slot_info = {
+                        "index": best["index"], "qnum": best.get("qnum"),
+                        "strategy": best.get("strategy"),
+                        "nfqws_pid": best.get("pid"),
+                        "fw_excluded": best.get("fw_excluded"),
+                        "guessed": True,
+                    }
+                    nfqws_tail = self._pool.slot_log_tail(best["index"], 40)
+            except Exception:
+                pass
+        # хвосты всех живых слотов — контекст есть даже без определения слота
+        for s in alive_slots:
+            try:
+                t = self._pool.slot_log_tail(s["index"], 15)
+                if t:
+                    nfqws_all[str(s["index"])] = t
+            except Exception:
+                pass
 
         try:
             pool_status = self._pool.get_status()
@@ -607,6 +650,8 @@ class PoolSwitcher:
                 "remote_port": remote_port,
             },
             "slot": slot_info,
+            "slot_resolved": bool(slot_info and not slot_info.get("guessed")),
+            "slot_resolve_reason": resolve_reason,
             "traffic": traffic,
             "pool": {
                 "enabled": self.enabled,
@@ -631,6 +676,7 @@ class PoolSwitcher:
                 "panel_log_tail": pool_log_tail,
                 "ss_server_tail": ss_tail,
                 "nfqws2_log_tail": nfqws_tail,
+                "nfqws2_all_slots": nfqws_all,
             },
         }
         try:

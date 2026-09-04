@@ -30,12 +30,22 @@ class FakePool:
                       "source": "iptables"}}
 
     def slot_for_conn(self, conn):
+        if getattr(FakePool, "no_conntrack", False):
+            return None, "nf_conntrack procfs unavailable"
         return {"index": 1, "qnum": 301, "strategy": "disorder",
-                "nfqws_pid": 1234, "nfqws_opt": "--filter-tcp=443 --new"}
+                "nfqws_pid": 1234, "nfqws_opt": "--filter-tcp=443 --new"}, None
 
     def slot_log_tail(self, index, limit=40):
         return ["[NFQWS2][SLOT-1][QNUM-301] debug line 1",
                 "[NFQWS2][SLOT-1][QNUM-301] debug line 2"]
+
+    def __getattr__(self, name):
+        # заглушки для остальных методов пула (remove_slots_from_fw, start_shadow…),
+        # чтобы фоновая ротация в smoke-тесте завершалась тихо
+        def _noop(*a, **k):
+            return None
+        _noop.__name__ = name
+        return _noop
 
 
 sw = S.PoolSwitcher(FakePool())
@@ -74,3 +84,24 @@ assert e["slot"]["strategy"] == "disorder"
 assert e["traffic"]["pkts_delta"] == 128
 assert e["traces"]["nfqws2_log_tail"]  # непустой
 print("SMOKE_OK")
+
+# ── сценарий 2: conntrack недоступен → fallback на самый активный слот ──
+FakePool.no_conntrack = True
+sw2 = S.PoolSwitcher(FakePool())
+sw2.enabled = True
+sw2.cut_rotate_enabled = True
+sw2._cut_last_ts = None
+sw2.on_connection_cut(event)
+
+e2 = S.cut_logger.list(1)[0]
+print("S2 slot_resolved:", e2.get("slot_resolved"),
+      "| reason:", e2.get("slot_resolve_reason"))
+print("S2 slot:", e2.get("slot"))
+print("S2 nfqws_tail len:", len(e2["traces"]["nfqws2_log_tail"]))
+print("S2 all_slots:", sorted(e2["traces"]["nfqws2_all_slots"].keys()))
+assert e2["slot_resolved"] is False
+assert e2["slot"]["guessed"] is True
+assert e2["slot"]["index"] == 1
+assert e2["traces"]["nfqws2_log_tail"]      # fallback-хвост заполнен
+assert e2["traces"]["nfqws2_all_slots"]     # хвосты всех живых слотов
+print("SMOKE2_OK")
