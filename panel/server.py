@@ -351,9 +351,7 @@ if _ti is not None:
     except Exception:
         pass
     _tspu_intel.register_cut_logger_callback(
-        lambda rec: cut_logger.record({"kind": "tspu_intel",
-                                     "cut_id": rec.get("cut_id"),
-                                     "vector": rec.get("vector")}))
+        lambda rec: cut_logger.record({"kind": "tspu_intel","cut_id": rec.get("cut_id"),"vector": rec.get("vector")}))
 
 class PoolSwitcher:
     """
@@ -595,8 +593,8 @@ class PoolSwitcher:
         resolve_reason = None
         if isinstance(conn, (tuple, list)) and len(conn) == 3:
             local_port, remote_hex, remote_port = conn
-            remote_ip = (_pm.PoolManager._hexip_to_str(remote_hex)
-                         if remote_hex else None)
+            remote_ip = (_pm.PoolManager._hexip_to_str(remote_hex) if remote_hex else None)
+
             try:
                 slot_info, resolve_reason = self._pool.slot_for_conn(conn)
             except Exception as e:
@@ -719,21 +717,38 @@ class PoolSwitcher:
                 "nfqws2_all_slots": nfqws_all,
             },
         }
+        recorded_payload = None
         try:
-            cut_logger.record(payload)
+            recorded_payload = cut_logger.record(payload)
         except Exception as e:
             self._log_event("error", "Журнал срезов: %s" % e)
 
         if _tspu_intel is not None:
-            _conn_data = payload.get("connection", {}) if 'payload' in locals() else {}
-            _r_ip = remote_ip or _conn_data.get("remote_ip")
-            _r_port = remote_port or _conn_data.get("remote_port")
-            _l_port = local_port or _conn_data.get("local_port")
-            
+            # 1. Забираем ID, который сгенерировал cut_logger
+            resolved_cut_id = None
+            if recorded_payload and isinstance(recorded_payload, dict):
+                resolved_cut_id = recorded_payload.get("id")
+            if not resolved_cut_id and isinstance(payload, dict):
+                resolved_cut_id = payload.get("id")
+            if not resolved_cut_id:
+                resolved_cut_id = int(time.time())
+
+            # 2. Пытаемся вытащить IP/порты из event детектора, если распаковка conn выше не сработала
+            _ev_conn = event.get("connection") or event.get("conn") or {}
+            _r_ip = remote_ip
+            _r_port = remote_port
+            _l_port = local_port
+
+            if not _r_ip and isinstance(_ev_conn, dict):
+                _r_ip = _ev_conn.get("remote_ip") or _ev_conn.get("ip") or _ev_conn.get("dst")
+                _r_port = _ev_conn.get("remote_port") or _ev_conn.get("dport")
+                _l_port = _ev_conn.get("local_port") or _ev_conn.get("sport")
+
+            # 3. Определяем тип завершения сессии
             _term_type = "RST" if event.get("reset_confirmed") or event.get("rst_deaths_window") else "FIN"
 
             _ti_ctx = {
-                "cut_id": payload.get("id") if 'payload' in locals() else int(time.time()),
+                "cut_id": resolved_cut_id,
                 "event_kind": event.get("kind", "classic"),
                 "lifetime_sec": lifetime,
                 "reset_confirmed": bool(event.get("reset_confirmed")),
@@ -748,6 +763,7 @@ class PoolSwitcher:
                 "bytes_delta": (traffic or {}).get("bytes_delta"),
                 "termination_type": _term_type,
             }
+            
             _sname = _ti_ctx["strategy_name"]
             if _sname:
                 _ti_ctx["nfqws_opt"] = load_strategy_nfqws(_sname)
@@ -757,8 +773,7 @@ class PoolSwitcher:
 
 
         if trigger:
-            threading.Thread(target=self._rotate_on_cut,
-                             args=(lifetime, slot_info), daemon=True).start()
+            threading.Thread(target=self._rotate_on_cut, args=(lifetime, slot_info), daemon=True).start()
 
     def _rotate_on_cut(self, lifetime, slot_info=None):
         """
