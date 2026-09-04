@@ -446,7 +446,7 @@ class _Sniffer:
                 pass
         if not self._socks:
             return False
-        self._log("sniffer opened on %d proto(s)" % len(self._socks))
+        self._log("error","sniffer opened on %d proto(s)" % len(self._socks))
         return True
 
     def open_or_dummy(self):
@@ -485,7 +485,7 @@ class _Sniffer:
                 except Exception:
                     continue
                 self._push(buf)
-        self._log("sniffer stopped")
+        self._log("info","sniffer stopped")
 
     def _push(self, buf):
         ip = parse_ip(buf)
@@ -954,7 +954,7 @@ class TspuIntel:
     def __init__(self, path=None, log_fn=None, enabled=True, cooldown=None,
                  budget_ms=DEFAULT_BUDGET_MS, ttl_max=DEFAULT_TTL_MAX,
                  sni=DEFAULT_SNI, dry_run=False, raw_available=None):
-        self.log = log_fn or (lambda *args, **kwargs: print("[tspu-intel] %s" % (" | ".join(str(a) for a in args)), flush=True))
+        self.log = log_fn or (lambda lvl, msg: print("[tspu-intel][%s] %s" % (lvl, msg), flush=True))
         self.intel_log = IntelLog(path=path or "/opt/zapret2/logs/tspu_intel.jsonl")
         self.enabled = bool(enabled)
         self.cooldown = float(cooldown if cooldown is not None else DEFAULT_COOLDOWN)
