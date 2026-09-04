@@ -725,26 +725,36 @@ class PoolSwitcher:
             self._log_event("error", "Журнал срезов: %s" % e)
 
         if _tspu_intel is not None:
+            _conn_data = payload.get("connection", {}) if 'payload' in locals() else {}
+            _r_ip = remote_ip or _conn_data.get("remote_ip")
+            _r_port = remote_port or _conn_data.get("remote_port")
+            _l_port = local_port or _conn_data.get("local_port")
+            
+            _term_type = "RST" if event.get("reset_confirmed") or event.get("rst_deaths_window") else "FIN"
+
             _ti_ctx = {
+                "cut_id": payload.get("id") if 'payload' in locals() else int(time.time()),
                 "event_kind": event.get("kind", "classic"),
                 "lifetime_sec": lifetime,
                 "reset_confirmed": bool(event.get("reset_confirmed")),
-                "remote_ip": remote_ip,
-                "remote_port": remote_port,
-                "local_port": local_port,
+                "remote_ip": _r_ip,
+                "remote_port": _r_port,
+                "local_port": _l_port,
                 "qnum": qnum,
                 "slot_index": (slot_info.get("index") if isinstance(slot_info, dict) else None),
                 "strategy_name": (slot_info.get("strategy") if isinstance(slot_info, dict) else None),
                 "nfqws_opt": None,
                 "strategy_score_before": 0.0,
                 "bytes_delta": (traffic or {}).get("bytes_delta"),
-                "termination_type": None,
+                "termination_type": _term_type,
             }
             _sname = _ti_ctx["strategy_name"]
             if _sname:
                 _ti_ctx["nfqws_opt"] = load_strategy_nfqws(_sname)
                 _ti_ctx["strategy_score_before"] = float(self.strategy_scores.get(_sname, 0.0))
+            
             threading.Thread(target=_tspu_intel.on_cut_async, args=(_ti_ctx,), daemon=True).start()
+
 
         if trigger:
             threading.Thread(target=self._rotate_on_cut,

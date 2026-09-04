@@ -1086,16 +1086,23 @@ class TspuIntel:
         return result
 
     def _resolve_dst(self, ctx, budget: _Budget):
-        ip = ctx.get("remote_ip")
+        # 1. Пытаемся взять IP из всех возможных вариаций ключей контекста
+        ip = ctx.get("remote_ip") or ctx.get("ip") or ctx.get("dst") or ctx.get("remote_host")
         if ip:
             return ip
+            
+        # 2. Пытаемся динамически взять SNI из контекста сессии, если он там есть
+        ctx_sni = ctx.get("sni") or ctx.get("hostname") or ctx.get("applied_strategy_name")
+        sni_to_resolve = ctx_sni if ctx_sni else self.sni
+        
         left = budget.remaining()
         if left <= 0.1:
             return DEFAULT_TARGET_IP
         res = {"ip": None}
         def _w():
             try:
-                infos = socket.getaddrinfo(self.sni, 443, socket.AF_INET,
+                # Резолвим динамический SNI вместо жесткого дефолта
+                infos = socket.getaddrinfo(sni_to_resolve, 443, socket.AF_INET,
                                            socket.SOCK_STREAM)
                 if infos:
                     res["ip"] = infos[0][4][0]
@@ -1104,6 +1111,7 @@ class TspuIntel:
         t = threading.Thread(target=_w, daemon=True)
         t.start(); t.join(max(0.1, min(left, 0.4)))
         return res["ip"] or DEFAULT_TARGET_IP
+
 
     def _environment(self, ctx, dst, budget: _Budget, sim):
         if sim:
