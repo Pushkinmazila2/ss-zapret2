@@ -103,6 +103,44 @@ class TestSlotForConn(unittest.TestCase):
         self.assertIsNone(slot)
         self.assertIn("unavailable", reason)
 
+    # ── fallback через бинарник conntrack (procfs недоступен) ──────────
+
+    class _R:
+        returncode = 0
+        stdout = ("tcp 6 100 ESTABLISHED src=172.17.0.2 dst=142.250.74.120 "
+                  "sport=52134 dport=443 mark=0x12d use=1\n")
+        stderr = ""
+
+    def test_fallback_binary_found(self):
+        from unittest import mock
+        # procfs отсутствует, но бинарник conntrack отдаёт нужную запись
+        with mock.patch("pool_manager.subprocess.run", return_value=self._R()):
+            slot, reason = self.pm.slot_for_conn(self.conn)
+        self.assertIsNone(reason)
+        self.assertEqual(slot["qnum"], 301)
+        self.assertEqual(slot["strategy"], "disorder")
+
+    def test_fallback_binary_no_entry(self):
+        from unittest import mock
+
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        with mock.patch("pool_manager.subprocess.run", return_value=R()):
+            slot, reason = self.pm.slot_for_conn(self.conn)
+        self.assertIsNone(slot)
+        self.assertIn("unavailable", reason)
+
+    def test_fallback_binary_missing(self):
+        from unittest import mock
+        # бинарника нет вовсе (OSError) — тихий отказ
+        with mock.patch("pool_manager.subprocess.run",
+                        side_effect=OSError("no conntrack")):
+            slot, reason = self.pm.slot_for_conn(self.conn)
+        self.assertIsNone(slot)
+        self.assertIn("unavailable", reason)
+
     def test_qnum_not_in_slots(self):
         self._write(
             "tcp 6 100 ESTABLISHED src=172.17.0.2 dst=142.250.74.120 "

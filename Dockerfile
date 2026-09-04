@@ -67,7 +67,7 @@ RUN apk add --no-cache \
       ip6tables \
       nftables \
       netcat-openbsd \
-      conntrack \
+      conntrack-tools \
       python3 && \
     apk add --no-cache -X https://dl-cdn.alpinelinux.org/alpine/edge/testing shadowsocks-libev
 

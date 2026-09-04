@@ -407,23 +407,15 @@ class PoolManager:
         try:
             with open(self._nf_conntrack_path) as f:
                 for line in f:
-                    d = {}
-                    for tok in line.split():
-                        if "=" in tok:
-                            k, v = tok.split("=", 1)
-                            d[k] = v
-                    # conntrack-строка содержит оба направления; пару ищем
-                    # в любом: (dst=remote, dport=443, sport=local) или reply
-                    if ((d.get("dport") == "443" and
-                         d.get("dst") == wanted and
-                         d.get("sport") == str(local_port)) or
-                        (d.get("sport") == "443" and
-                         d.get("src") == wanted and
-                         d.get("dport") == str(local_port))):
-                        mark = d.get("mark")
+                    mark = self._match_conntrack_line(line, wanted, local_port)
+                    if mark:
                         break
         except (IOError, OSError):
-            return None, "nf_conntrack procfs unavailable"
+            # procfs может быть выключен в ядре (CONFIG_NF_CONNTRACK_PROCFS=n) —
+            # пробуем бинарник conntrack (пакет conntrack-tools)
+            mark = self._conntrack_binary_mark(wanted, local_port)
+            if not mark:
+                return None, "nf_conntrack procfs unavailable"
         except Exception as e:
             return None, "nf_conntrack read error: %s" % e
         if not mark:
@@ -444,6 +436,43 @@ class PoolManager:
                         "fw_excluded": s._fw_excluded,
                     }, None
         return {"qnum": qnum, "strategy": None}, None
+
+    @staticmethod
+    def _match_conntrack_line(line, wanted, local_port):
+        """
+        mark из строки conntrack, если строка описывает нужный поток.
+        Строка содержит оба направления — пару ищем в любом:
+        (dst=remote, dport=443, sport=local) или reply-направление.
+        """
+        d = {}
+        for tok in line.split():
+            if "=" in tok:
+                k, v = tok.split("=", 1)
+                d[k] = v
+        if ((d.get("dport") == "443" and
+             d.get("dst") == wanted and
+             d.get("sport") == str(local_port)) or
+            (d.get("sport") == "443" and
+             d.get("src") == wanted and
+             d.get("dport") == str(local_port))):
+            return d.get("mark")
+        return None
+
+    def _conntrack_binary_mark(self, wanted, local_port, timeout=5):
+        """Fallback: conntrack -L через бинарник (когда procfs недоступен)."""
+        try:
+            r = subprocess.run(
+                ["conntrack", "-L", "-p", "tcp", "--dport", "443"],
+                capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode != 0:
+            return None
+        for line in (r.stdout or "").splitlines():
+            m = self._match_conntrack_line(line, wanted, local_port)
+            if m:
+                return m
+        return None
 
     @staticmethod
     def _parse_mark(mark):
