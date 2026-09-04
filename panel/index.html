@@ -73,6 +73,15 @@ header h1{font-size:15px;font-weight:700;}
 .slot-del{position:absolute;top:8px;right:8px;background:none;border:none;
   color:var(--mut);cursor:pointer;font-size:14px;line-height:1;padding:2px;}
 .slot-del:hover{color:var(--err);}
+
+/* cut log */
+#cutsList .cut{margin:6px 0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 12px;}
+#cutsList .cut summary{cursor:pointer;list-style:none;font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+#cutsList .cut summary::-webkit-details-marker{display:none;}
+#cutsList .cut summary:hover{background:rgba(255,255,255,.03);}
+#cutsList .cut pre{margin-top:8px;font-family:ui-monospace,Consolas,monospace;font-size:10px;color:var(--mut);}
+.cut-kind.classic{color:var(--warn);}
+.cut-kind.epidemic{color:var(--err);}
 .slot-sel{width:100%;margin-top:6px;background:#080d18;border:1px solid var(--line);
   color:var(--tx);border-radius:6px;padding:4px 6px;font:inherit;font-size:11px;}
 
@@ -110,6 +119,16 @@ header h1{font-size:15px;font-weight:700;}
   padding:7px 10px;text-align:center;}
 .mon-stat .val{font-size:18px;font-weight:700;line-height:1;}
 .mon-stat .lbl{font-size:10px;color:var(--mut);margin-top:2px;}
+.cut{background:var(--panel2);border:1px solid var(--line);border-radius:7px;
+  padding:5px 9px;margin:4px 0;}
+.cut summary{cursor:pointer;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;}
+.cut summary b{font-family:ui-monospace,Consolas,monospace;color:var(--mut);}
+.cut-kind{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;}
+.cut-kind.classic{background:var(--err-dim);color:var(--err);}
+.cut-kind.epidemic{background:var(--warn-dim);color:var(--warn);}
+.cut-kind.manual{background:rgba(255,255,255,.06);color:var(--mut);}
+.cut-conn{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--acc);}
+.cut-slot{font-size:11px;color:var(--mut);}
 .sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}
 .sg label{display:block;font-size:11px;color:var(--mut);margin-bottom:3px;}
 .sg input,.sg select{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
@@ -312,9 +331,13 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
           <label>Макс. lifetime среза (сек)</label>
           <input type="number" id="cfgCutMax" value="60" min="10">
         </div>
-        <div>
+                <div>
           <label>Cooldown ротации (сек)</label>
           <input type="number" id="cfgCutCool" value="30" min="0">
+        </div>
+        <div>
+          <label>Эпидемия: ≥ RST-смертей за 60с</label>
+          <input type="number" id="cfgCutEpi" value="4" min="2">
         </div>
       </div>
       <div class="row" style="margin-top:6px">
@@ -330,6 +353,16 @@ textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--
         </div>
         <div class="swlog" id="poolLog"><div style="color:var(--mut)">—</div></div>
       </div>
+    </div>
+
+    <!-- журнал срезов ТСПУ -->
+    <div class="card">
+      <h2>Журнал срезов ТСПУ
+        <button class="btn sm" onclick="exportCuts()" style="margin-left:4px">⬇ Скачать</button>
+        <button class="btn sm" onclick="clearCuts()">Очистить</button>
+        <span id="cutPath" style="font-weight:400;margin-left:4px;color:var(--mut)"></span>
+      </h2>
+      <div id="cutsList"><div style="color:var(--mut)">Загрузка…</div></div>
     </div>
 
     <!-- текущий config -->
@@ -557,7 +590,7 @@ async function refreshPool(){
   const fields = {cfgPoolSize:'pool_size', cfgInterval:'check_interval',
                   cfgThreshold:'fail_threshold', cfgUrl:'test_url',
                   cfgCutMin:'cut_min_sec', cfgCutMax:'cut_max_sec',
-                  cfgCutCool:'cut_cooldown'};
+                  cfgCutCool:'cut_cooldown', cfgCutEpi:'cut_epidemic'};
   Object.entries(fields).forEach(([id, key]) => {
     const el = document.getElementById(id);
     if(el.dataset.dirty !== '1' && s[key] !== undefined) el.value = s[key];
@@ -671,11 +704,12 @@ async function savePoolCfg(){
     cut_rotate_enabled: +document.getElementById('cfgCutEn').value,
     cut_min_sec:    +document.getElementById('cfgCutMin').value,
     cut_max_sec:    +document.getElementById('cfgCutMax').value,
-    cut_cooldown:   +document.getElementById('cfgCutCool').value,
+        cut_cooldown:   +document.getElementById('cfgCutCool').value,
+    cut_epidemic:  +document.getElementById('cfgCutEpi').value,
   };
   await post('/api/pool/configure', cfg);
   ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl',
-   'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool'].forEach(id =>
+   'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool','cfgCutEpi'].forEach(id =>
     document.getElementById(id).dataset.dirty = '0');
   const saved = document.getElementById('cfgSaved');
   saved.style.display = 'inline'; setTimeout(()=> saved.style.display='none', 2000);
@@ -683,7 +717,7 @@ async function savePoolCfg(){
 }
 
 ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl',
- 'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool'].forEach(id =>
+ 'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool','cfgCutEpi'].forEach(id =>
   document.getElementById(id).addEventListener('input', () =>
     document.getElementById(id).dataset.dirty = '1'));
 
@@ -763,15 +797,57 @@ async function importJson(){
 }
 
 // ── init & polling ────────────────────────────────────────────────────────
+// ── журнал срезов ТСПУ ──────────────────────────────────────────────
+async function refreshCuts(){
+  const d = await api('/api/cuts');
+  if(!d || d.error) return;
+  if(d.status && d.status.path)
+    document.getElementById('cutPath').textContent = d.status.path + ' · ' + d.status.count + ' зап.';
+  const box = document.getElementById('cutsList');
+  const list = d.entries || [];
+  if(!list.length){ box.innerHTML = '<div style="color:var(--mut)">Пока нет срезов</div>'; return; }
+  let html = '';
+  for(const e of list){
+    const conn = e.connection || {};
+    const ip   = conn.remote_ip || '?';
+    const dp   = conn.local_port || '?';
+    const slot = e.slot;
+    const slotTxt = slot ? ('слот ' + (slot.index!==undefined?slot.index:'?') + ' · ' + (slot.strategy||'?') + (slot.qnum!==undefined?(' · q'+slot.qnum):'')) : 'слот ?';
+    const kind = e.event_kind || e.kind || '?';
+    const ts  = (e.ts || '').toString().slice(11,19) || '';
+    const rot = e.pool && e.pool.rotation_triggered ? '⟳' : (e.pool && e.pool.skip_reason ? '⧗' : '');
+    html += '<details class="cut"><summary>' +
+      '<b>' + ts + '</b> ' +
+      '<span class="cut-kind ' + kind + '">' + kind + '</span> ' +
+      '<span>' + (e.lifetime_sec!==undefined ? e.lifetime_sec+'s' : '') + '</span> ' +
+      '<span>' + rot + '</span> ' +
+      '<span class="cut-conn">:' + dp + '→' + ip + ':443</span> ' +
+      '<span class="cut-slot">' + slotTxt + '</span>' +
+      '</summary>' +
+      '<pre style="font-size:10px;line-height:1.35;overflow:auto;max-height:220px">' +
+      esc(JSON.stringify(e, null, 2)) + '</pre></details>';
+  }
+  box.innerHTML = html || '<div style="color:var(--mut)">—</div>';
+}
+function exportCuts(){ window.open('/api/cuts/export', '_blank'); }
+async function clearCuts(){
+  await post('/api/cuts/clear', {});
+  refreshCuts();
+}
+function esc(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 (async()=>{
   updateCurlCmd();
   await loadStrategies();
-  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog(), refreshMonitor()]);
+  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog(), refreshMonitor(), refreshCuts()]);
   setInterval(refreshConnections, 5000);
   setInterval(refreshPool,        3000);
   setInterval(refreshLog,         4000);
   setInterval(refreshMonitor,     3000);
   setInterval(refreshTraffic,     2000);
+  setInterval(refreshCuts,        5000);
 })();
 </script>
 </body>

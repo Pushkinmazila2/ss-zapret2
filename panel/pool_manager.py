@@ -13,7 +13,7 @@ PoolManager только перезаписывает /run/zapret-pool/size и �
 когда меняется размер пула.
 """
 
-import os, re, signal, subprocess, threading, time, socket
+import collections, os, re, signal, subprocess, threading, time, socket
 
 NFQWS2_BIN     = "/opt/zapret2/nfq2/nfqws2"
 ZAPRET_INIT    = "/opt/zapret2/init.d/sysv/zapret2"
@@ -37,6 +37,7 @@ class Slot:
         self.healthy     = None
         self.started     = None
         self._fw_excluded = False   # временно исключён из iptables rotation
+        self.log_tail     = collections.deque(maxlen=300)  # хвост вывода nfqws2
 
     def is_alive(self):
         return self.proc is not None and self.proc.poll() is None
@@ -378,6 +379,86 @@ class PoolManager:
         with self._lock:
             return len(self._slots)
 
+    # ── контекст для журнала срезов ────────────────────────────────────
+
+    def slot_for_conn(self, conn):
+        """
+        Best-effort: сопоставляет соединение (local_port, remote_ip_hex, 443)
+        со слотом пула по метке conntrack.
+
+        Читает /proc/net/nf_conntrack, ищет запись с dst=remote_ip,
+        dport=443 и sport=local_port, берёт mark. По mark (qnum) находит слот.
+        Возвращает dict описания слота или None, если сопоставить не удалось.
+        """
+        try:
+            local_port, remote_ip_hex, remote_port = conn
+        except (ValueError, TypeError):
+            return None
+        wanted = self._hexip_to_str(remote_ip_hex)
+        if not wanted or int(remote_port or 443) != 443:
+            return None
+        mark = None
+        try:
+            with open("/proc/net/nf_conntrack") as f:
+                for line in f:
+                    d = {}
+                    for tok in line.split():
+                        if "=" in tok:
+                            k, v = tok.split("=", 1)
+                            d[k] = v
+                    if (d.get("dport") == "443" and d.get("cust_dport") != "443" and
+                        d.get("dst") == wanted and d.get("sport") == str(local_port)):
+                        mark = d.get("mark")
+                        break
+        except Exception:
+            return None
+        if not mark:
+            return None
+        try:
+            qnum = int(mark, 16)
+        except ValueError:
+            return None
+        with self._lock:
+            for s in self._slots:
+                if s.qnum == qnum:
+                    return {
+                        "index":    s.index,
+                        "qnum":     s.qnum,
+                        "strategy": s.strategy,
+                        "nfqws_pid": s.proc.pid if s.proc else None,
+                        "nfqws_opt": s.nfqws_opt,
+                        "healthy":  s.healthy,
+                        "fw_excluded": s._fw_excluded,
+                    }
+        return {"qnum": qnum, "strategy": None}
+
+    def slot_log_tail(self, index, limit=80):
+        """Хвост вывода nfqws2 слота для журнала срезов."""
+        with self._lock:
+            s = self._find(index)
+            if not s:
+                return []
+            return list(s.log_tail)[-int(limit):]
+
+    @staticmethod
+    def _hexip_to_str(hexip):
+        """Превращает hex-представление IP из /proc/net/tcp в dotted/IPv6-строку."""
+        try:
+            n = len(hexip)
+            if n == 8:      # IPv4
+                b = bytes(int(hexip[i:i + 2], 16) for i in range(0, 8, 2))
+                return ".".join(str(x) for x in b)
+            if n == 32:     # IPv6 (little-endian слова)
+                words = [int(hexip[i:i + 8], 16) for i in range(0, 32, 8)]
+                groups = []
+                for w in reversed(words):
+                    groups.append("%x:%x" % ((w >> 16) & 0xFFFF, w & 0xFFFF))
+                # сокращаем нули (минимально)
+                return ":".join(groups)
+        except (ValueError, IndexError):
+            return None
+        return None
+
     # ── internals ─────────────────────────────────────────────────────────
 
     def _find(self, index):
@@ -437,15 +518,22 @@ class PoolManager:
                 )
                 
                 # Функция для чтения логов процесса в реальном времени и добавления префикса
-                def log_reader(p, qnum, slot_idx):
+                def log_reader(p, log_tail, qnum, slot_idx):
                     prefix = "[NFQWS2][SLOT-%d][QNUM-%d]" % (slot_idx, qnum)
                     for line in p.stdout:
-                        # Печатаем строку в Docker с вашим кастомным префиксом
+                        # Пишем строку в Docker с пользовательским префиксом
                         print("%s %s" % (prefix, line.strip()), flush=True)
+                        # И дублируем в кольцевой буфер слота — для журнала срезов
+                        try:
+                            log_tail.append("%s %s" % (prefix, line.strip()))
+                        except Exception:
+                            pass
 
                 # Запускаем фоновый поток чтения логов для этого конкретного процесса
                 import threading
-                t = threading.Thread(target=log_reader, args=(proc, slot.qnum, slot.index), daemon=True)
+                t = threading.Thread(target=log_reader,
+                                     args=(proc, slot.log_tail, slot.qnum, slot.index),
+                                     daemon=True)
                 t.start()
 
                 time.sleep(0.6)

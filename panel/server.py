@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pool_manager as _pm
 from pool_manager import PoolManager, MAX_SLOTS
 from conn_tracker import LifetimeTracker
+from cut_logger import CutLogger
 
 # ── globals ────────────────────────────────────────────────────────────────
 
@@ -197,6 +198,12 @@ class ResetMonitor:
         self.on_degraded    = None    # callback fn() при переходе ok → degraded
         self.on_reset       = None    # callback fn() на каждое reset-событие
         self.last_reset_ts  = None    # метка последнего reset (для трекера срезов)
+        self._ss_tail       = collections.deque(maxlen=60)   # хвост сырых строк ss-server лога
+
+    def ss_log_tail(self, limit=40):
+        """Последние строки ss-server лога (для журнала срезов)."""
+        with self._lock:
+            return list(self._ss_tail)[-int(limit):]
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -253,6 +260,11 @@ class ResetMonitor:
                             self._stop_evt.wait(0.5)
                             continue
                         self._parse_line(line)
+                        try:
+                            with self._lock:
+                                self._ss_tail.append(line.rstrip())
+                        except Exception:
+                            pass
             except Exception as e:
                 print("[monitor] tail error: %s" % e, flush=True)
                 self._stop_evt.wait(2)
@@ -311,6 +323,10 @@ class ResetMonitor:
 # глобальный экземпляр
 reset_monitor = ResetMonitor()
 
+# отдельный журнал «оборванных» соединений (срезы ТСПУ)
+CUT_LOG_PATH = os.environ.get("CUT_LOG_PATH", "/run/zapret-pool/cuts.log")
+cut_logger = CutLogger(path=CUT_LOG_PATH)
+
 class PoolSwitcher:
     """
     Управляет пулом nfqws2 слотов и авто-заменой нерабочих стратегий.
@@ -344,7 +360,11 @@ class PoolSwitcher:
         self.cut_min_sec        = 30
         self.cut_max_sec        = 60
         self.cut_cooldown       = 30     # мин. пауза между ротациями по срезу
-        self.cut_require_reset  = True   # подтверждать срез reset-событием из лога
+        self.cut_require_reset  = False  # подтверждать срез reset-событием из лога
+        # эпидемия: >= N коротких RST-смертей за окно
+        self.epidemic_min_events  = 4
+        self.short_min_sec        = 5
+        self.epidemic_window_sec  = 60
 
         # состояние
         self.state           = "idle"
@@ -376,6 +396,9 @@ class PoolSwitcher:
                 "cut_max_sec":        self.cut_max_sec,
                 "cut_cooldown":       self.cut_cooldown,
                 "cut_require_reset":  self.cut_require_reset,
+                "epidemic_min_events":  self.epidemic_min_events,
+                "short_min_sec":        self.short_min_sec,
+                "epidemic_window_sec":  self.epidemic_window_sec,
                 # статус трекера соединений
                 "tracker": tstat,
                 "active_conns": tstat.get("active_conns", 0),
@@ -397,22 +420,32 @@ class PoolSwitcher:
             valid = ("mode", "pool_size", "check_interval", "fail_threshold",
                      "settle_time", "test_url",
                      "cut_rotate_enabled", "cut_min_sec", "cut_max_sec",
-                     "cut_cooldown", "cut_require_reset")
+                     "cut_cooldown", "cut_require_reset",
+                     "epidemic_min_events", "short_min_sec", "epidemic_window_sec")
             for k in valid:
                 if k in cfg:
                     setattr(self, k, cfg[k])
+            # сопоставление сокращённого имени из UI
+            if "cut_epidemic" in cfg:
+                self.epidemic_min_events = cfg["cut_epidemic"]
             self.cut_rotate_enabled  = bool(self.cut_rotate_enabled)
             lo = min(self.cut_min_sec, self.cut_max_sec)
             hi = max(self.cut_min_sec, self.cut_max_sec)
             self.cut_min_sec  = max(5, lo)
             self.cut_max_sec  = max(max(10, hi), self.cut_min_sec)
             self.cut_cooldown = max(0, self.cut_cooldown)
+            self.epidemic_min_events = max(2, int(self.epidemic_min_events))
+            self.epidemic_window_sec = max(20, int(self.epidemic_window_sec))
+            self.short_min_sec       = max(2, float(self.short_min_sec))
         # синхронизируем лимиты среза с трекером соединений
         if _tracker is not None:
             _tracker.configure({
                 "cut_min_sec":   self.cut_min_sec,
                 "cut_max_sec":   self.cut_max_sec,
                 "require_reset": self.cut_require_reset,
+                "epidemic_min_events": self.epidemic_min_events,
+                "short_min_sec":       self.short_min_sec,
+                "epidemic_window_sec": self.epidemic_window_sec,
             })
         return self.get_status()
 
@@ -470,31 +503,143 @@ class PoolSwitcher:
 
     # ── ротация при срезе ТСПУ (соединение срезано через 30-60с) ───────
 
-    def on_connection_cut(self, lifetime):
+    def on_connection_cut(self, event):
         """
-        Колбэк от LifetimeTracker: соединение срезано ТСПУ, прожив
-        cut_min_sec..cut_max_sec секунд. Инициируем ротацию стратегий.
+        Колбэк от LifetimeTracker: соединение срезано ТСПУ.
+
+        event — dict от детектора (см. conn_tracker._tick). Собираем максимально
+        полный контекст (соединение, слот/стратегия, трафик, reset-монитор,
+        хвосты логов панели/nfqws2/ss-server) и пишем отдельную запись в журнал
+        срезов (cut_logger). Если пул включён — дополнительно запускаем ротацию.
         """
+        if not isinstance(event, dict):
+            # совместимость со старым вызовом on_cut(lifetime_sec)
+            event = {"kind": "classic",
+                     "lifetime_sec": float(event or 0.0), "conn": None}
+
+        lifetime = event.get("lifetime_sec", 0) or 0.0
+        conn     = event.get("conn")
+
         skip_reason = None
+        trigger     = False
         with self._lock:
-            if not self.enabled:
-                return
-            if not self.cut_rotate_enabled:
-                return
-            if self.state in ("checking", "replacing"):
-                skip_reason = "идёт %s" % self.state
-            else:
-                now = time.time()
-                if self._cut_last_ts and (now - self._cut_last_ts) < self.cut_cooldown:
-                    skip_reason = "cooldown %ds" % self.cut_cooldown
+            if self.enabled and self.cut_rotate_enabled:
+                if self.state in ("checking", "replacing"):
+                    skip_reason = "идёт %s" % self.state
                 else:
-                    self._cut_last_ts = now
-        if skip_reason:
-            self._log_event("info", "Срез пропущен (%s)" % skip_reason)
-            return
-        self._log_event("warn",
-            "⚡ Срез ТСПУ: соединение прожило %ds — ротация стратегий" % int(lifetime))
-        threading.Thread(target=self._rotate_on_cut, args=(lifetime,), daemon=True).start()
+                    now = time.time()
+                    if self._cut_last_ts and (now - self._cut_last_ts) < self.cut_cooldown:
+                        skip_reason = "cooldown %ds" % self.cut_cooldown
+                    else:
+                        self._cut_last_ts = now
+                        trigger = True
+            else:
+                skip_reason = "пул выключен / ротация отключена"
+
+        if not trigger:
+            self._log_event("info", "Срез пропущен (%s)" % (skip_reason or "—"))
+        else:
+            self._log_event("warn",
+                "⚡ Срез ТСПУ: соединение прожило %.1fs — ротация стратегий" % lifetime)
+
+        # ── собираем контекст для журнала ─────────────────────────────────
+        local_port = remote_hex = remote_ip = remote_port = None
+        slot_info  = None
+        if isinstance(conn, (tuple, list)) and len(conn) == 3:
+            local_port, remote_hex, remote_port = conn
+            remote_ip = (_pm.PoolManager._hexip_to_str(remote_hex)
+                         if remote_hex else None)
+            try:
+                slot_info = self._pool.slot_for_conn(conn)
+            except Exception:
+                slot_info = None
+
+        qnum = slot_info.get("qnum") if isinstance(slot_info, dict) else None
+        traffic = {}
+        if qnum is not None:
+            try:
+                t = (self._pool.get_traffic_stats().get(qnum)) or {}
+                traffic = {
+                    "qnum": qnum, "pkts_delta": t.get("pkts_delta"),
+                    "bytes_delta": t.get("bytes_delta"), "kbps": t.get("kbps"),
+                    "share": t.get("share"), "active": t.get("active"),
+                    "source": t.get("source"),
+                }
+            except Exception:
+                traffic = {}
+
+        try:
+            reset_st = reset_monitor.get_status()
+        except Exception:
+            reset_st = {}
+        try:
+            pool_log_tail = list(self._log)[-20:]
+        except Exception:
+            pool_log_tail = []
+        try:
+            ss_tail = reset_monitor.ss_log_tail(30)
+        except Exception:
+            ss_tail = []
+        nfqws_tail = []
+        if isinstance(slot_info, dict) and slot_info.get("index") is not None:
+            try:
+                nfqws_tail = self._pool.slot_log_tail(slot_info["index"], 40)
+            except Exception:
+                nfqws_tail = []
+
+        try:
+            pool_status = self._pool.get_status()
+            healthy_count = sum(1 for s in pool_status if s.get("healthy") is True)
+        except Exception:
+            healthy_count = 0
+
+        payload = {
+            "kind": "cut",
+            "event_kind": event.get("kind", "classic"),
+            "lifetime_sec": round(lifetime, 1),
+            "rst_deaths_window": event.get("rst_deaths_window"),
+            "fin_deaths_window": event.get("fin_deaths_window"),
+            "reset_confirmed": event.get("reset_confirmed"),
+            "connection": {
+                "local_port": local_port,
+                "remote_ip": remote_ip,
+                "remote_ip_hex": remote_hex,
+                "remote_port": remote_port,
+            },
+            "slot": slot_info,
+            "traffic": traffic,
+            "pool": {
+                "enabled": self.enabled,
+                "state": self.state,
+                "healthy_count": healthy_count,
+                "cut_rotate_enabled": self.cut_rotate_enabled,
+                "cut_min_sec": self.cut_min_sec,
+                "cut_max_sec": self.cut_max_sec,
+                "cut_cooldown": self.cut_cooldown,
+                "skip_reason": skip_reason,
+                "rotation_triggered": trigger,
+            },
+            "reset_monitor": {
+                "resets_window": reset_st.get("resets_window"),
+                "closes_window": reset_st.get("closes_window"),
+                "ratio": reset_st.get("ratio"),
+                "degraded": reset_st.get("degraded"),
+                "total_resets": reset_st.get("total_resets"),
+            },
+            "strategy_scores": dict(self.strategy_scores),
+            "traces": {
+                "panel_log_tail": pool_log_tail,
+                "ss_server_tail": ss_tail,
+                "nfqws2_log_tail": nfqws_tail,
+            },
+        }
+        try:
+            cut_logger.record(payload)
+        except Exception as e:
+            self._log_event("error", "Журнал срезов: %s" % e)
+
+        if trigger:
+            threading.Thread(target=self._rotate_on_cut, args=(lifetime,), daemon=True).start()
 
     def _rotate_on_cut(self, lifetime):
         """
@@ -894,6 +1039,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_pool.get_traffic_stats())
         elif p == "/api/monitor/status":
             self._json(reset_monitor.get_status())
+        elif p == "/api/cuts":
+            self._json({"entries": cut_logger.list(50),
+                        "status": cut_logger.status()})
+        elif p == "/api/cuts/export":
+            self._send(200, "application/x-ndjson; charset=utf-8",
+                       cut_logger.export())
         else:
             self._json({"error": "not found"}, 404)
 
@@ -955,6 +1106,13 @@ class Handler(BaseHTTPRequestHandler):
 
         elif p == "/api/monitor/configure":
             return self._json(reset_monitor.configure(body))
+
+        elif p == "/api/cuts/clear":
+            return self._json(cut_logger.clear())
+
+        elif p == "/api/cuts/record":
+            # ручная запись тестового события (для отладки из UI)
+            return self._json(cut_logger.record(body.get("payload", {"kind": "manual"})))
 
         # ── сохранить NFQWS2_OPT вручную ────────────────────────────────────
         elif p == "/api/save-nfqws":
@@ -1060,7 +1218,10 @@ def main():
         ss_port=args.ss_port, socks_port=args.socks_port,
         panel_port=args.port, log_fn=_log,
         cut_min_sec=_switcher.cut_min_sec, cut_max_sec=_switcher.cut_max_sec,
-        require_reset=False)  # временно: отключаем требование reset для диагностики
+        require_reset=_switcher.cut_require_reset,
+        epidemic_min_events=_switcher.epidemic_min_events,
+        short_min_sec=_switcher.short_min_sec,
+        epidemic_window_sec=_switcher.epidemic_window_sec)
     print("[DIAG] _tracker created", flush=True)
     _tracker.on_cut = _switcher.on_connection_cut
     reset_monitor.on_reset = _tracker.note_reset
