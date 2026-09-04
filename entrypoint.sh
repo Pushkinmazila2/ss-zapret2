@@ -38,7 +38,8 @@ sync_defaults "/opt/zapret2/files/fake.dist" "/opt/zapret2/files/fake" "fake fil
 
 # ── веб-панель управления стратегиями ──────────────────────────────────────
 PANEL_PORT="${PANEL_PORT:-1888}"
-echo "[entrypoint] Starting web panel on :${PANEL_PORT}, socks_port=${SOCKS_PORT}"
+  echo "[entrypoint] TSPU recon: enable=${TSPU_INTEL_ENABLE:-true} dry_run=${TSPU_INTEL_DRY_RUN:-false} sni=${TSPU_INTEL_SNI:-youtube.com}"
+  echo "[entrypoint] Starting web panel on :${PANEL_PORT}, socks_port=${SOCKS_PORT}"
 python3 /opt/zapret2/panel/server.py \
   --config      /opt/zapret2/config \
   --strategies  /opt/zapret2/strategies \

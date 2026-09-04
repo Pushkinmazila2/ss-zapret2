@@ -835,6 +835,38 @@ async function refreshCuts(){
   box.innerHTML = html || '<div style="color:var(--mut)">—</div>';
 }
 function exportCuts(){ window.open('/api/cuts/export', '_blank'); }
+function exportIntel(){ window.open("/api/intel/export", "_blank"); }
+async function refreshIntel(){
+  let box = document.getElementById("intelList");
+  if(!box){
+    const cl = document.getElementById("cutsList");
+    if(cl){
+      const h=document.createElement("h2");
+      h.textContent="ML Recon Dataset";
+      const b=document.createElement("div");
+      b.id="intelList";
+      b.style.cssText="margin:6px 0;";
+      b.innerHTML="<div style=\"color:var(--mut)\">No vectors yet</div>";
+      h.appendChild(b);
+      cl.parentNode.insertBefore(h, cl.nextSibling);
+    }
+    box=document.getElementById("intelList");
+  }
+  if(!box){return;}
+  try{
+    const d=await api("/api/intel/list");
+    const list=(d&&d.entries)||[];
+    if(!list.length){box.innerHTML="<div style=\"color:var(--mut)\">No vectors yet</div>";return;}
+    let html="";
+    for(const e of list){
+      const v=e.vector||{};
+      const net=v.tspu_network_metrics||{};
+      const env=v.environment||{};
+      html += "<details class=\"cut\"><summary>"+(e.ts||"").toString().slice(11,19)+" <span style=\"color:var(--ok)\">recon</span> "+env.target_host_type+" (tspu="+net.tspu_hop+"/dst="+net.destination_hop+")</summary><pre>"+esc(JSON.stringify(v,null,2))+"</pre></details>";
+    }
+    box.innerHTML=html;
+  }catch(err){box.innerHTML="<div style=\"color:var(--mut)\">error</div>";}
+}
 async function clearCuts(){
   await post('/api/cuts/clear', {});
   refreshCuts();
@@ -846,13 +878,14 @@ function esc(s){
 (async()=>{
   updateCurlCmd();
   await loadStrategies();
-  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog(), refreshMonitor(), refreshCuts()]);
+  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog(), refreshMonitor(), refreshCuts(), refreshIntel()]);
   setInterval(refreshConnections, 5000);
   setInterval(refreshPool,        3000);
   setInterval(refreshLog,         4000);
   setInterval(refreshMonitor,     3000);
   setInterval(refreshTraffic,     2000);
   setInterval(refreshCuts,        5000);
+  setInterval(refreshIntel,       5000);
 })();
 </script>
 </body>

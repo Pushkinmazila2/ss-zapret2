@@ -400,3 +400,37 @@ ss-zapret2:
 - [bol-van](https://github.com/bol-van) - За zapret2
 - [ampetelin](https://github.com/ampetelin) - За [изначальный](https://github.com/ampetelin/ss-zapret) проект
 - [rcd27](https://github.com/rcd27) - За blockcheckw
+
+## TSPU Intel Recon module
+
+TspuIntel is an asynchronous TSPU DPI-reconnaissance module that fires on every
+session cut detected by PoolSwitcher (on_connection_cut). Within a 1.5-2s budget
+it emits a 5-block ML feature vector (JSON) that is appended to two sinks:
+
+* an independent dataset JSONL next to cuts.log: logs/tspu_intel.jsonl
+* a companion record in the cut journal via cut_logger (kind = tspu_intel)
+
+Blocks: environment, session_profile, tspu_network_metrics,
+tspu_l7_vulnerabilities, strategy_context.
+
+Environment variables (docker-compose / .env):
+
+* TSPU_INTEL_ENABLE (default true)
+* TSPU_INTEL_COOLDOWN (default 30, seconds between two probes)
+* TSPU_INTEL_BUDGET_MS (default 1800, 1.5-2s budget)
+* TSPU_INTEL_TTL_MAX (default 30, max TTL for the traceroute scan)
+* TSPU_INTEL_SNI (default youtube.com, SNI used to trigger the block)
+* TSPU_INTEL_DRY_RUN (default false; true = simulator, no raw sockets)
+
+The container already adds cap NET_ADMIN; NET_RAW is required for raw packet
+emission and TTL probing, so it is added with cap_add: NET_RAW in compose.
+On non-Linux runners or without NET_RAW the engine transparently falls back
+to a deterministic dry-run simulator so CI stays green.
+
+API endpoints (panel):
+
+* GET  /api/intel/status
+* GET  /api/intel/list?limit=50
+* GET  /api/intel/export   (NDJSON file)
+* GET  /api/intel/clear
+* POST /api/intel/probe    (manual one-shot probe)

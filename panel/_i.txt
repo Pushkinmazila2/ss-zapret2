@@ -1,0 +1,2 @@
+SERVER_IMPORT_OK mode=dry_run path=/opt/zapret2/logs\tspu_intel.jsonl
+endpoints_present=True

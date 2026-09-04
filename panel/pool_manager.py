@@ -689,8 +689,6 @@ class PoolManager:
         в отличие от `iptables -D ПО ПОЛНОЙ СПЕКЕ`.
         """
         desync_mark = os.environ.get("DESYNC_MARK", "0x40000000")
-        tcp_pkt_out = os.environ.get("NFQWS2_TCP_PKT_OUT", "20")
-        udp_pkt_out = os.environ.get("NFQWS2_UDP_PKT_OUT", "5")
 
         with self._lock:
             active_qnums = [s.qnum for s in self._slots
@@ -815,7 +813,7 @@ class PoolManager:
             cmd = conf["cmd"]
             nz_set = conf["nz"]
             
-            for ipset, pkt_out, mode in [(conf["tcp"], tcp_pkt_out, "TCP"), (conf["udp"], udp_pkt_out, "UDP")]:
+            for ipset, mode in [(conf["tcp"], "TCP"), (conf["udp"], "UDP")]:
                 # Если ipset для этого протокола (например, IPv6) не существует, не пытаемся добавить правило
                 if not _ipset_exists(ipset):
                     self._log("info", f"Пропуск {cmd} {mode}: ipset {ipset} не существует")
@@ -825,13 +823,17 @@ class PoolManager:
                 actual_nz = nz_set if _ipset_exists(nz_set) else None
 
                 try:
+                    # Правило БЕЗ -m connbytes: ограничение «1:N пакетов»
+                    # обрезало перехват после 20-го пакета сессии — ТСПУ рвал
+                    # видеопоток youtube/googlevideo на 21-м пакете. nfqws2
+                    # обрабатывает ВСЕ пакеты сессии: перехват чисто по
+                    # ipset-списку, а фильтр mark оставлен как антицикл
+                    # (исключает только пакеты, уже обработанные nfqws2).
                     # Собираем аргументы динамически в зависимости от наличия списка исключений
                     args = [
                         cmd, "-t", "mangle", "-A", "POSTROUTING",
                         "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
                         "-m", "set", "--match-set", ipset, "dst",
-                        "-m", "connbytes", "--connbytes", f"1:{pkt_out}",
-                        "--connbytes-mode", "packets", "--connbytes-dir", "original"
                     ]
                     
                     # Добавляем инверсию nozapret, только если сет существует
