@@ -257,7 +257,8 @@ class TestIntelFixes(unittest.TestCase):
         rs = _dns_resolvers()
         self.assertIsInstance(rs, list)
         self.assertTrue(rs)
-        self.assertTrue(rs[0] in ("8.8.8.8", "1.1.1.1", "77.88.8.8"))
+        custom_dns = os.environ.get("TSPU_INTEL_DNS", "1.1.1.1").strip()
+        self.assertTrue(rs[0] in ("8.8.8.8", "1.1.1.1", "77.88.8.8", custom_dns))
         self.assertEqual(len(rs), len(set(rs)))
 
     def test_resolve_cache_short_circuits_network(self):

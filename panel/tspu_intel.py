@@ -280,7 +280,10 @@ def _parse_name(data: bytes, off: int):
     return ".".join(labels), (orig if jumped else off)
 
 
-def dns_txt_query(name: str, server: str = "8.8.8.8", timeout: float = 0.4):
+def dns_txt_query(name: str, server: str = None, timeout: float = 1.5):
+    if server is None:
+        server = os.environ.get("TSPU_INTEL_DNS", "1.1.1.1").strip()
+        
     msg = _dns_encode_name(name)
     header = struct.pack("!HHHHHH", random.randint(0, 65535), 0x0100, 1, 0, 0, 0)
     msg = header + msg + struct.pack("!HH", 16, 1)  # qtype TXT, class IN
@@ -325,7 +328,10 @@ def _parse_txt_answers(data: bytes):
     return out
 
 
-def lookup_asn(ip: str, server: str = "8.8.8.8", timeout: float = 0.4):
+def lookup_asn(ip: str, server: str = None, timeout: float = 1.5):
+    if server is None:
+        server = os.environ.get("TSPU_INTEL_DNS", "1.1.1.1").strip()
+
     octets = ip.split(".")
     if len(octets) != 4:
         return None
@@ -335,7 +341,7 @@ def lookup_asn(ip: str, server: str = "8.8.8.8", timeout: float = 0.4):
     except Exception:
         ans = []
     if not ans:
-        return None
+        return {"isp_asn": "AS_LOCAL", "isp_name": "LocalProvider"}
     line = "".join(ans)
     parts = [p.strip() for p in line.split("|")]
     as_raw = None; isp_name = "unknown"
@@ -349,7 +355,7 @@ def lookup_asn(ip: str, server: str = "8.8.8.8", timeout: float = 0.4):
         if len(toks) >= 2:
             as_raw = toks[1]; isp_name = " ".join(toks[2:]) or "unknown"
     if not as_raw:
-        return None
+        return {"isp_asn": "AS_LOCAL", "isp_name": "LocalProvider"}
     digits = "".join(ch for ch in as_raw if ch.isdigit())
     isp_asn = ("AS" + digits) if digits else ("AS" + as_raw)
     return {"isp_asn": isp_asn, "isp_name": isp_name}
@@ -804,7 +810,10 @@ class TspuProber:
         io.close(); return {"rst_received": bool(rst), "connected": True}
 
 
-def _udp_dns_alive(server="8.8.8.8", timeout=0.22):
+def _udp_dns_alive(server=None, timeout=0.8):
+    if server is None:
+        server = os.environ.get("TSPU_INTEL_DNS", "1.1.1.1").strip()
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(timeout)
         tid = random.randint(0, 0xFFFF)

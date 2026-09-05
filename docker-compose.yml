@@ -11,6 +11,7 @@ services:
       - SS_TIMEOUT=${SS_TIMEOUT}
       - SOCKS_PORT=${SOCKS_PORT}
       - SS_VERBOSE=${SS_VERBOSE:-0}
+      - TSPU_INTEL_DNS=${TSPU_INTEL_DNS:-1.1.1.1} 
       - PANEL_PORT=${PANEL_PORT:-1888}
       - CUT_LOG_PATH=${CUT_LOG_PATH:-}
       - NFQWS2_EXTRA_ARGS=${NFQWS2_EXTRA_ARGS:-}
@@ -32,9 +33,17 @@ services:
       # - /proc/net/nf_conntrack:/proc/net/nf_conntrack:ro
       - /proc:/host/proc:ro
       - /sys:/sys:ro
+    network_mode: "bridge" 
     networks:
       - default
       - s-ui_network
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_local_port_range=1024 65000
+      - net.ipv4.ping_group_range=0 2147483647 
+      - net.ipv4.ip_unprivileged_port_start=0 
     healthcheck:
       test: [
         "CMD-SHELL",
@@ -44,9 +53,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 3s
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
     ulimits:
       nofile:
         soft: 65536
