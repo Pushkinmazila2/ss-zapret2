@@ -487,6 +487,65 @@ class PoolManager:
         except (ValueError, TypeError):
             return None
 
+    def conn_flow_bytes(self, conn, timeout=5):
+        """Per-flow счётчики conntrack для конкретного потока:
+        {'orig_bytes', 'reply_bytes', 'orig_pkts'} ({} — если потока нет).
+        bytes=/packets= встречаются в строке дважды: orig и reply направление."""
+        try:
+            local_port, remote_hex, remote_port = conn
+        except (ValueError, TypeError):
+            return {}
+        wanted = self._hexip_to_str(remote_hex)
+        if not wanted or int(remote_port or 443) != 443:
+            return {}
+        line = self._find_conntrack_line(wanted, local_port, timeout)
+        if not line:
+            return {}
+        bytes_list, pkts_list = [], []
+        for tok in line.split():
+            if "=" not in tok:
+                continue
+            k, v = tok.split("=", 1)
+            if k == "bytes":
+                try:
+                    bytes_list.append(int(v))
+                except ValueError:
+                    pass
+            elif k == "packets":
+                try:
+                    pkts_list.append(int(v))
+                except ValueError:
+                    pass
+        if not bytes_list:
+            return {}
+        return {"orig_bytes": bytes_list[0],
+                "reply_bytes": (bytes_list[1] if len(bytes_list) > 1 else None),
+                "orig_pkts": (pkts_list[0] if pkts_list else None)}
+
+    def _find_conntrack_line(self, wanted, local_port, timeout=5):
+        """Полная строка conntrack для потока (procfs → бинарник conntrack)."""
+        try:
+            with open(self._nf_conntrack_path) as f:
+                for line in f:
+                    if self._match_conntrack_line(line, wanted, local_port):
+                        return line
+        except (IOError, OSError):
+            # procfs может быть выключен в ядре (CONFIG_NF_CONNTRACK_PROCFS=n)
+            pass
+        except Exception:
+            pass
+        try:
+            r = subprocess.run(
+                ["conntrack", "-L", "-p", "tcp", "--dport", "443"],
+                capture_output=True, text=True, timeout=timeout)
+            if r.returncode == 0:
+                for line in (r.stdout or "").splitlines():
+                    if self._match_conntrack_line(line, wanted, local_port):
+                        return line
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return None
+
     def slot_log_tail(self, index, limit=80):
         """Хвост вывода nfqws2 слота для журнала срезов."""
         with self._lock:

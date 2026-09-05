@@ -16,10 +16,11 @@ from tspu_intel import (
     DATASET_VERSION, DEFAULT_PROBE_MARK, DEFAULT_TARGET_IP, IntelLog,
     TspuIntel, _ASN_CACHE, _Budget, _RESOLVE_CACHE, _apply_probe_mark,
     _dns_encode_name, _dns_resolvers, _guess_domain, _parse_mark_value,
-    _parse_name, _raw_enabled, _reset_dns_caches, _ttl_map_summary,
-    build_ip_header, build_tcp_packet, build_tls_client_hello, build_quic_initial, classify_connection_type,
+    _parse_name, _raw_enabled, _reset_dns_caches, _rst_fingerprint,
+    _ttl_map_summary, build_ip_header, build_tcp_packet,
+    build_tls_client_hello, build_quic_initial, classify_connection_type,
     classify_target_host, ip_checksum, lookup_asn, parse_ip, parse_tcp,
-    scan_destination_hop, split_payload, tls_is_serverhello,
+    scan_destination_hop, split_payload, tls_is_serverhello, TCP_URG,
 )
 
 
@@ -447,9 +448,70 @@ class TestIntelFixes(unittest.TestCase):
         self.assertEqual(env2["isp_asn"], "AS15169")
         self.assertNotIn("asn_unresolved_fallback", self.engine._degraded)
 
+    def test_rst_fingerprint(self):
+        rec = {"proto": 6, "ttl": 58, "window": 512, "flags": 0x14,
+               "seq": 9, "ack": 3}
+        fp = _rst_fingerprint([rec])
+        self.assertEqual(fp["ttl"], 58)
+        self.assertEqual(fp["window"], 512)
+        self.assertEqual(fp["flags_str"], "RST+ACK")
+        self.assertIsNone(_rst_fingerprint([]))
+
+    def test_build_tcp_bad_checksum_and_urg(self):
+        pkt = build_tcp_packet(12345, 443, 1, 1, 0x18, b"x", "10.0.0.1",
+                               "10.0.0.2", 64, bad_checksum=True)
+        ip = parse_ip(pkt)
+        self.assertIsNotNone(ip)
+        tcp = ip["payload"]
+        saved = (tcp[16] << 8) | tcp[17]
+        zero = bytearray(tcp); zero[16:18] = b"\x00\x00"
+        self.assertNotEqual(ip_checksum(bytes(zero)), saved)
+        pkt2 = build_tcp_packet(12345, 443, 1, 1, 0x38, b"x", "10.0.0.1",
+                                "10.0.0.2", 64, urg_ptr=513, window=5)
+        t2 = parse_tcp(parse_ip(pkt2)["payload"])
+        self.assertEqual(t2["flags"] & TCP_URG, TCP_URG)
+        self.assertEqual(t2["urg"], 513)
+        self.assertEqual(t2["window"], 5)
+
+    def test_session_per_flow_bytes(self):
+        r = self.engine.run({"remote_ip": "1.2.3.4", "sni": "test.example.com",
+                             "strategy_name": "test_com_009",
+                             "conn_bytes_orig": 54321,
+                             "conn_bytes_reply": 998877,
+                             "conn_pkts_orig": 42})
+        sp = r["session_profile"]
+        self.assertEqual(sp["bytes_sent_before_cut"], 54321)
+        self.assertEqual(sp["bytes_recv_before_cut"], 998877)
+        self.assertEqual(sp["pkts_sent_before_cut"], 42)
+        self.assertNotIn("bytes_sent_unavailable", self.engine._degraded)
+        self.assertNotIn("bytes_delta_absent", self.engine._degraded)
+
+    def test_meta_time_of_day(self):
+        r = self.engine.run({"remote_ip": "1.2.3.4", "sni": "test.example.com",
+                             "strategy_name": "test_com_010"})
+        self.assertIn("hour_of_day_utc", r["meta"])
+        self.assertIn("day_of_week_utc", r["meta"])
+
+    def test_channel_quality(self):
+        import tspu_intel as ti
+        orig = ti._udp_dns_alive
+        state = {"i": 0}
+        def fake(server=None, timeout=0.8):
+            i = state["i"]; state["i"] += 1
+            return i != 2          # третий замер — потеря
+        ti._udp_dns_alive = fake
+        try:
+            cq = ti._channel_quality(samples=3, timeout=0.25)
+        finally:
+            ti._udp_dns_alive = orig
+        self.assertEqual(cq["samples"], 3)
+        self.assertEqual(cq["dns_loss_rate"], 0.33)
+        self.assertIsNotNone(cq["dns_rtt_min_ms"])
+        self.assertIsNotNone(cq["dns_jitter_ms"])
+
     def test_l7_probe_details_active(self):
         import tspu_intel as ti
-        orig = (ti._Sniffer, ti.TspuProber, ti.test_quic)
+        orig = (ti._Sniffer, ti.TspuProber, ti.test_quic, ti._channel_quality)
 
         class _FakeSn:
             def set_log(self, *a):
@@ -462,38 +524,63 @@ class TestIntelFixes(unittest.TestCase):
                 pass
 
         class _FakePb:
+            _FP = {"ttl": 58, "window": 512, "flags": 20,
+                   "flags_str": "RST+ACK", "seq": 9, "ack": 3}
             def __init__(self, *a, **k):
                 pass
             def test_split(self, pos):
                 return {"connected": True, "bypass": False, "rst_received": True,
-                        "serverhello": False, "confidence": 0.85}
+                        "serverhello": False, "confidence": 0.85,
+                        "rst": dict(self._FP), "ch_rst_ms": 11.5,
+                        "synack_rtt_ms": 8.2}
             def test_seqovl(self):
                 return {"connected": True, "bypass": True, "rst_received": False,
-                        "serverhello": True, "confidence": 0.9}
+                        "serverhello": True, "confidence": 0.9,
+                        "rst": dict(self._FP), "ch_rst_ms": 11.5,
+                        "synack_rtt_ms": 8.2}
             def test_disorder(self):
                 return {"connected": True, "bypass": False, "rst_received": True,
-                        "serverhello": False, "confidence": 0.85}
+                        "serverhello": False, "confidence": 0.85,
+                        "rst": dict(self._FP), "ch_rst_ms": 11.5,
+                        "synack_rtt_ms": 8.2}
             def test_fake_tls(self):
                 return {"connected": True, "rst_received": True}
             def test_fake_random(self):
                 return {"connected": True, "rst_received": True}
+            def test_anomaly(self, kind):
+                return {"kind": kind, "connected": True, "rst_received": False,
+                        "ch_rst_ms": 12.5}
 
         ti._Sniffer, ti.TspuProber, ti.test_quic = _FakeSn, _FakePb, \
             lambda *a, **k: (True, True)
+        ti._channel_quality = lambda *a, **k: {
+            "dns_loss_rate": 0.0, "dns_rtt_min_ms": 9.5, "dns_rtt_avg_ms": 11.0,
+            "dns_jitter_ms": 1.1, "samples": 3, "server": "1.1.1.1"}
         try:
             r = self.engine._l7({}, "8.8.8.8", _Budget(2.0), False)
         finally:
-            ti._Sniffer, ti.TspuProber, ti.test_quic = orig
+            ti._Sniffer, ti.TspuProber, ti.test_quic, ti._channel_quality = orig
         self.assertFalse(r["split_pos_2_bypass"])
         self.assertTrue(r["seqovl_bypass"])
         self.assertEqual(r["fake_payload_strictness"], "strict_both")
         d = r["probe_details"]["split_pos_2"]
         self.assertTrue(d["connected"])
         self.assertEqual(d["confidence"], 0.85)
+        self.assertEqual(d["ch_rst_ms"], 11.5)
+        self.assertEqual(d["synack_rtt_ms"], 8.2)
         # fake_tls-фейк не возвращает serverhello — детали заполняются None
         self.assertIsNone(r["probe_details"]["fake_tls"]["serverhello"])
         # контроль QUIC в фейке успешен — флага ненадёжности быть не должно
         self.assertNotIn("quic_control_failed", self.engine._degraded)
+        # агрегаты: фингерпринт RST + RTT
+        self.assertEqual(r["rst_fp_count"], 4)
+        self.assertEqual(r["avg_ch_rst_ms"], 11.5)
+        self.assertEqual(r["avg_synack_rtt_ms"], 8.2)
+        self.assertEqual(r["rst_fingerprint"]["ttl"], 58)
+        # TCP-аномалии и качество канала
+        self.assertEqual(r["tcp_anomaly"]["kind"], "bad_checksum")
+        self.assertEqual(r["channel_quality"]["dns_loss_rate"], 0.0)
+        self.assertEqual(r["probe_tls_profile"], "tls12_client_sni_noech_noalpn")
 
 
 if __name__ == "__main__":

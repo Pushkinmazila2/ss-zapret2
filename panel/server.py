@@ -618,6 +618,14 @@ class PoolSwitcher:
 
         qnum = slot_info.get("qnum") if isinstance(slot_info, dict) else None
         traffic = self._traffic_for_qnum(qnum)
+        # честные per-flow счётчики conntrack для ЭТОГО соединения
+        flow = {}
+        if isinstance(conn, (tuple, list)) and len(conn) == 3:
+            try:
+                flow = self._pool.conn_flow_bytes(conn) or {}
+            except Exception as e:
+                self._log_event("info", "conntrack flow bytes недоступны: %s" % e)
+                flow = {}
 
         try:
             reset_st = reset_monitor.get_status()
@@ -775,6 +783,9 @@ class PoolSwitcher:
                 "nfqws_opt": None,
                 "strategy_score_before": 0.0,
                 "bytes_delta": (traffic or {}).get("bytes_delta"),
+                "conn_bytes_orig": (flow or {}).get("orig_bytes"),
+                "conn_bytes_reply": (flow or {}).get("reply_bytes"),
+                "conn_pkts_orig": (flow or {}).get("orig_pkts"),
                 "termination_type": _term_type,
             }
             

@@ -42,6 +42,10 @@ from concurrent.futures import ThreadPoolExecutor
 # 1.2 — маркер развёртывания: вектор с ctx_fields/probe_details/isp_source
 # возможен только на этой версии кода (см. проверку деплоя в README-логах)
 DATASET_VERSION = "1.2"
+# честное описание профиля TLS-зондов (что реально шлём в ClientHello)
+PROBE_TLS_PROFILE = "tls12_client_sni_noech_noalpn"
+# TCP-аномалии: round-robin по одной на срез (бюджет зонда ограничен)
+_ANOMALY_KINDS = ("bad_checksum", "urg", "small_window")
 DEFAULT_BUDGET_MS = 1800
 HARD_BUDGET_MS    = 2000
 DEFAULT_TTL_MAX   = 30
@@ -121,12 +125,17 @@ def build_ip_header(src: str, dst: str, proto: int, payload_len: int,
 def build_tcp_packet(sport: int, dport: int, seq: int, ack: int, flags: int,
                      payload: bytes = b"", src: str = "0.0.0.0",
                      dst: str = "0.0.0.0", ttl: int = 64, window: int = 65535,
-                     ident: int = 0, df: bool = True) -> bytes:
+                     ident: int = 0, df: bool = True,
+                     bad_checksum: bool = False, urg_ptr: int = 0) -> bytes:
     doff = 5
     off = (doff << 4) | (0 & 0xF)
     tcp_hdr = struct.pack("!HHIIBBHHH", sport, dport, seq, ack, off, flags,
-                          window, 0, 0)
+                          window, urg_ptr, 0)
     chk = tcp_checksum(ip4_to_bytes(src), ip4_to_bytes(dst), tcp_hdr, payload)
+    if bad_checksum:
+        # заведомо битая сумма: инверсия никогда не равна корректной —
+        # stateful-стек (сервер) дропнет пакет, stateless DPI прочитает SNI
+        chk = (~chk) & 0xFFFF
     tcp_hdr = tcp_hdr[:16] + struct.pack("!H", chk) + tcp_hdr[18:]
     return build_ip_header(src, dst, socket.IPPROTO_TCP, len(tcp_hdr) + len(payload),
                            ttl, ident=ident, df=df) + tcp_hdr + payload
@@ -172,7 +181,7 @@ def parse_tcp(seg: bytes):
     fl = off_flags & 0xFF
     payload = seg[doff * 4:] if len(seg) > doff * 4 else b""
     return {"sport": sport, "dport": dport, "seq": seq, "ack": ack,
-            "flags": fl, "window": window, "payload": payload}
+            "flags": fl, "window": window, "urg": urg, "payload": payload}
 
 
 def parse_udp(seg: bytes):
@@ -661,17 +670,14 @@ class _Sniffer:
         rec = {"t": time.monotonic(), "proto": ip["proto"], "ttl": ip["ttl"],
                "src": ip["src"], "dst": ip["dst"],
                "dport": 0, "sport": 0, "seq": 0, "ack": 0, "flags": 0,
-               "tcp_payload": b"", "udp_payload": b"", "icmp_type": 0}
+               "window": 0, "tcp_payload": b"", "udp_payload": b"",
+               "icmp_type": 0}
         if ip["proto"] == 6:
             t = parse_tcp(ip["payload"])
             if t:
-                rec.update(sport=t["seq"] and t["sport"] or 0, dport=t["dport"],
-                           seq=t["seq"], ack=t["ack"], flags=t["flags"],
-                           tcp_payload=t["payload"])
-            # sport/ack overwrite fixed above:
-            if t:
                 rec["sport"] = t["sport"]; rec["dport"] = t["dport"]
                 rec["seq"] = t["seq"]; rec["ack"] = t["ack"]; rec["flags"] = t["flags"]
+                rec["window"] = t["window"]
                 rec["tcp_payload"] = t["payload"]
         elif ip["proto"] == 17:
             u = parse_udp(ip["payload"])
@@ -714,10 +720,12 @@ class _RawIO:
             self.log("warn", "raw send socket unavailable: %s" % e)
 
     def tcp_pkt(self, seq: int, ack: int, flags: int, payload: bytes = b"",
-                ttl: int = 64, window: int = 65535) -> bytes:
+                ttl: int = 64, window: int = 65535, urg_ptr: int = 0,
+                bad_checksum: bool = False) -> bytes:
         return build_tcp_packet(self.sport, self.dport, seq, ack, flags, payload,
                                 self.src, self.dst, ttl, window,
-                                ident=random.randint(0, 0xFFFF), df=False)
+                                ident=random.randint(0, 0xFFFF), df=False,
+                                bad_checksum=bad_checksum, urg_ptr=urg_ptr)
 
     def udp_pkt(self, sport: int, dport: int, payload: bytes, ttl: int = 64) -> bytes:
         return build_udp_packet(sport, dport, payload, self.src, self.dst, ttl)
@@ -743,12 +751,17 @@ class _RawIO:
 
     def handshake(self, timeout: float = 0.4):
         self.isn = random.randint(1, 0xFFFFFFFF)
+        self.syn_t = time.monotonic()      # для RTT SYN->SYN-ACK
+        self.synack_rtt_ms = None
         self.send(self.tcp_pkt(self.isn, 0, TCP_SYN, b"", ttl=64))
         since = time.monotonic()
         while time.monotonic() - since < timeout:
             hits = self.sni.query(since, self._synack_matcher())
             if hits:
                 self._srv_seq = hits[-1]["seq"]
+                # RTT до легитимного сервера (путь до dst, минуя ТСПУ-вмешательство)
+                self.synack_rtt_ms = round(
+                    (hits[-1]["t"] - self.syn_t) * 1000.0, 1)
                 ack_val = self._srv_seq + 1
                 self.send(self.tcp_pkt(self.isn + 1, ack_val, TCP_ACK, b"", ttl=64))
                 return ack_val, True
@@ -922,6 +935,25 @@ def _dead():
             "confidence": 0.0, "connected": False}
 
 
+def _rst_fingerprint(rst_list):
+    """Сырой фингерпринт первого RST: ttl/window/flags — «подпись» DPI.
+    Разные версии ТСПУ генерируют пакеты сброса с разной структурой;
+    raw-значения позволяют модели различать конкретную модификацию DPI."""
+    if not rst_list:
+        return None
+    x = rst_list[0]
+    f = x.get("flags", 0) or 0
+    fl = []
+    for bit, name in ((TCP_FIN, "FIN"), (TCP_SYN, "SYN"), (TCP_RST, "RST"),
+                      (TCP_PSH, "PSH"), (TCP_ACK, "ACK"), (TCP_URG, "URG"),
+                      (TCP_ECE, "ECE"), (TCP_CWR, "CWR")):
+        if f & bit:
+            fl.append(name)
+    return {"ttl": x.get("ttl"), "window": x.get("window"),
+            "flags": f, "flags_str": "+".join(fl) or "NONE",
+            "seq": x.get("seq"), "ack": x.get("ack")}
+
+
 class TspuProber:
     def __init__(self, src, dst, sni, sniffer, log_fn,
                  mark=DEFAULT_PROBE_MARK):
@@ -934,10 +966,40 @@ class TspuProber:
         ack, ok = io.handshake(timeout)
         return io, ack, ok
 
-    def _result(self, bypass, rst, sh):
+    def _result(self, bypass, rst, sh, since=None, io=None):
         conf = 0.9 if sh else (0.75 if bypass else 0.85)
-        return {"bypass": bool(bypass), "rst_received": bool(rst),
-                "serverhello": bool(sh), "confidence": conf, "connected": True}
+        r = {"bypass": bool(bypass), "rst_received": bool(rst),
+             "serverhello": bool(sh), "confidence": conf, "connected": True}
+        if io is not None and getattr(io, "synack_rtt_ms", None) is not None:
+            r["synack_rtt_ms"] = io.synack_rtt_ms
+        if since is not None and rst:
+            try:
+                r["ch_rst_ms"] = round((rst[0]["t"] - since) * 1000.0, 1)
+            except Exception:
+                pass
+        if since is not None and sh:
+            try:
+                r["sh_rtt_ms"] = round((sh[0]["t"] - since) * 1000.0, 1)
+            except Exception:
+                pass
+        fp = _rst_fingerprint(rst)
+        if fp:
+            r["rst"] = fp
+        return r
+
+    def _raw_result(self, rst, since, io):
+        out = {"rst_received": bool(rst), "connected": True}
+        if rst:
+            try:
+                out["ch_rst_ms"] = round((rst[0]["t"] - since) * 1000.0, 1)
+            except Exception:
+                pass
+            fp = _rst_fingerprint(rst)
+            if fp:
+                out["rst"] = fp
+        if getattr(io, "synack_rtt_ms", None) is not None:
+            out["synack_rtt_ms"] = io.synack_rtt_ms
+        return out
 
     def test_split(self, pos, window=0.38, prep=0.5):
         io, ack, ok = self._connect(prep)
@@ -952,7 +1014,7 @@ class TspuProber:
         rst = io.wait_tcp(since, window, want_rst=True)
         sh = io.wait_tcp(since, window, serverhello=True)
         io.close()
-        return self._result(len(rst) == 0, rst, sh)
+        return self._result(len(rst) == 0, rst, sh, since=since, io=io)
 
     def test_seqovl(self, window=0.38, prep=0.5):
         io, ack, ok = self._connect(prep)
@@ -968,7 +1030,7 @@ class TspuProber:
         rst = io.wait_tcp(since, window, want_rst=True)
         sh = io.wait_tcp(since, window, serverhello=True)
         io.close()
-        return self._result(len(rst) == 0, rst, sh)
+        return self._result(len(rst) == 0, rst, sh, since=since, io=io)
 
     def test_disorder(self, window=0.38, prep=0.5):
         io, ack, ok = self._connect(prep)
@@ -987,7 +1049,7 @@ class TspuProber:
             time.sleep(0.008)
         rst = io.wait_tcp(since, window, want_rst=True)
         sh = io.wait_tcp(since, window, serverhello=True)
-        io.close(); return self._result(len(rst) == 0, rst, sh)
+        io.close(); return self._result(len(rst) == 0, rst, sh, since=since, io=io)
 
     def test_fake_tls(self, window=0.32, prep=0.45):
         io, ack, ok = self._connect(prep)
@@ -997,7 +1059,8 @@ class TspuProber:
         io.send(io.tcp_pkt(io.isn + 1, ack, TCP_PSH | TCP_ACK,
                            build_tls_client_hello(self.sni_name, bad_tls=True)))
         rst = io.wait_tcp(since, window, want_rst=True)
-        io.close(); return {"rst_received": bool(rst), "connected": True}
+        io.close()
+        return self._raw_result(rst, since, io)
 
     def test_fake_random(self, window=0.32, prep=0.45):
         io, ack, ok = self._connect(prep)
@@ -1007,7 +1070,42 @@ class TspuProber:
         since = time.monotonic()
         io.send(io.tcp_pkt(io.isn + 1, ack, TCP_PSH | TCP_ACK, junk))
         rst = io.wait_tcp(since, window, want_rst=True)
-        io.close(); return {"rst_received": bool(rst), "connected": True}
+        io.close()
+        return self._raw_result(rst, since, io)
+
+    def test_anomaly(self, kind, window=0.32, prep=0.45):
+        """Fingerprinting TCP-стека цензора: как DPI реагирует на некорректное
+        поведение? Stateful-сервер дропнет битый пакет, stateless DPI прочитает
+        SNI и пришлёт RST — это лакмусовая бумажка алгоритма работы ТСПУ."""
+        io, ack, ok = self._connect(prep)
+        if not ok:
+            io.close()
+            return {"kind": kind, "rst_received": False, "connected": False}
+        ch = build_tls_client_hello(self.sni_name)
+        since = time.monotonic()
+        try:
+            if kind == "bad_checksum":
+                # битая TCP-сумма: сервер обязан дропнуть, глупый DPI — прочитать
+                io.send(io.tcp_pkt(io.isn + 1, ack, TCP_PSH | TCP_ACK, ch,
+                                   bad_checksum=True))
+            elif kind == "urg":
+                # данные с флагом URG + urgent pointer
+                io.send(io.tcp_pkt(io.isn + 1, ack, TCP_PSH | TCP_ACK | TCP_URG,
+                                   ch, urg_ptr=1))
+            elif kind == "small_window":
+                # окно 5 байт заставляет нарезать хендшейк на микро-куски
+                io.send(io.tcp_pkt(io.isn + 1, ack, TCP_PSH | TCP_ACK, ch[:5],
+                                   window=5))
+                time.sleep(0.01)
+                io.send(io.tcp_pkt(io.isn + 6, ack, TCP_PSH | TCP_ACK, ch[5:],
+                                   window=5))
+            else:
+                io.close()
+                return {"kind": kind, "connected": True, "rst_received": None}
+            rst = io.wait_tcp(since, window, want_rst=True)
+        finally:
+            io.close()
+        return self._raw_result(rst, since, io) | {"kind": kind}
 
 
 def _udp_dns_alive(server=None, timeout=0.8):
@@ -1024,6 +1122,33 @@ def _udp_dns_alive(server=None, timeout=0.8):
         return len(data) > 0
     except OSError:
         return False
+
+
+def _channel_quality(samples=3, timeout=0.25):
+    """Прокси-метрики качества канала через DNS RTT: потери/джиттер.
+    Высокие потери и джиттер = «шторм» в сети, а не вина ТСПУ — модель не
+    должна винить стратегию обхода за внезапный разрыв."""
+    server = (_dns_resolvers() or ["1.1.1.1"])[0]
+    rtts = []
+    lost = 0
+    for _ in range(max(1, samples)):
+        t0 = time.monotonic()
+        ok = _udp_dns_alive(server, timeout=timeout)
+        if ok:
+            rtts.append((time.monotonic() - t0) * 1000.0)
+        else:
+            lost += 1
+    if not rtts:
+        return {"dns_loss_rate": 1.0, "dns_rtt_min_ms": None,
+                "dns_rtt_avg_ms": None, "dns_jitter_ms": None,
+                "samples": samples, "server": server}
+    avg = sum(rtts) / len(rtts)
+    jit = (sum(abs(r - avg) for r in rtts) / len(rtts)) if len(rtts) > 1 else 0.0
+    return {"dns_loss_rate": round(lost / float(samples), 2),
+            "dns_rtt_min_ms": round(min(rtts), 1),
+            "dns_rtt_avg_ms": round(avg, 1),
+            "dns_jitter_ms": round(jit, 1),
+            "samples": samples, "server": server}
 
 
 def test_quic(dst, src, sni, sniffer, budget=0.4, log_fn=lambda lvl, msg: None,
@@ -1178,6 +1303,7 @@ class TspuIntel:
         self.sim_mode = bool(self.dry_run or not self.raw_available)
         self.probe_mark = (int(probe_mark) if probe_mark is not None
                            else DEFAULT_PROBE_MARK)
+        self._anomaly_seq = 0   # round-robin TCP-аномальных проб
         self._lock = threading.RLock()
         self._last_run_ts = None
         self._last_result_ts = None
@@ -1294,6 +1420,11 @@ class TspuIntel:
         }
         result["meta"]["ctx_fields"] = self._ctx_fields(ctx)
         cf = result["meta"]["ctx_fields"]
+        # внешние факторы: время суток / день недели (UTC) — нагрузка на ТСПУ
+        # меняется в течение дня/недели, модель должна это видеть
+        _g = time.gmtime()
+        result["meta"]["hour_of_day_utc"] = _g.tm_hour
+        result["meta"]["day_of_week_utc"] = _g.tm_wday   # 0 = понедельник
         self.log("info", "cut ctx intake: dst_ip=%s qnum=%s strategy=%s score=%s "
                          "bytes_delta=%s lifetime=%s term=%s ctx_keys=%d" % (
                      cf.get("remote_ip"), cf.get("qnum"), cf.get("strategy_name"),
@@ -1335,6 +1466,9 @@ class TspuIntel:
             "sni": ctx.get("sni"),
             "strategy_name": ctx.get("strategy_name"),
             "strategy_score_before": ctx.get("strategy_score_before"),
+            "conn_bytes_orig": ctx.get("conn_bytes_orig"),
+            "conn_bytes_reply": ctx.get("conn_bytes_reply"),
+            "conn_pkts_orig": ctx.get("conn_pkts_orig"),
             "bytes_delta_present": _present("bytes_delta"),
             "bytes_delta": ctx.get("bytes_delta"),
             "lifetime_sec": ctx.get("lifetime_sec", ctx.get("lifetime")),
@@ -1450,11 +1584,22 @@ class TspuIntel:
         except Exception:
             lifetime = 0.0
         bdelta = ctx.get("bytes_delta")
-        recv = None; sent = None
-        if bdelta is not None:
+        cb_o = ctx.get("conn_bytes_orig")
+        cb_r = ctx.get("conn_bytes_reply")
+        cb_p = ctx.get("conn_pkts_orig")
+        recv = None; sent = None; pkts = None
+        if cb_o is not None or cb_r is not None:
+            # честные per-flow счётчики conntrack: orig = реально отправленное
+            # клиентом до среза, reply = полученное. Приоритетнее агрегата очереди
+            sent = int(cb_o) if cb_o is not None else None
+            recv = int(cb_r) if cb_r is not None else None
+            pkts = int(cb_p) if cb_p is not None else None
+            if sent is None:
+                self._degraded.append("conn_bytes_tx_missing")
+        elif bdelta is not None:
             recv = int(bdelta)
-            # per-flow tx is unavailable here (no nf_conntrack host access);
-            # the queue aggregate is downstream (recv) only
+            # per-flow tx недоступен (conntrack не дал строку потока) —
+            # агрегат очереди только downstream (recv)
             sent = None
             self._degraded.append("bytes_sent_unavailable")
         else:
@@ -1475,12 +1620,16 @@ class TspuIntel:
         return {"session_lifetime_sec": round(lifetime, 3),
                 "bytes_sent_before_cut": sent,
                 "bytes_recv_before_cut": recv,
+                "pkts_sent_before_cut": pkts,
                 "termination_type": term}# - network metrics (TTL scan) + L7 micro-tests -
 
 def _empty_l7(note="no_data"):
     return {"split_pos_2_bypass": None, "split_pos_5_bypass": None,
             "seqovl_bypass": None, "disorder_bypass": None,
             "fake_payload_strictness": None, "quic_handshake_drop": None,
+            "probe_details": None, "tcp_anomaly": None, "channel_quality": None,
+            "rst_fingerprint": None, "avg_ch_rst_ms": None,
+            "probe_tls_profile": PROBE_TLS_PROFILE,
             "note": note}
 
 
@@ -1559,6 +1708,9 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
                 "seqovl_bypass": True, "disorder_bypass": False,
                 "fake_payload_strictness": "low_validation",
                 "quic_handshake_drop": True, "probe_details": None,
+                "tcp_anomaly": None, "channel_quality": None,
+                "rst_fingerprint": None, "avg_ch_rst_ms": None,
+                "probe_tls_profile": PROBE_TLS_PROFILE,
                 "note": "simulated"}
     sniffer = _Sniffer(); sniffer.set_log(self.log)
     if not sniffer.open_or_dummy():
@@ -1576,6 +1728,12 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         futs["dis"] = ex.submit(pb.test_disorder)
         futs["ftls"] = ex.submit(pb.test_fake_tls)
         futs["frnd"] = ex.submit(pb.test_fake_random)
+        # TCP-аномалии: round-robin по одной на срез (экономия бюджета)
+        kind = _ANOMALY_KINDS[self._anomaly_seq % len(_ANOMALY_KINDS)]
+        self._anomaly_seq += 1
+        futs["anom"] = ex.submit(pb.test_anomaly, kind)
+        # качество канала — параллельно с L7, не мешает пробам
+        futs["cq"] = ex.submit(_channel_quality, 3, 0.25)
         futs["q"] = ex.submit(test_quic, dst, src, self.sni, sniffer,
                               max(0.1, budget.remaining() * 0.9), self.log,
                               mark=self.probe_mark)
@@ -1586,13 +1744,15 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
                 left = budget.remaining()
                 if left <= 0.05:
                     return default
-                return f.result(timeout=min(0.6, max(0.05, left)))
+                return f.result(timeout=min(0.8, max(0.05, left)))
             except Exception as e:
                 self.log("warn", "l7 %s failed: %s" % (key, e))
                 return default
 
         r2, r5, rseq, rdis = _g("s2"), _g("s5"), _g("seq"), _g("dis")
         ftls, frnd, q = _g("ftls"), _g("frnd"), _g("q")
+        anom = _g("anom")
+        cq = _g("cq")
     finally:
         ex.shutdown(wait=False)
         sniffer.close()
@@ -1637,23 +1797,47 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
             details[key] = {"connected": bool(r.get("connected")),
                             "rst_received": r.get("rst_received"),
                             "serverhello": r.get("serverhello"),
-                            "confidence": r.get("confidence")}
+                            "confidence": r.get("confidence"),
+                            "ch_rst_ms": r.get("ch_rst_ms"),
+                            "sh_rtt_ms": r.get("sh_rtt_ms"),
+                            "synack_rtt_ms": r.get("synack_rtt_ms"),
+                            "rst": r.get("rst")}
         else:
             details[key] = None
+    # агрегаты: фингерпринты RST (подпись DPI) и RTT-тайминги
+    fps = [r["rst"] for r in (r2, r5, rseq, rdis, ftls, frnd)
+           if isinstance(r, dict) and r.get("rst")]
+    rst_ms = [r.get("ch_rst_ms") for r in (r2, r5, rseq, rdis, ftls, frnd)
+              if isinstance(r, dict)
+              and isinstance(r.get("ch_rst_ms"), (int, float))]
+    syn_ms = [r.get("synack_rtt_ms") for r in (r2, r5, rseq, rdis, ftls, frnd)
+              if isinstance(r, dict)
+              and isinstance(r.get("synack_rtt_ms"), (int, float))]
+    avg_rst = round(sum(rst_ms) / len(rst_ms), 1) if rst_ms else None
+    avg_syn = round(sum(syn_ms) / len(syn_ms), 1) if syn_ms else None
     det_str = " ".join(
         "%s[conn=%s,rst=%s,sh=%s,conf=%s]" % (k, d["connected"], d["rst_received"],
                                               d["serverhello"], d["confidence"])
         if isinstance(d, dict) else "%s[no_data]" % k
         for k, d in details.items())
-    self.log("info", "l7 probes: s2=%s s5=%s seq=%s dis=%s strict=%s quic_drop=%s %s" %
-             (s2, s5, seq, dis, strict, qdrop, det_str))
+    self.log("info", "l7 probes: s2=%s s5=%s seq=%s dis=%s strict=%s quic_drop=%s "
+                     "avg_rst_ms=%s anom=%s cq=%s %s" %
+             (s2, s5, seq, dis, strict, qdrop, avg_rst,
+              (anom or {}).get("kind"), (cq or {}).get("dns_loss_rate"), det_str))
     return {"split_pos_2_bypass": s2, "split_pos_5_bypass": s5,
             "seqovl_bypass": seq, "disorder_bypass": dis,
             "fake_payload_strictness": strict,
             "quic_handshake_drop": qdrop,
             "quic_control_ok": qctrl,
             "quic_response_seen": (q is not None),
-            "probe_details": details}
+            "probe_details": details,
+            "rst_fingerprint": (fps[0] if fps else None),
+            "rst_fp_count": len(fps),
+            "avg_ch_rst_ms": avg_rst,
+            "avg_synack_rtt_ms": avg_syn,
+            "tcp_anomaly": anom,
+            "channel_quality": cq,
+            "probe_tls_profile": PROBE_TLS_PROFILE}
 
 
 def _strategy(self, ctx):
