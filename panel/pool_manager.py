@@ -500,8 +500,8 @@ class PoolManager:
         """Превращает hex-представление IP из /proc/net/tcp в dotted/IPv6-строку."""
         try:
             n = len(hexip)
-            if n == 8:      # IPv4
-                b = bytes(int(hexip[i:i + 2], 16) for i in range(0, 8, 2))
+            if n == 8:      # IPv4: /proc/net/tcp stores in little-endian on x86/amd64
+                b = bytes(int(hexip[i:i + 2], 16) for i in range(6, -1, -2))  # reverse byte order
                 return ".".join(str(x) for x in b)
             if n == 32:     # IPv6 (little-endian слова)
                 words = [int(hexip[i:i + 8], 16) for i in range(0, 32, 8)]

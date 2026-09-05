@@ -1089,9 +1089,11 @@ class TspuIntel:
         return result
 
     def _resolve_dst(self, ctx, budget: _Budget):
-        # 1. Пытаемся взять IP из всех возможных вариаций ключей контекста
+        # 1. Try all context key variants for the remote IP
         ip = ctx.get("remote_ip") or ctx.get("ip") or ctx.get("dst") or ctx.get("remote_host")
-        if ip:
+        # Reject loopback/private/link-local IPs - they mean the conn was local-proxied
+        # or the hex IP from /proc/net/tcp was mis-decoded; fall through to SNI resolution
+        if ip and not _is_private_ip(ip):
             return ip
             
         # 2. Пытаемся динамически взять SNI из контекста сессии, если он там есть
