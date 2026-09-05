@@ -434,6 +434,7 @@ class _Sniffer:
         self._th = None
         self._socks = []      # (proto, sock)
         self._running = False
+        self._log = lambda lvl, msg: None  # replaced by set_log(); safe default for open()
 
     def open(self) -> bool:
         self._socks = []
@@ -446,7 +447,7 @@ class _Sniffer:
                 pass
         if not self._socks:
             return False
-        self._log("error","sniffer opened on %d proto(s)" % len(self._socks))
+        self._log("info", "sniffer opened on %d proto(s)" % len(self._socks))
         return True
 
     def open_or_dummy(self):
@@ -1065,6 +1066,8 @@ class TspuIntel:
         return result
 
     def run(self, ctx: dict) -> dict:
+        with self._lock:
+            self._degraded = []   # reset per-run so stale flags don't leak across probes
         bd = _Budget(self.budget_ms / 1000.0)
         sim = self.sim_mode
         result = {
@@ -1169,11 +1172,7 @@ def _empty_l7(note="no_data"):
             "note": note}
 
 
-class TspuIntel(TspuIntel):
-    pass
-
-
-# re-open the class namespace to add the collector methods
+# collector methods are attached below via monkey-patch
 def _network(self, ctx, dst, budget: "_Budget", sim):
     if sim:
         return {"tspu_hop": 11, "destination_hop": 17, "delta_distance": 6,
