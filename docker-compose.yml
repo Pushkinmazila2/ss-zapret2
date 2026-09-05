@@ -14,6 +14,7 @@ services:
       - PANEL_PORT=${PANEL_PORT:-1888}
       - CUT_LOG_PATH=${CUT_LOG_PATH:-}
       - NFQWS2_EXTRA_ARGS=${NFQWS2_EXTRA_ARGS:-}
+      - NF_CONNTRACK_PROC=/host/proc/sys/net/netfilter/nf_conntrack_max
     ports:
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/tcp"
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/udp"
@@ -29,7 +30,7 @@ services:
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
       - ./logs:/opt/zapret2/logs
       # - /proc/net/nf_conntrack:/proc/net/nf_conntrack:ro
-      - /proc:/proc:ro
+      - /proc:/host/proc:ro
       - /sys:/sys:ro
     networks:
       - default
