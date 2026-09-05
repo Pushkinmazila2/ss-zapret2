@@ -68,8 +68,11 @@ RUN apk add --no-cache \
       nftables \
       netcat-openbsd \
       conntrack-tools \
+      libcap \
       python3 && \
     apk add --no-cache -X https://dl-cdn.alpinelinux.org/alpine/edge/testing shadowsocks-libev
+
+RUN setcap cap_net_raw,cap_net_admin+eip $(readlink -f $(which python3))
 
 EXPOSE 1080 8388 1888
 

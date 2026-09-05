@@ -16,6 +16,8 @@ services:
       - CUT_LOG_PATH=${CUT_LOG_PATH:-}
       - NFQWS2_EXTRA_ARGS=${NFQWS2_EXTRA_ARGS:-}
       - NF_CONNTRACK_PROC=/host/proc/sys/net/netfilter/nf_conntrack_max
+      - TSPU_INTEL_DNS=172.19.0.4
+      - SCANNER_FWMARK=0x40000000
     ports:
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/tcp"
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/udp"

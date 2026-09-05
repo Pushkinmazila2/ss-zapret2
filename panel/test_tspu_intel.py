@@ -14,12 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tspu_intel import (
     DATASET_VERSION, DEFAULT_PROBE_MARK, DEFAULT_TARGET_IP, IntelLog,
-    TspuIntel, _Budget, _RESOLVE_CACHE, _dns_encode_name, _dns_resolvers,
-    _guess_domain, _parse_name, _raw_enabled, _reset_dns_caches,
-    build_ip_header, build_tcp_packet, build_tls_client_hello,
-    build_quic_initial, classify_connection_type, classify_target_host,
-    ip_checksum, lookup_asn, parse_ip, parse_tcp, scan_destination_hop,
-    split_payload, tls_is_serverhello,
+    TspuIntel, _Budget, _RESOLVE_CACHE, _apply_probe_mark, _dns_encode_name,
+    _dns_resolvers, _guess_domain, _parse_mark_value, _parse_name,
+    _raw_enabled, _reset_dns_caches, build_ip_header, build_tcp_packet,
+    build_tls_client_hello, build_quic_initial, classify_connection_type,
+    classify_target_host, ip_checksum, lookup_asn, parse_ip, parse_tcp,
+    scan_destination_hop, split_payload, tls_is_serverhello,
 )
 
 
@@ -313,6 +313,39 @@ class TestIntelFixes(unittest.TestCase):
     def test_probe_mark_default(self):
         self.assertEqual(DEFAULT_PROBE_MARK, 0x40000000)
         self.assertEqual(self.engine.probe_mark, DEFAULT_PROBE_MARK)
+
+    def test_probe_mark_override(self):
+        eng = TspuIntel(path=os.path.join(self.d, "m.jsonl"), dry_run=True,
+                        probe_mark=0x10000000)
+        self.assertEqual(eng.probe_mark, 0x10000000)
+        self.assertEqual(eng.status()["probe_mark"], 0x10000000)
+
+    def test_probe_mark_parse(self):
+        self.assertEqual(_parse_mark_value("0x40000000"), 0x40000000)
+        self.assertEqual(_parse_mark_value(" 0x20000000 "), 0x20000000)
+        self.assertEqual(_parse_mark_value("123456"), 123456)
+        self.assertEqual(_parse_mark_value("garbage"), 0x40000000)
+        self.assertEqual(_parse_mark_value(None), 0x40000000)
+        self.assertEqual(_parse_mark_value("", default=7), 7)
+
+    def test_apply_probe_mark_sets_sockopt(self):
+        class _FakeSock:
+            def __init__(self):
+                self.calls = []
+                self.fail = False
+            def setsockopt(self, level, opt, val):
+                if self.fail:
+                    raise OSError("no cap")
+                self.calls.append((level, opt, val))
+        s = _FakeSock()
+        self.assertTrue(_apply_probe_mark(s, DEFAULT_PROBE_MARK))
+        self.assertEqual(s.calls,
+                         [(socket.SOL_SOCKET, getattr(socket, "SO_MARK", 36),
+                           DEFAULT_PROBE_MARK)])
+        self.assertFalse(_apply_probe_mark(s, 0))          # falsy mark: no-op
+        self.assertEqual(len(s.calls), 1)
+        s.fail = True
+        self.assertFalse(_apply_probe_mark(s, DEFAULT_PROBE_MARK))  # degraded
 
 
 if __name__ == "__main__":
