@@ -16,14 +16,6 @@ No host utilities (traceroute/iptables) are spawned and no 3rd party packages
 (scapy) are required (they are absent from the image). On platforms without
 CAP_NET_RAW / on non-Linux runners it transparently falls into a deterministic
 dry-run simulator so CI and unit tests stay green.
-
-Probe sockets carry SO_MARK = DEFAULT_PROBE_MARK (0x40000000, mirroring
-DESYNC_MARK from `config`): the mangle-POSTROUTING anti-loop rule
-('-m mark ! --mark $DESYNC_MARK/$DESYNC_MARK') then lets probe packets bypass
-the local zapret NFQUEUE, so the dataset measures the raw TSPU path instead of
-the locally desynced traffic. The mark is a kernel-internal sk_buff field and
-never reaches the wire; if SO_MARK is unavailable probes degrade to unmarked
-sending.
 """
 import datetime
 import json
@@ -46,10 +38,6 @@ DEFAULT_TTL_MAX   = 30
 DEFAULT_COOLDOWN  = 30
 DEFAULT_SNI       = "youtube.com"
 DEFAULT_TARGET_IP = "142.250.74.110"  # well-known anycast youtube ip
-# SO_MARK for probe raw sockets. Mirrors DESYNC_MARK from `config` so the
-# firewall anti-loop rule (mangle POSTROUTING '-m mark ! --mark $DESYNC_MARK')
-# skips probe packets: they bypass the local zapret NFQUEUE and reach TSPU raw.
-DEFAULT_PROBE_MARK = 0x40000000
 
 TCP_FIN = 0x01; TCP_SYN = 0x02; TCP_RST = 0x04; TCP_PSH = 0x08; TCP_ACK = 0x10
 TCP_URG = 0x20; TCP_ECE = 0x40; TCP_CWR = 0x80
@@ -299,7 +287,20 @@ def dns_txt_query(name: str, server: str = None, timeout: float = 1.5):
     msg = _dns_encode_name(name)
     header = struct.pack("!HHHHHH", random.randint(0, 65535), 0x0100, 1, 0, 0, 0)
     msg = header + msg + struct.pack("!HH", 16, 1)  # qtype TXT, class IN
+    
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    # --- НАЧАЛО БЛОКА МАРКИРОВКИ ---
+    try:
+        # Читаем маркер из ENV (например, "0x40000000"), переводим в инт и ставим SO_MARK (36)
+        fwmark_str = os.environ.get("SCANNER_FWMARK", "0x40000000").strip()
+        fwmark = int(fwmark_str, 16) if fwmark_str.lower().startswith("0x") else int(fwmark_str)
+        # 1 — это socket.SOL_SOCKET, 36 — это socket.SO_MARK
+        s.setsockopt(1, 36, struct.pack("=I", fwmark))
+    except Exception:
+        pass # Игнорируем, если в контейнере нет CAP_NET_ADMIN
+    # --- КОНЕЦ БЛОКА МАРКИРОВКИ ---
+
     s.settimeout(timeout)
     try:
         s.sendto(msg, (server, 53))
@@ -406,102 +407,6 @@ def classify_target_host(strategy_name: str, sni: str) -> str:
     return "general_https"
 
 
-# - resolve cache + resolvers (dataset probes run under a tight budget) -
-
-_RESOLVE_TTL = 600.0  # seconds a cached A record stays hot
-_RESOLVE_CACHE = {}   # name -> (wall_ts, ipv4)
-
-
-def _dns_resolvers():
-    """Stable, de-duplicated resolver list; TSPU_INTEL_DNS goes first."""
-    out = []
-    for r in ((os.environ.get("TSPU_INTEL_DNS") or "").strip(),
-              "1.1.1.1", "8.8.8.8", "77.88.8.8"):
-        if r and r not in out:
-            out.append(r)
-    return out
-
-
-def _reset_dns_caches():
-    _RESOLVE_CACHE.clear()
-
-
-def _guess_domain(strategy_name):
-    """Best-effort domain recovery from a strategy name ('youtube_com_007'
-    -> 'youtube.com'); dotted names pass through, junk yields None."""
-    if not strategy_name:
-        return None
-    s = str(strategy_name).strip().lower()
-    if not s:
-        return None
-    if "." in s:
-        return s
-    parts = [p for p in s.split("_") if p]
-    tlds = ("com", "net", "org", "ru", "io", "gov", "edu", "info", "biz", "tv")
-    for i in range(1, len(parts)):
-        if parts[i] in tlds:
-            return parts[i - 1] + "." + parts[i]
-    if len(parts) >= 2:
-        return parts[0] + "." + parts[1]
-    return None
-
-
-def _dns_parse_a_reply(data, tid):
-    """Extract the first A record from a UDP DNS reply."""
-    try:
-        if len(data) < 12:
-            return None
-        rid, flags, qd, an, _ns, _ar = struct.unpack("!HHHHHH", data[:12])
-        if rid != tid or not (flags & 0x8000) or an < 1:
-            return None
-        off = 12
-        for _ in range(qd):
-            _, off = _parse_name(data, off)
-            off += 4
-        for _ in range(an):
-            _, off = _parse_name(data, off)
-            if off + 10 > len(data):
-                return None
-            rtype, _cls, _ttl, rdlen = struct.unpack("!HHIH", data[off:off + 10])
-            off += 10
-            if rtype == 1 and rdlen == 4 and off + 4 <= len(data):
-                return "%d.%d.%d.%d" % (data[off], data[off + 1],
-                                        data[off + 2], data[off + 3])
-            off += rdlen
-    except Exception:
-        return None
-    return None
-
-
-def _dns_resolve_a(name, timeout=0.35):
-    """Minimal stdlib UDP DNS A lookup across _dns_resolvers()."""
-    qname = _dns_encode_name(name)
-    if not qname:
-        return None
-    tid = random.randint(1, 0xFFFF)
-    query = (struct.pack("!HHHHHH", tid, 0x0100, 1, 0, 0, 0) + qname
-             + struct.pack("!HH", 1, 1))  # type A, class IN
-    for server in _dns_resolvers():
-        s = None
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.settimeout(timeout)
-            s.sendto(query, (server, 53))
-            data, _ = s.recvfrom(4096)
-            ip = _dns_parse_a_reply(data, tid)
-            if ip:
-                return ip
-        except OSError:
-            continue
-        finally:
-            if s is not None:
-                try:
-                    s.close()
-                except Exception:
-                    pass
-    return None
-
-
 def local_ip_for(dst: str):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -532,44 +437,6 @@ def _raw_enabled() -> bool:
             except Exception:
                 pass
         return False
-
-
-def _apply_probe_mark(sock, mark, log_fn=None) -> bool:
-    """Best-effort SO_MARK so raw probe packets bypass the local zapret
-    NFQUEUE capture rules (mangle POSTROUTING). Requires CAP_NET_RAW /
-    CAP_NET_ADMIN (the container runs as root); on failure probes degrade to
-    unmarked sending. The mark is a kernel-internal sk_buff field and never
-    touches the wire."""
-    if not mark:
-        return False
-    try:
-        so_mark = getattr(socket, "SO_MARK", 36)  # 36 = SO_MARK on old headers
-        sock.setsockopt(socket.SOL_SOCKET, so_mark, int(mark))
-        return True
-    except OSError as e:
-        if log_fn:
-            try:
-                log_fn("warn", "SO_MARK(%s) unavailable: %s" % (mark, e))
-            except Exception:
-                pass
-        return False
-
-
-def _parse_mark_value(raw, default=None) -> int:
-    """Parse an iptables-style mark value ('0x40000000', '40000000', int)."""
-    if default is None:
-        default = DEFAULT_PROBE_MARK
-    if raw is None:
-        return int(default)
-    s = str(raw).strip()
-    if not s:
-        return int(default)
-    try:
-        if s.lower().startswith("0x"):
-            return int(s, 16)
-        return int(s, 0)
-    except (TypeError, ValueError):
-        return int(default)
 
 
 class _Sniffer:
@@ -681,20 +548,15 @@ class _RawIO:
     """Per-flow raw sender that pairs with a shared _Sniffer."""
 
     def __init__(self, src: str, dst: str, dport: int = 443, sniffer=None,
-                 log_fn=None, mark: int = DEFAULT_PROBE_MARK):
+                 log_fn=None):
         self.src = src; self.dst = dst; self.dport = dport; self.sni = sniffer
         self.log = log_fn or (lambda lvl, msg: None)
         self.sport = random.randint(32768, 61000)
         self.isn = random.randint(1, 0xFFFFFFFF)
-        self.mark = int(mark or 0)
-        self.mark_applied = False
         self._send = None
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
             s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-            # SO_MARK = DESYNC_MARK: probes bypass the zapret NFQUEUE rules so
-            # every SYN/PSH|ACK/UDP packet sent from this socket hits TSPU raw.
-            self.mark_applied = _apply_probe_mark(s, self.mark, self.log)
             self._send = s
         except OSError as e:
             self.log("warn", "raw send socket unavailable: %s" % e)
@@ -784,39 +646,21 @@ class _RawIO:
         return m
 
 
-def _icmp_quoted_ttl(matches, dst, ttl, wstart, end):
-    """True if an ICMP time-exceeded quoting our SYN with seq == ttl arrived:
-    the inner packet echoes our probe, whose seq pins the hop exactly."""
-    for x in matches:
-        if (x.get("proto") != 1 or x.get("icmp_type") != 11
-                or x.get("dst") != dst
-                or not (wstart <= x.get("t", 0) <= end)):
-            continue
-        inner = x.get("inner") or {}
-        if inner.get("dst") != dst:
-            continue
-        it = parse_tcp(inner.get("payload") or b"")
-        if it and it.get("seq") == ttl:
-            return True
-    return False
-
-
 def scan_destination_hop(dst, src, sport, sniffer, budget,
-                         max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None,
-                         mark=DEFAULT_PROBE_MARK):
-    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn, mark=mark)
+                         max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None):
+    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn)
     io.sport = sport
     step = 6
     ttl = 1
     first_hit = None
     ttl_map = {}
+    seq = 0
     since0 = time.monotonic()
     while ttl <= max_ttl and (time.monotonic() - since0) < budget:
         batch = list(range(ttl, min(ttl + step, max_ttl + 1)))
         for t in batch:
-            # seq == ttl pins every reply to its exact probe: a SYN-ACK acking
-            # seq+1, or an ICMP quoting our SYN, identifies the hop precisely
-            io.send(io.tcp_pkt(t, 0, TCP_SYN, b"", ttl=t, window=16384))
+            seq = (seq + 1) & 0x7FFFFFFF
+            io.send(io.tcp_pkt(seq, 0, TCP_SYN, b"", ttl=t, window=16384))
         wstart = time.monotonic(); time.sleep(0.05); end = time.monotonic()
         matches = sniffer.query(wstart, lambda x: True) if sniffer else []
         for t in batch:
@@ -825,22 +669,14 @@ def scan_destination_hop(dst, src, sport, sniffer, budget,
                    and (x["flags"] & (TCP_RST | TCP_SYN))]
             if hit:
                 ttl_map[t] = "syn-ack/rst-from-dst"
-                if first_hit is None and any(x.get("ack") == t + 1 for x in hit):
+                if first_hit is None:
                     first_hit = t
             else:
                 ttl_map[t] = "no-dst-reply"
-                if _icmp_quoted_ttl(matches, dst, t, wstart, end):
-                    ttl_map[t] = "icmp-ttl-exceed"
         if first_hit is not None:
             break
         ttl += step
     io.close()
-    if first_hit is None:
-        # fallback: no ack-confirmed hit — trust the first hop that answered
-        for t in sorted(ttl_map):
-            if ttl_map[t] == "syn-ack/rst-from-dst":
-                first_hit = t
-                break
     return (first_hit, ttl_map) if first_hit is not None else (None, ttl_map)# - rst classification + tspu ttl scan -
 
 def _rst_tspu_confidence(x, dst, sport, dest_hop=None):
@@ -864,9 +700,8 @@ def _rst_from_dst(dst, sport):
 
 
 def scan_tspu_hop(dst, src, sni, sport, sniffer, budget, dest_hop,
-                  max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None,
-                  mark=DEFAULT_PROBE_MARK):
-    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn, mark=mark)
+                  max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None):
+    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn)
     io.sport = sport
     ch = build_tls_client_hello(sni)
     ack, ok = io.handshake(0.45)
@@ -903,14 +738,12 @@ def _dead():
 
 
 class TspuProber:
-    def __init__(self, src, dst, sni, sniffer, log_fn,
-                 mark=DEFAULT_PROBE_MARK):
+    def __init__(self, src, dst, sni, sniffer, log_fn):
         self.src = src; self.dst = dst; self.sni_name = sni
-        self.sniffer = sniffer; self.log = log_fn; self.mark = mark
+        self.sniffer = sniffer; self.log = log_fn
 
     def _connect(self, timeout=0.45):
-        io = _RawIO(self.src, self.dst, 443, self.sniffer, self.log,
-                    mark=self.mark)
+        io = _RawIO(self.src, self.dst, 443, self.sniffer, self.log)
         ack, ok = io.handshake(timeout)
         return io, ack, ok
 
@@ -995,7 +828,18 @@ def _udp_dns_alive(server=None, timeout=0.8):
         server = os.environ.get("TSPU_INTEL_DNS", "1.1.1.1").strip()
 
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(timeout)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        
+        # --- НАЧАЛО БЛОКА МАРКИРОВКИ ---
+        try:
+            fwmark_str = os.environ.get("SCANNER_FWMARK", "0x40000000").strip()
+            fwmark = int(fwmark_str, 16) if fwmark_str.lower().startswith("0x") else int(fwmark_str)
+            s.setsockopt(1, 36, struct.pack("=I", fwmark))
+        except Exception:
+            pass
+        # --- КОНЕЦ БЛОКА МАРКИРОВКИ ---
+
+        s.settimeout(timeout)
         tid = random.randint(0, 0xFFFF)
         name = "asn.%d.probe" % random.randint(10000, 99999)
         q = _dns_encode_name(name) + struct.pack("!HH", 1, 1)
@@ -1006,10 +850,9 @@ def _udp_dns_alive(server=None, timeout=0.8):
         return False
 
 
-def test_quic(dst, src, sni, sniffer, budget=0.4, log_fn=lambda lvl, msg: None,
-              mark=DEFAULT_PROBE_MARK):
+def test_quic(dst, src, sni, sniffer, budget=0.4, log_fn=lambda lvl, msg: None):
     ctrl = _udp_dns_alive(timeout=0.2)
-    qio = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn, mark=mark)
+    qio = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn)
     sport = qio.sport
     since = time.monotonic()
     qio.send(qio.udp_pkt(sport, 4740, b"\x00", ttl=64))
@@ -1144,8 +987,7 @@ class TspuIntel:
 
     def __init__(self, path=None, log_fn=None, enabled=True, cooldown=None,
                  budget_ms=DEFAULT_BUDGET_MS, ttl_max=DEFAULT_TTL_MAX,
-                 sni=DEFAULT_SNI, dry_run=False, raw_available=None,
-                 probe_mark=None):
+                 sni=DEFAULT_SNI, dry_run=False, raw_available=None):
         self.log = log_fn or (lambda lvl, msg: print("[tspu-intel][%s] %s" % (lvl, msg), flush=True))
         self.intel_log = IntelLog(path=path or "/opt/zapret2/logs/tspu_intel.jsonl")
         self.enabled = bool(enabled)
@@ -1156,8 +998,6 @@ class TspuIntel:
         self.dry_run = bool(dry_run)
         self.raw_available = bool(raw_available if raw_available is not None else _raw_enabled())
         self.sim_mode = bool(self.dry_run or not self.raw_available)
-        self.probe_mark = (int(probe_mark) if probe_mark is not None
-                           else DEFAULT_PROBE_MARK)
         self._lock = threading.RLock()
         self._last_run_ts = None
         self._last_result_ts = None
@@ -1182,8 +1022,6 @@ class TspuIntel:
             self.sni = cfg["sni"]
         if "dry_run" in cfg:
             self.dry_run = bool(cfg["dry_run"])
-        if "probe_mark" in cfg:
-            self.probe_mark = int(cfg["probe_mark"] or 0)
         self.sim_mode = bool(self.dry_run or not self.raw_available)
         return self.status()
 
@@ -1198,7 +1036,6 @@ class TspuIntel:
                 "budget_ms": self.budget_ms,
                 "ttl_max": self.ttl_max,
                 "sni": self.sni,
-                "probe_mark": self.probe_mark,
                 "raw_available": self.raw_available,
                 "mode": "dry_run" if self.sim_mode else "active",
                 "last_run_ts": _iso(self._last_run_ts) if self._last_run_ts else None,
@@ -1277,23 +1114,12 @@ class TspuIntel:
             result["meta"]["dry_run"] = True
             self.log("warn", "dry-run simulator: raw socket unavailable")
         dst = self._resolve_dst(ctx, bd)
-        # фактические цель и SNI этого прогона — важны для датасета
-        # (что именно зондировали)
-        result["meta"]["dst"] = dst
-        result["meta"]["sni"] = self._ctx_sni(ctx)
         result["environment"] = self._environment(ctx, dst, bd, sim)
         result["session_profile"] = self._session(ctx)
         result["tspu_network_metrics"] = self._network(ctx, dst, bd, sim)
         result["tspu_l7_vulnerabilities"] = self._l7(ctx, dst, bd, sim)
         result["strategy_context"] = self._strategy(ctx)
         return result
-
-    def _ctx_sni(self, ctx):
-        """Фактический SNI прогона: ctx -> домен из стратегии -> дефолт движка."""
-        return (ctx.get("sni") or ctx.get("hostname")
-                or _guess_domain(ctx.get("strategy_name")
-                                 or ctx.get("applied_strategy_name"))
-                or self.sni)
 
     def _resolve_dst(self, ctx, budget: _Budget):
         # 1. Try all context key variants for the remote IP
@@ -1302,44 +1128,27 @@ class TspuIntel:
         # or the hex IP from /proc/net/tcp was mis-decoded; fall through to SNI resolution
         if ip and not _is_private_ip(ip):
             return ip
-
+            
         # 2. Пытаемся динамически взять SNI из контекста сессии, если он там есть
-        sni_to_resolve = self._ctx_sni(ctx)
-
-        # 3. Горячий кэш полностью исключает сеть из зонда (~2s бюджет):
-        #    DNS-резолв на каждый обрыв съедал бы половину окна измерений
-        hit = _RESOLVE_CACHE.get(sni_to_resolve)
-        now = time.time()
-        if hit and (now - hit[0]) < _RESOLVE_TTL:
-            return hit[1]
-
+        ctx_sni = ctx.get("sni") or ctx.get("hostname") or ctx.get("applied_strategy_name")
+        sni_to_resolve = ctx_sni if ctx_sni else self.sni
+        
         left = budget.remaining()
         if left <= 0.1:
             return DEFAULT_TARGET_IP
         res = {"ip": None}
         def _w():
-            ip2 = None
             try:
-                # Резолвим динамический SNI вместо жесткого дефолта (UDP DNS)
-                ip2 = _dns_resolve_a(sni_to_resolve, timeout=0.35)
+                # Резолвим динамический SNI вместо жесткого дефолта
+                infos = socket.getaddrinfo(sni_to_resolve, 443, socket.AF_INET,
+                                           socket.SOCK_STREAM)
+                if infos:
+                    res["ip"] = infos[0][4][0]
             except Exception:
-                ip2 = None
-            if not ip2:
-                try:
-                    infos = socket.getaddrinfo(sni_to_resolve, 443, socket.AF_INET,
-                                               socket.SOCK_STREAM)
-                    if infos:
-                        ip2 = infos[0][4][0]
-                except Exception:
-                    ip2 = None
-            res["ip"] = ip2
+                res["ip"] = None
         t = threading.Thread(target=_w, daemon=True)
         t.start(); t.join(max(0.1, min(left, 0.4)))
-        ip3 = res["ip"]
-        if ip3 and not _is_private_ip(ip3):
-            _RESOLVE_CACHE[sni_to_resolve] = (now, ip3)
-            return ip3
-        return ip3 or DEFAULT_TARGET_IP
+        return res["ip"] or DEFAULT_TARGET_IP
 
 
     def _environment(self, ctx, dst, budget: _Budget, sim):
@@ -1412,8 +1221,7 @@ def _network(self, ctx, dst, budget: "_Budget", sim):
     try:
         dst_hop, tmap = scan_destination_hop(
             dst, src, random.randint(32768, 60000), sniffer,
-            budget.remaining() * 0.45, self.ttl_max, self.log,
-            mark=self.probe_mark)
+            budget.remaining() * 0.45, self.ttl_max, self.log)
     except Exception as e:
         self.log("warn", "destination_hop scan failed: %s" % e)
         self._degraded.append("dest_hop_failed"); dst_hop = None; tmap = {}
@@ -1423,8 +1231,7 @@ def _network(self, ctx, dst, budget: "_Budget", sim):
             tspu_h, near = scan_tspu_hop(dst, src, self.sni,
                                         random.randint(32768, 60000), sniffer,
                                         budget.remaining() * 0.55, dst_hop,
-                                        self.ttl_max, self.log,
-                                        mark=self.probe_mark)
+                                        self.ttl_max, self.log)
         except Exception as e:
             self.log("warn", "tspu_hop scan failed: %s" % e)
             self._degraded.append("tspu_hop_failed")
@@ -1448,8 +1255,7 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         self._degraded.append("sniffer_unavailable")
         return _empty_l7("sniffer_unavailable")
     src = local_ip_for(dst) or "127.0.0.1"
-    pb = TspuProber(src, dst, self.sni, sniffer, self.log,
-                    mark=self.probe_mark)
+    pb = TspuProber(src, dst, self.sni, sniffer, self.log)
     ex = ThreadPoolExecutor(max_workers=4)
     futs = {}
     try:
@@ -1460,8 +1266,7 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         futs["ftls"] = ex.submit(pb.test_fake_tls)
         futs["frnd"] = ex.submit(pb.test_fake_random)
         futs["q"] = ex.submit(test_quic, dst, src, self.sni, sniffer,
-                              max(0.1, budget.remaining() * 0.9), self.log,
-                              mark=self.probe_mark)
+                              max(0.1, budget.remaining() * 0.9), self.log)
 
         def _g(key, default=None):
             try:
@@ -1559,9 +1364,6 @@ def _default_intel_path():
 
 def build_tspu_intel_from_env(log_fn=None):
     log_fn = log_fn or (lambda lvl, msg: print("[tspu-intel][%s] %s" % (lvl, msg), flush=True))
-    # Mark priority: TSPU_INTEL_MARK > DESYNC_MARK (kept in sync with the
-    # firewall anti-loop rules) > built-in DEFAULT_PROBE_MARK.
-    env_mark = os.environ.get("TSPU_INTEL_MARK") or os.environ.get("DESYNC_MARK")
     return TspuIntel(path=_default_intel_path(),
                      log_fn=log_fn,
                      enabled=_env_bool("TSPU_INTEL_ENABLE", True),
@@ -1569,9 +1371,7 @@ def build_tspu_intel_from_env(log_fn=None):
                      budget_ms=_env_int("TSPU_INTEL_BUDGET_MS", DEFAULT_BUDGET_MS),
                      ttl_max=_env_int("TSPU_INTEL_TTL_MAX", DEFAULT_TTL_MAX),
                      sni=os.environ.get("TSPU_INTEL_SNI") or DEFAULT_SNI,
-                     dry_run=_env_bool("TSPU_INTEL_DRY_RUN", False),
-                     probe_mark=(_parse_mark_value(env_mark)
-                                 if env_mark else None))
+                     dry_run=_env_bool("TSPU_INTEL_DRY_RUN", False))
 
 
 # - smoke run (dry-run by default outside Linux) -
