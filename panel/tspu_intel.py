@@ -39,7 +39,9 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 # - constants -
-DATASET_VERSION = "1.1"
+# 1.2 — маркер развёртывания: вектор с ctx_fields/probe_details/isp_source
+# возможен только на этой версии кода (см. проверку деплоя в README-логах)
+DATASET_VERSION = "1.2"
 DEFAULT_BUDGET_MS = 1800
 HARD_BUDGET_MS    = 2000
 DEFAULT_TTL_MAX   = 30
@@ -1572,6 +1574,12 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         qdrop = None; qctrl = None
     else:
         qdrop, qctrl = q[0], q[1]
+    if q is not None and qctrl is False:
+        # контрольный UDP DNS не ответил — UDP-путь под фильтром, QUIC-поля
+        # такого вектора ненадёжны
+        self._degraded.append("quic_control_failed")
+        self.log("warn", "quic control (UDP DNS to 1.1.1.1) failed — "
+                         "quic_* fields of this vector are unreliable")
     # детали каждой пробы: отличаем «строгий ТСПУ» (conn=1,rst=1) от
     # сломанной пробы (conn=0/None — timeout, нет SYN-ACK, инфраструктура)
     details = {}

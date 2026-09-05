@@ -160,7 +160,7 @@ class TestEngineDryRun(unittest.TestCase):
 
     def test_run_schema(self):
         r = self.engine.run(self._ctx())
-        self.assertEqual(r["dataset_version"], "1.1")
+        self.assertEqual(r["dataset_version"], "1.2")
         for blk in ("environment", "session_profile", "tspu_network_metrics",
                     "tspu_l7_vulnerabilities", "strategy_context"):
             self.assertIn(blk, r)
@@ -440,6 +440,8 @@ class TestIntelFixes(unittest.TestCase):
         self.assertEqual(d["confidence"], 0.85)
         # fake_tls-фейк не возвращает serverhello — детали заполняются None
         self.assertIsNone(r["probe_details"]["fake_tls"]["serverhello"])
+        # контроль QUIC в фейке успешен — флага ненадёжности быть не должно
+        self.assertNotIn("quic_control_failed", self.engine._degraded)
 
 
 if __name__ == "__main__":
