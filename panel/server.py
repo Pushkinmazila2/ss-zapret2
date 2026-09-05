@@ -116,6 +116,8 @@ def list_strategies():
     return result
 
 def load_strategy_nfqws(name):
+    if not STRAT_DIR or not name:
+        return None
     path = os.path.join(STRAT_DIR, name + ".conf")
     if not os.path.isfile(path): return None
     with open(path, encoding="utf-8") as f:
@@ -745,7 +747,7 @@ class PoolSwitcher:
                 _l_port = _ev_conn.get("local_port") or _ev_conn.get("sport")
 
             # 3. Определяем тип завершения сессии
-            _term_type = "RST" if event.get("reset_confirmed") or event.get("rst_deaths_window") else "FIN"
+            _term_type = "RST" if (event.get("reset_confirmed") or event.get("rst_deaths_window")) else None
 
             _ti_ctx = {
                 "cut_id": resolved_cut_id,
@@ -761,6 +763,7 @@ class PoolSwitcher:
                 "nfqws_opt": None,
                 "strategy_score_before": 0.0,
                 "bytes_delta": (traffic or {}).get("bytes_delta"),
+                "bytes_source": "queue_aggregate",
                 "termination_type": _term_type,
             }
             
@@ -768,6 +771,16 @@ class PoolSwitcher:
             if _sname:
                 _ti_ctx["nfqws_opt"] = load_strategy_nfqws(_sname)
                 _ti_ctx["strategy_score_before"] = float(self.strategy_scores.get(_sname, 0.0))
+                # best-effort hostname for meta.sni / target classification
+                _core = _sname
+                while _core and _core[-1].isdigit():
+                    _core = _core[:-1]
+                if _core.endswith("_"):
+                    _core = _core[:-1]
+                if "." in _core.replace("_", "."):
+                    _host = _core.replace("_", ".")
+                    _ti_ctx["remote_host"] = _host
+                    _ti_ctx["sni"] = _host
             
             threading.Thread(target=_tspu_intel.on_cut_async, args=(_ti_ctx,), daemon=True).start()
 
@@ -1369,6 +1382,9 @@ class Handler(BaseHTTPRequestHandler):
                     "nfqws_opt": nfqws,
                     "strategy_score_before": float(body.get("strategy_score_before", 0.0) or 0.0),
                     "bytes_delta": body.get("bytes_delta"),
+                    "bytes_source": "manual",
+                    "remote_host": body.get("remote_host"),
+                    "sni": body.get("sni"),
                     "termination_type": None}
             return self._json(_tspu_intel.on_cut_async(_ctx))
         elif p == "/api/save-nfqws":

@@ -93,7 +93,8 @@ sw2.cut_rotate_enabled = True
 sw2._cut_last_ts = None
 sw2.on_connection_cut(event)
 
-e2 = S.cut_logger.list(1)[0]
+e2 = next((x for x in S.cut_logger.list(10) if x.get("kind") == "cut"),
+           S.cut_logger.list(10)[0])
 print("S2 slot_resolved:", e2.get("slot_resolved"),
       "| reason:", e2.get("slot_resolve_reason"))
 print("S2 slot:", e2.get("slot"))

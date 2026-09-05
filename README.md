@@ -405,7 +405,7 @@ ss-zapret2:
 
 TspuIntel is an asynchronous TSPU DPI-reconnaissance module that fires on every
 session cut detected by PoolSwitcher (on_connection_cut). Within a 1.5-2s budget
-it emits a 5-block ML feature vector (JSON) that is appended to two sinks:
+it emits a 5-block ML vector (JSON) that is appended to two sinks:
 
 * an independent dataset JSONL next to cuts.log: logs/tspu_intel.jsonl
 * a companion record in the cut journal via cut_logger (kind = tspu_intel)

@@ -20,6 +20,7 @@ services:
       - TSPU_INTEL_TTL_MAX=${TSPU_INTEL_TTL_MAX:-30}
       - TSPU_INTEL_SNI=${TSPU_INTEL_SNI:-youtube.com}
       - TSPU_INTEL_DRY_RUN=${TSPU_INTEL_DRY_RUN:-false}
+      - TSPU_INTEL_PROBE_MARK=${TSPU_INTEL_PROBE_MARK:-}
     ports:
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/tcp"
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/udp"

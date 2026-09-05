@@ -13,11 +13,13 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tspu_intel import (
-    DATASET_VERSION, DEFAULT_TARGET_IP, IntelLog, TspuIntel, _Budget,
-    _dns_encode_name, _parse_name, _raw_enabled, build_ip_header,
-    build_tcp_packet, build_tls_client_hello, build_quic_initial,
-    classify_connection_type, classify_target_host, ip_checksum,
-    lookup_asn, parse_ip, parse_tcp, split_payload, tls_is_serverhello,
+    DATASET_VERSION, DEFAULT_PROBE_MARK, DEFAULT_TARGET_IP, IntelLog,
+    TspuIntel, _Budget, _RESOLVE_CACHE, _dns_encode_name, _dns_resolvers,
+    _guess_domain, _parse_name, _raw_enabled, _reset_dns_caches,
+    build_ip_header, build_tcp_packet, build_tls_client_hello,
+    build_quic_initial, classify_connection_type, classify_target_host,
+    ip_checksum, lookup_asn, parse_ip, parse_tcp, scan_destination_hop,
+    split_payload, tls_is_serverhello,
 )
 
 
@@ -211,6 +213,105 @@ class TestBudget(unittest.TestCase):
         self.assertGreater(b.remaining(), 0)
         time.sleep(0.07)
         self.assertFalse(b.ok())
+
+
+class _FakeSniffer:
+    """Deterministic sniffer stub for scan_destination_hop unit tests."""
+
+    def __init__(self, recs):
+        self.recs = recs
+
+    def query(self, since, matcher):
+        now = since + 0.01
+        out = []
+        for r in self.recs:
+            rr = dict(r)
+            rr["t"] = now
+            if matcher(rr):
+                out.append(rr)
+        return out
+
+
+class TestIntelFixes(unittest.TestCase):
+    """Unit coverage for the dataset-quality fixes (offline)."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.engine = TspuIntel(path=os.path.join(self.d, "intel.jsonl"),
+                                enabled=True, cooldown=0.0, budget_ms=800,
+                                dry_run=True)
+
+    def tearDown(self):
+        _reset_dns_caches()
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def test_guess_domain(self):
+        self.assertEqual(_guess_domain("youtube_com_007"), "youtube.com")
+        self.assertEqual(_guess_domain("discord_com"), "discord.com")
+        self.assertEqual(_guess_domain("redirector.googlevideo.com"),
+                         "redirector.googlevideo.com")
+        self.assertIsNone(_guess_domain(None))
+        self.assertIsNone(_guess_domain(""))
+
+    def test_dns_resolvers_are_stable(self):
+        rs = _dns_resolvers()
+        self.assertIsInstance(rs, list)
+        self.assertTrue(rs)
+        self.assertTrue(rs[0] in ("8.8.8.8", "1.1.1.1", "77.88.8.8"))
+        self.assertEqual(len(rs), len(set(rs)))
+
+    def test_resolve_cache_short_circuits_network(self):
+        _RESOLVE_CACHE["test.example.com"] = (time.time(), "1.2.3.4")
+        ctx = {"remote_ip": None, "sni": "test.example.com",
+               "strategy_name": "test_example_com_001", "bytes_delta": None}
+        r = self.engine.run(ctx)
+        self.assertEqual(r["meta"]["dst"], "1.2.3.4")
+        self.assertEqual(r["meta"]["sni"], "test.example.com")
+
+    def test_degraded_reset_between_runs(self):
+        self.engine._degraded = ["isp_lookup_failed", "fake_payload_partial"]
+        self.engine.on_cut_async({"cut_id": 1, "sni": "test.example.com",
+                                  "remote_ip": "8.8.8.8",
+                                  "event_kind": "classic",
+                                  "reset_confirmed": True,
+                                  "strategy_name": "test_com_001"})
+        end = time.time() + 2.0
+        while time.time() < end:
+            if not self.engine._running and self.engine._last_result_ts is not None:
+                break
+            time.sleep(0.02)
+        self.assertIsNotNone(self.engine._last_result)
+        self.assertEqual(self.engine._last_result["meta"]["degraded"], [])
+
+    def test_scan_destination_hop_icmp_evidence(self):
+        sport = 45000
+        inner_pkt = build_tcp_packet(sport, 443, 3, 0, 0x02, b"",
+                                     "10.0.0.2", "10.0.0.5", 40)
+        inner = parse_ip(inner_pkt)
+        icmp_rec = {"proto": 1, "icmp_type": 11, "src": "10.0.0.1",
+                    "dst": "10.0.0.5",
+                    "inner": {"proto": 6, "dst": "10.0.0.5",
+                              "payload": inner["payload"]}}
+        sink = _FakeSniffer([icmp_rec])
+        dst_hop, tmap = scan_destination_hop("10.0.0.5", "10.0.0.2", sport,
+                                             sink, 2.0, max_ttl=30)
+        self.assertIsNone(dst_hop)                 # no TCP reply from dst
+        self.assertEqual(tmap.get(3), "icmp-ttl-exceed")
+
+    def test_scan_destination_hop_synack_attrib_ttl(self):
+        sport = 45001
+        synack_rec = {"proto": 6, "src": "10.0.0.5", "dst": "10.0.0.2",
+                      "sport": 443, "dport": sport, "seq": 100,
+                      "ack": 4, "flags": 0x12}
+        sink = _FakeSniffer([synack_rec])
+        dst_hop, tmap = scan_destination_hop("10.0.0.5", "10.0.0.2", sport,
+                                             sink, 2.0, max_ttl=30)
+        self.assertEqual(dst_hop, 3)               # seq=3 (ttl=3) -> ack=4
+        self.assertEqual(tmap.get(3), "syn-ack/rst-from-dst")
+
+    def test_probe_mark_default(self):
+        self.assertEqual(DEFAULT_PROBE_MARK, 0x40000000)
+        self.assertEqual(self.engine.probe_mark, DEFAULT_PROBE_MARK)
 
 
 if __name__ == "__main__":
