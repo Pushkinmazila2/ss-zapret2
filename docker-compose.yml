@@ -29,6 +29,7 @@ services:
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
       - ./logs:/opt/zapret2/logs
       # - /proc/net/nf_conntrack:/proc/net/nf_conntrack:ro
+      - /proc:/proc:ro
       - /sys:/sys:ro
     networks:
       - default
