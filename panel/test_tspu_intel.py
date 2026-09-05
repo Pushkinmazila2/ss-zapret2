@@ -282,7 +282,10 @@ class TestIntelFixes(unittest.TestCase):
                 break
             time.sleep(0.02)
         self.assertIsNotNone(self.engine._last_result)
-        self.assertEqual(self.engine._last_result["meta"]["degraded"], [])
+        # stale-флаги сброшены; остался только актуальный — bytes_delta
+        # отсутствовал в ctx (новая диагностика полноты входа)
+        self.assertEqual(self.engine._last_result["meta"]["degraded"],
+                         ["bytes_delta_absent"])
 
     def test_scan_destination_hop_icmp_evidence(self):
         sport = 45000
@@ -346,6 +349,97 @@ class TestIntelFixes(unittest.TestCase):
         self.assertEqual(len(s.calls), 1)
         s.fail = True
         self.assertFalse(_apply_probe_mark(s, DEFAULT_PROBE_MARK))  # degraded
+
+    def test_ctx_intake_fields_and_bytes_absent(self):
+        ctx = {"sni": "test.example.com", "remote_ip": "1.2.3.4",
+               "strategy_name": "test_com_001", "strategy_score_before": None,
+               "bytes_delta": None, "lifetime_sec": 12.5, "qnum": 301}
+        r = self.engine.run(ctx)
+        cf = r["meta"]["ctx_fields"]
+        self.assertFalse(cf["bytes_delta_present"])
+        self.assertIsNone(cf["strategy_score_before"])
+        self.assertEqual(cf["strategy_name"], "test_com_001")
+        self.assertEqual(cf["qnum"], 301)
+        self.assertIn("bytes_delta_absent", self.engine._degraded)
+
+    def test_ctx_intake_bytes_present(self):
+        r = self.engine.run({"remote_ip": "1.2.3.4", "sni": "test.example.com",
+                             "strategy_name": "test_com_001",
+                             "strategy_score_before": 1.0, "bytes_delta": 42000})
+        cf = r["meta"]["ctx_fields"]
+        self.assertTrue(cf["bytes_delta_present"])
+        self.assertNotIn("bytes_delta_absent", self.engine._degraded)
+
+    def test_strategy_score_known_flag(self):
+        r = self.engine.run({"remote_ip": "1.2.3.4", "sni": "test.example.com",
+                             "strategy_name": "test_com_001",
+                             "strategy_score_before": -1.5})
+        self.assertTrue(r["strategy_context"]["strategy_score_known"])
+        r2 = self.engine.run({"remote_ip": "1.2.3.4", "sni": "test.example.com",
+                              "strategy_name": "test_com_002"})
+        self.assertFalse(r2["strategy_context"]["strategy_score_known"])
+        self.assertIsNone(r2["strategy_context"]["strategy_score_before"])
+
+    def test_asn_fallback_marked_degraded(self):
+        import tspu_intel as ti
+        orig = ti.lookup_asn
+        ti.lookup_asn = lambda *a, **k: {"isp_asn": "AS_LOCAL",
+                                         "isp_name": "LocalProvider",
+                                         "fallback": True,
+                                         "fallback_reason": "cymru_txt_no_answer"}
+        try:
+            env = self.engine._environment({}, "8.8.8.8", _Budget(1.0), False)
+        finally:
+            ti.lookup_asn = orig
+        self.assertEqual(env["isp_source"], "fallback_local")
+        self.assertEqual(env["isp_asn"], "AS_LOCAL")
+        self.assertIn("asn_unresolved_fallback", self.engine._degraded)
+
+    def test_l7_probe_details_active(self):
+        import tspu_intel as ti
+        orig = (ti._Sniffer, ti.TspuProber, ti.test_quic)
+
+        class _FakeSn:
+            def set_log(self, *a):
+                pass
+            def open_or_dummy(self):
+                return True
+            def query(self, *a, **k):
+                return []
+            def close(self):
+                pass
+
+        class _FakePb:
+            def __init__(self, *a, **k):
+                pass
+            def test_split(self, pos):
+                return {"connected": True, "bypass": False, "rst_received": True,
+                        "serverhello": False, "confidence": 0.85}
+            def test_seqovl(self):
+                return {"connected": True, "bypass": True, "rst_received": False,
+                        "serverhello": True, "confidence": 0.9}
+            def test_disorder(self):
+                return {"connected": True, "bypass": False, "rst_received": True,
+                        "serverhello": False, "confidence": 0.85}
+            def test_fake_tls(self):
+                return {"connected": True, "rst_received": True}
+            def test_fake_random(self):
+                return {"connected": True, "rst_received": True}
+
+        ti._Sniffer, ti.TspuProber, ti.test_quic = _FakeSn, _FakePb, \
+            lambda *a, **k: (True, True)
+        try:
+            r = self.engine._l7({}, "8.8.8.8", _Budget(2.0), False)
+        finally:
+            ti._Sniffer, ti.TspuProber, ti.test_quic = orig
+        self.assertFalse(r["split_pos_2_bypass"])
+        self.assertTrue(r["seqovl_bypass"])
+        self.assertEqual(r["fake_payload_strictness"], "strict_both")
+        d = r["probe_details"]["split_pos_2"]
+        self.assertTrue(d["connected"])
+        self.assertEqual(d["confidence"], 0.85)
+        # fake_tls-фейк не возвращает serverhello — детали заполняются None
+        self.assertIsNone(r["probe_details"]["fake_tls"]["serverhello"])
 
 
 if __name__ == "__main__":

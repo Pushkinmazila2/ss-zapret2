@@ -767,7 +767,11 @@ class PoolSwitcher:
             _sname = _ti_ctx["strategy_name"]
             if _sname:
                 _ti_ctx["nfqws_opt"] = load_strategy_nfqws(_sname)
-                _ti_ctx["strategy_score_before"] = float(self.strategy_scores.get(_sname, 0.0))
+                # None если истории нет — не маскируем отсутствующий скор
+                # нулём, иначе в датасете неотличимо от реального 0.0
+                _ti_ctx["strategy_score_before"] = (
+                    float(self.strategy_scores[_sname])
+                    if _sname in self.strategy_scores else None)
             
             threading.Thread(target=_tspu_intel.on_cut_async, args=(_ti_ctx,), daemon=True).start()
 

@@ -300,6 +300,13 @@ def dns_txt_query(name: str, server: str = None, timeout: float = 1.5):
     header = struct.pack("!HHHHHH", random.randint(0, 65535), 0x0100, 1, 0, 0, 0)
     msg = header + msg + struct.pack("!HH", 16, 1)  # qtype TXT, class IN
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # DNS-сокет тоже маркируем (SCANNER_FWMARK, дефолт DESYNC_MARK), чтобы
+    # исходящие DNS-пробы не попадали в NFQUEUE-правила zapret.
+    try:
+        _apply_probe_mark(s, _parse_mark_value(
+            os.environ.get("SCANNER_FWMARK", "0x40000000")))
+    except Exception:
+        pass
     s.settimeout(timeout)
     try:
         s.sendto(msg, (server, 53))
@@ -353,7 +360,8 @@ def lookup_asn(ip: str, server: str = None, timeout: float = 1.5):
     except Exception:
         ans = []
     if not ans:
-        return {"isp_asn": "AS_LOCAL", "isp_name": "LocalProvider"}
+        return {"isp_asn": "AS_LOCAL", "isp_name": "LocalProvider",
+                "fallback": True, "fallback_reason": "cymru_txt_no_answer"}
     line = "".join(ans)
     parts = [p.strip() for p in line.split("|")]
     as_raw = None; isp_name = "unknown"
@@ -367,7 +375,8 @@ def lookup_asn(ip: str, server: str = None, timeout: float = 1.5):
         if len(toks) >= 2:
             as_raw = toks[1]; isp_name = " ".join(toks[2:]) or "unknown"
     if not as_raw:
-        return {"isp_asn": "AS_LOCAL", "isp_name": "LocalProvider"}
+        return {"isp_asn": "AS_LOCAL", "isp_name": "LocalProvider",
+                "fallback": True, "fallback_reason": "cymru_txt_bad_asn"}
     digits = "".join(ch for ch in as_raw if ch.isdigit())
     isp_asn = ("AS" + digits) if digits else ("AS" + as_raw)
     return {"isp_asn": isp_asn, "isp_name": isp_name}
@@ -1272,6 +1281,16 @@ class TspuIntel:
             "meta": {"sni": self.sni, "ttl_max": self.ttl_max,
                      "dataset_path": self.intel_log.path},
         }
+        result["meta"]["ctx_fields"] = self._ctx_fields(ctx)
+        cf = result["meta"]["ctx_fields"]
+        self.log("info", "cut ctx intake: dst_ip=%s qnum=%s strategy=%s score=%s "
+                         "bytes_delta=%s lifetime=%s term=%s ctx_keys=%d" % (
+                     cf.get("remote_ip"), cf.get("qnum"), cf.get("strategy_name"),
+                     cf.get("strategy_score_before"),
+                     (cf.get("bytes_delta") if cf.get("bytes_delta_present")
+                      else "<absent>"),
+                     cf.get("lifetime_sec"), cf.get("termination_type"),
+                     cf.get("ctx_key_count")))
         if sim:
             result["meta"]["simulated"] = True
             result["meta"]["dry_run"] = True
@@ -1287,6 +1306,31 @@ class TspuIntel:
         result["tspu_l7_vulnerabilities"] = self._l7(ctx, dst, bd, sim)
         result["strategy_context"] = self._strategy(ctx)
         return result
+
+    def _ctx_fields(self, ctx):
+        """Провенанс входа: что детектор передал в момент среза. Пишется в
+        meta, чтобы датасет сам показывал, какие поля были доступны — иначе
+        пустые bytes_*/score неотличимы от «не измеряли»."""
+        def _present(k):
+            v = ctx.get(k)
+            return v is not None and v != ""
+        return {
+            "ctx_key_count": len(ctx),
+            "remote_ip": ctx.get("remote_ip") or ctx.get("ip") or ctx.get("dst"),
+            "remote_port": ctx.get("remote_port"),
+            "local_port": ctx.get("local_port"),
+            "qnum": ctx.get("qnum"),
+            "slot_index": ctx.get("slot_index"),
+            "sni": ctx.get("sni"),
+            "strategy_name": ctx.get("strategy_name"),
+            "strategy_score_before": ctx.get("strategy_score_before"),
+            "bytes_delta_present": _present("bytes_delta"),
+            "bytes_delta": ctx.get("bytes_delta"),
+            "lifetime_sec": ctx.get("lifetime_sec", ctx.get("lifetime")),
+            "reset_confirmed": bool(ctx.get("reset_confirmed")),
+            "event_kind": ctx.get("event_kind") or "classic",
+            "termination_type": ctx.get("termination_type"),
+        }
 
     def _ctx_sni(self, ctx):
         """Фактический SNI прогона: ctx -> домен из стратегии -> дефолт движка."""
@@ -1351,15 +1395,28 @@ class TspuIntel:
         isp = None
         try:
             isp = lookup_asn(dst, timeout=min(0.35, max(0.1, budget.remaining())))
-        except Exception:
+        except Exception as e:
+            self.log("warn", "asn lookup crashed for %s: %s" % (dst, e))
             isp = None
+        isp_source = "cymru_txt"
         if not isp:
             self._degraded.append("isp_lookup_failed")
             isp_name = "unknown"
+            isp_asn = "AS0"
+        elif isp.get("fallback"):
+            self._degraded.append("asn_unresolved_fallback")
+            isp_source = "fallback_local"
+            isp_asn = isp.get("isp_asn", "AS_LOCAL")
+            isp_name = isp.get("isp_name", "LocalProvider")
+            self.log("warn", "ASN lookup for %s fell back to %s/%s (%s): "
+                             "cymru TXT gave no usable answer" %
+                     (dst, isp_asn, isp_name, isp.get("fallback_reason", "?")))
         else:
+            isp_asn = isp.get("isp_asn", "AS0")
             isp_name = isp.get("isp_name", "unknown")
-        return {"isp_asn": (isp or {}).get("isp_asn", "AS0"),
+        return {"isp_asn": isp_asn,
                 "isp_name": isp_name,
+                "isp_source": isp_source,
                 "connection_type": classify_connection_type(dst, isp_name),
                 "target_host_type": classify_target_host(
                     ctx.get("strategy_name") or "", self.sni)}
@@ -1378,6 +1435,13 @@ class TspuIntel:
             # the queue aggregate is downstream (recv) only
             sent = None
             self._degraded.append("bytes_sent_unavailable")
+        else:
+            # отсутствие данных — тоже диагноз: в момент среза не было
+            # снапшота очереди (traffic) либо детектор не передал счётчики
+            self._degraded.append("bytes_delta_absent")
+            self.log("warn", "session profile: ctx.bytes_delta absent — queue "
+                             "traffic snapshot missing at cut time, bytes_* "
+                             "stay null in the vector")
         term = ctx.get("termination_type")
         if not term:
             if ctx.get("reset_confirmed"):
@@ -1432,6 +1496,9 @@ def _network(self, ctx, dst, budget: "_Budget", sim):
     if dst_hop is not None and tspu_h is not None and dst_hop >= tspu_h:
         delta = dst_hop - tspu_h
     sniffer.close()
+    self.log("info", "network scan done: dst_hop=%s tspu_hop=%s "
+                     "ttl_map_hops=%d degraded=%s" %
+             (dst_hop, tspu_h, len(tmap), self._degraded))
     return {"tspu_hop": tspu_h, "destination_hop": dst_hop,
             "delta_distance": delta, "ingress_ttl_est": near,
             "ttl_scan_map": tmap}
@@ -1442,7 +1509,8 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         return {"split_pos_2_bypass": True, "split_pos_5_bypass": False,
                 "seqovl_bypass": True, "disorder_bypass": False,
                 "fake_payload_strictness": "low_validation",
-                "quic_handshake_drop": True, "note": "simulated"}
+                "quic_handshake_drop": True, "probe_details": None,
+                "note": "simulated"}
     sniffer = _Sniffer(); sniffer.set_log(self.log)
     if not sniffer.open_or_dummy():
         self._degraded.append("sniffer_unavailable")
@@ -1504,19 +1572,45 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         qdrop = None; qctrl = None
     else:
         qdrop, qctrl = q[0], q[1]
+    # детали каждой пробы: отличаем «строгий ТСПУ» (conn=1,rst=1) от
+    # сломанной пробы (conn=0/None — timeout, нет SYN-ACK, инфраструктура)
+    details = {}
+    for key, r in (("split_pos_2", r2), ("split_pos_5", r5),
+                   ("seqovl", rseq), ("disorder", rdis),
+                   ("fake_tls", ftls), ("fake_random", frnd)):
+        if isinstance(r, dict) and r:
+            details[key] = {"connected": bool(r.get("connected")),
+                            "rst_received": r.get("rst_received"),
+                            "serverhello": r.get("serverhello"),
+                            "confidence": r.get("confidence")}
+        else:
+            details[key] = None
+    det_str = " ".join(
+        "%s[conn=%s,rst=%s,sh=%s,conf=%s]" % (k, d["connected"], d["rst_received"],
+                                              d["serverhello"], d["confidence"])
+        if isinstance(d, dict) else "%s[no_data]" % k
+        for k, d in details.items())
+    self.log("info", "l7 probes: s2=%s s5=%s seq=%s dis=%s strict=%s quic_drop=%s %s" %
+             (s2, s5, seq, dis, strict, qdrop, det_str))
     return {"split_pos_2_bypass": s2, "split_pos_5_bypass": s5,
             "seqovl_bypass": seq, "disorder_bypass": dis,
             "fake_payload_strictness": strict,
             "quic_handshake_drop": qdrop,
             "quic_control_ok": qctrl,
-            "quic_response_seen": (q is not None)}
+            "quic_response_seen": (q is not None),
+            "probe_details": details}
 
 
 def _strategy(self, ctx):
     name = ctx.get("strategy_name") or (ctx.get("slot") or {}).get("strategy") or "unknown"
     nfqws = ctx.get("nfqws_opt") or ctx.get("nfqws_raw") or ""
+    score = ctx.get("strategy_score_before")
+    if score is None:
+        self.log("warn", "strategy %s has no score history yet — "
+                         "strategy_score_before=null (это не реальный 0.0)" % name)
     return {"applied_strategy_name": name, "applied_strategy_raw": nfqws,
-            "strategy_score_before": ctx.get("strategy_score_before")}
+            "strategy_score_before": score,
+            "strategy_score_known": score is not None}
 
 
 # attach collector methods to the engine (keeps the class block readable above)
