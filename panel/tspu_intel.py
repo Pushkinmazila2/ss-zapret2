@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-TspuIntel - asynchronous TSPU (РЭБ) reconnaissance module for ML dataset.
+TspuIntel - asynchronous TSPU (РЭБ) reconnaissance module for logs.
 
 Triggered strictly at the moment a session cut is detected by the detector
 (conn_tracker -> PoolSwitcher.on_connection_cut -> TspuIntel.on_cut_async).
 Within a tight budget (<= ~2s) it collects an enriched feature vector that is
 appended to two sinks:
 
-  * an independent ML dataset JSONL (IntelLog)
+  * an independent JSONL (IntelLog)
   * a companion record in the cut journal (cut_logger, kind='tspu_intel')
 
 Implemented with the Python stdlib only (socket.SOCK_RAW, struct, socket).
@@ -38,16 +38,6 @@ DEFAULT_TTL_MAX   = 30
 DEFAULT_COOLDOWN  = 30
 DEFAULT_SNI       = "youtube.com"
 DEFAULT_TARGET_IP = "142.250.74.110"  # well-known anycast youtube ip
-
-# Our raw probes reuse the local nfqws2 "already handled" fwmark
-# (config DESYNC_MARK=0x40000000) so they bypass the ZAPRET_POOL in
-# mangle/POSTROUTING and measure the *bare* TSPU, not our own desync tricks.
-DEFAULT_PROBE_MARK = 0x40000000
-_RESOLVE_CACHE_TTL = 300.0          # seconds, per-hostname ip cache
-_MAX_ASN_CACHE     = 512
-_DNS_RESOLVERS     = ("8.8.8.8", "1.1.1.1", "77.88.8.8")
-_RESOLVE_CACHE     = {}             # host(str) -> (timestamp, ip)
-_ASN_CACHE         = {}             # ip(str) -> {"isp_asn","isp_name"}
 
 TCP_FIN = 0x01; TCP_SYN = 0x02; TCP_RST = 0x04; TCP_PSH = 0x08; TCP_ACK = 0x10
 TCP_URG = 0x20; TCP_ECE = 0x40; TCP_CWR = 0x80
@@ -340,15 +330,10 @@ def lookup_asn(ip: str, server: str = "8.8.8.8", timeout: float = 0.4):
     if len(octets) != 4:
         return None
     name = "origin." + ".".join(reversed(octets)) + ".asn.cymru.com"
-    ans = None
-    servers = list(dict.fromkeys([server] + _dns_resolvers()))
-    for srv in servers:
-        try:
-            ans = dns_txt_query(name, srv, timeout=timeout)
-        except Exception:
-            ans = None
-        if ans:
-            break
+    try:
+        ans = dns_txt_query(name, server, timeout=timeout)
+    except Exception:
+        ans = []
     if not ans:
         return None
     line = "".join(ans)
@@ -401,77 +386,6 @@ def classify_target_host(strategy_name: str, sni: str) -> str:
     if "twitch" in low:
         return "twitch_stream"
     return "general_https"
-
-
-def _guess_domain(sni):
-    """Best-effort hostname from a strategy label or real host.
-
-    "youtube_com_007"  -> "youtube.com"
-    "discord_com"      -> "discord.com"
-    "redirector.googlevideo.com" -> unchanged
-    """
-    s = str(sni or "").strip()
-    if not s:
-        return None
-    if "." in s:
-        d = s
-    else:
-        core = s
-        while core and core[-1].isdigit():   # strip "_007" / "123"
-            core = core[:-1]
-        if core.endswith("_"):
-            core = core[:-1]
-        d = core.replace("_", ".")
-    if "." in d and d[0].isalnum() and not any(ch.isspace() for ch in d):
-        return d
-    return None
-
-
-def _dns_resolvers():
-    """System nameservers + hardcoded fallbacks, deduplicated, order stable."""
-    out, seen = [], set()
-    for cand in _DNS_RESOLVERS:
-        if cand not in seen:
-            seen.add(cand)
-            out.append(cand)
-    try:
-        with open("/etc/resolv.conf", "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) >= 2 and parts[0] == "nameserver":
-                    ip = parts[1]
-                    if ip not in seen:
-                        seen.add(ip)
-                        out.append(ip)
-    except Exception:
-        pass
-    return out or list(_DNS_RESOLVERS)
-
-
-def _lookup_asn_cached(ip, timeout=0.35):
-    """lookup_asn() with module cache; returns dict or None."""
-    cached = _ASN_CACHE.get(ip)
-    if cached is not None:
-        return cached
-    isp = lookup_asn(ip, timeout=timeout)
-    if isp:
-        if len(_ASN_CACHE) < _MAX_ASN_CACHE:
-            _ASN_CACHE[ip] = isp
-        return isp
-    return None
-
-
-def _asn_worker(out, target_ip):
-    try:
-        out["isp"] = _lookup_asn_cached(target_ip, timeout=0.35)
-    except Exception:
-        out["isp"] = None
-
-
-def _reset_dns_caches():
-    """Flush in-memory resolve/asn caches (used by tests)."""
-    _RESOLVE_CACHE.clear()
-    _ASN_CACHE.clear()
 
 
 def local_ip_for(dst: str):
@@ -614,7 +528,7 @@ class _RawIO:
     """Per-flow raw sender that pairs with a shared _Sniffer."""
 
     def __init__(self, src: str, dst: str, dport: int = 443, sniffer=None,
-                 log_fn=None, probe_mark=None):
+                 log_fn=None):
         self.src = src; self.dst = dst; self.dport = dport; self.sni = sniffer
         self.log = log_fn or (lambda lvl, msg: None)
         self.sport = random.randint(32768, 61000)
@@ -623,14 +537,6 @@ class _RawIO:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
             s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-            if probe_mark is not None and hasattr(socket, "SO_MARK"):
-                # tag our probes with the nfqws2 "handled" fwmark so they are
-                # skipped by the ZAPRET_POOL chain (bare TSPU measurements)
-                try:
-                    s.setsockopt(socket.SOL_SOCKET, socket.SO_MARK,
-                                 int(probe_mark))
-                except OSError as e:
-                    self.log("warn", "SO_MARK not permitted: %s" % e)
             self._send = s
         except OSError as e:
             self.log("warn", "raw send socket unavailable: %s" % e)
@@ -721,65 +627,37 @@ class _RawIO:
 
 
 def scan_destination_hop(dst, src, sport, sniffer, budget,
-                         max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None,
-                         probe_mark=None):
-    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn,
-                probe_mark=probe_mark)
+                         max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None):
+    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn)
     io.sport = sport
     step = 6
     ttl = 1
     first_hit = None
     ttl_map = {}
     seq = 0
-    seq_to_ttl = {}
     since0 = time.monotonic()
     while ttl <= max_ttl and (time.monotonic() - since0) < budget:
         batch = list(range(ttl, min(ttl + step, max_ttl + 1)))
         for t in batch:
             seq = (seq + 1) & 0x7FFFFFFF
-            seq_to_ttl[seq] = t
             io.send(io.tcp_pkt(seq, 0, TCP_SYN, b"", ttl=t, window=16384))
         wstart = time.monotonic(); time.sleep(0.05); end = time.monotonic()
         matches = sniffer.query(wstart, lambda x: True) if sniffer else []
-        reply_ttl = set()
-        for x in matches:
-            if not (wstart <= x["t"] <= end):
-                continue
-            if x.get("proto") == 1 and x.get("icmp_type") == 11:
-                # ICMP time-exceeded from an intermediate router: it echoes our
-                # SYN; verify via inner IP dst + TCP dport, attribute by seq
-                inner = x.get("inner")
-                if not inner or inner.get("proto") != 6 or inner.get("dst") != dst:
-                    continue
-                tp = parse_tcp(inner.get("payload") or b"")
-                if not tp or tp.get("sport") != sport:
-                    continue
-                st = seq_to_ttl.get(tp.get("seq"))
-                if st is not None:
-                    ttl_map.setdefault(st, "icmp-ttl-exceed")
-                continue
-            if x.get("proto") != 6 or x.get("src") != dst or x.get("dport") != sport:
-                continue
-            if not (x["flags"] & (TCP_RST | TCP_SYN)):
-                continue
-            # SYN/ACK (or RST) from the dst: correlate via ack == ourseq + 1
-            s = (x.get("ack", 0) - 1) & 0x7FFFFFFF
-            st = seq_to_ttl.get(s)
-            if st is not None:
-                reply_ttl.add(st)
         for t in batch:
-            if t in reply_ttl:
+            hit = [x for x in matches if wstart <= x["t"] <= end
+                   and x["src"] == dst and x["dport"] == sport
+                   and (x["flags"] & (TCP_RST | TCP_SYN))]
+            if hit:
                 ttl_map[t] = "syn-ack/rst-from-dst"
                 if first_hit is None:
                     first_hit = t
-            elif t not in ttl_map:
+            else:
                 ttl_map[t] = "no-dst-reply"
         if first_hit is not None:
             break
         ttl += step
     io.close()
-    return first_hit, ttl_map
-# - rst classification + tspu ttl scan -
+    return (first_hit, ttl_map) if first_hit is not None else (None, ttl_map)# - rst classification + tspu ttl scan -
 
 def _rst_tspu_confidence(x, dst, sport, dest_hop=None):
     server_ttl = (64 - dest_hop) if dest_hop else 60
@@ -802,10 +680,8 @@ def _rst_from_dst(dst, sport):
 
 
 def scan_tspu_hop(dst, src, sni, sport, sniffer, budget, dest_hop,
-                  max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None,
-                  probe_mark=None):
-    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn,
-                probe_mark=probe_mark)
+                  max_ttl=DEFAULT_TTL_MAX, log_fn=lambda lvl, msg: None):
+    io = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn)
     io.sport = sport
     ch = build_tls_client_hello(sni)
     ack, ok = io.handshake(0.45)
@@ -842,14 +718,12 @@ def _dead():
 
 
 class TspuProber:
-    def __init__(self, src, dst, sni, sniffer, log_fn, probe_mark=None):
+    def __init__(self, src, dst, sni, sniffer, log_fn):
         self.src = src; self.dst = dst; self.sni_name = sni
         self.sniffer = sniffer; self.log = log_fn
-        self.probe_mark = probe_mark
 
     def _connect(self, timeout=0.45):
-        io = _RawIO(self.src, self.dst, 443, self.sniffer, self.log,
-                    probe_mark=self.probe_mark)
+        io = _RawIO(self.src, self.dst, 443, self.sniffer, self.log)
         ack, ok = io.handshake(timeout)
         return io, ack, ok
 
@@ -930,28 +804,21 @@ class TspuProber:
 
 
 def _udp_dns_alive(server="8.8.8.8", timeout=0.22):
-    # try several resolvers: one blocked DNS server is not a conclusive
-    # "no udp connectivity" signal
-    servers = list(dict.fromkeys([server] + _dns_resolvers()))
-    for srv in servers:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(timeout)
-            tid = random.randint(0, 0xFFFF)
-            name = "asn.%d.probe" % random.randint(10000, 99999)
-            q = _dns_encode_name(name) + struct.pack("!HH", 1, 1)
-            hdr = struct.pack("!HHHHHH", tid, 0x0100, 1, 0, 0, 0x0200)
-            s.sendto(hdr + q, (srv, 53)); data, _ = s.recvfrom(512); s.close()
-            return len(data) > 0
-        except OSError:
-            continue
-    return False
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(timeout)
+        tid = random.randint(0, 0xFFFF)
+        name = "asn.%d.probe" % random.randint(10000, 99999)
+        q = _dns_encode_name(name) + struct.pack("!HH", 1, 1)
+        hdr = struct.pack("!HHHHHH", tid, 0x0100, 1, 0, 0, 0x0200)
+        s.sendto(hdr + q, (server, 53)); data, _ = s.recvfrom(512); s.close()
+        return len(data) > 0
+    except OSError:
+        return False
 
 
-def test_quic(dst, src, sni, sniffer, budget=0.4, log_fn=lambda lvl, msg: None,
-              probe_mark=None):
+def test_quic(dst, src, sni, sniffer, budget=0.4, log_fn=lambda lvl, msg: None):
     ctrl = _udp_dns_alive(timeout=0.2)
-    qio = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn,
-                 probe_mark=probe_mark)
+    qio = _RawIO(src, dst, dport=443, sniffer=sniffer, log_fn=log_fn)
     sport = qio.sport
     since = time.monotonic()
     qio.send(qio.udp_pkt(sport, 4740, b"\x00", ttl=64))
@@ -1086,8 +953,7 @@ class TspuIntel:
 
     def __init__(self, path=None, log_fn=None, enabled=True, cooldown=None,
                  budget_ms=DEFAULT_BUDGET_MS, ttl_max=DEFAULT_TTL_MAX,
-                 sni=DEFAULT_SNI, dry_run=False, raw_available=None,
-                 probe_mark=DEFAULT_PROBE_MARK):
+                 sni=DEFAULT_SNI, dry_run=False, raw_available=None):
         self.log = log_fn or (lambda lvl, msg: print("[tspu-intel][%s] %s" % (lvl, msg), flush=True))
         self.intel_log = IntelLog(path=path or "/opt/zapret2/logs/tspu_intel.jsonl")
         self.enabled = bool(enabled)
@@ -1098,7 +964,6 @@ class TspuIntel:
         self.dry_run = bool(dry_run)
         self.raw_available = bool(raw_available if raw_available is not None else _raw_enabled())
         self.sim_mode = bool(self.dry_run or not self.raw_available)
-        self.probe_mark = int(probe_mark) if probe_mark is not None else None
         self._lock = threading.RLock()
         self._last_run_ts = None
         self._last_result_ts = None
@@ -1138,7 +1003,6 @@ class TspuIntel:
                 "ttl_max": self.ttl_max,
                 "sni": self.sni,
                 "raw_available": self.raw_available,
-                "probe_mark": self.probe_mark,
                 "mode": "dry_run" if self.sim_mode else "active",
                 "last_run_ts": _iso(self._last_run_ts) if self._last_run_ts else None,
                 "last_result_ts": _iso(self._last_result_ts) if self._last_result_ts else None,
@@ -1166,9 +1030,6 @@ class TspuIntel:
 
     def _guarded_run(self, ctx: dict):
         start = time.monotonic()
-        # per-run degradation marks: never leak state between two probes
-        with self._lock:
-            self._degraded = []
         self.log("info", "probe started (mode=%s, sni=%s)" % (
             "dry_run" if self.sim_mode else "active", self.sni))
         try:
@@ -1182,7 +1043,7 @@ class TspuIntel:
             meta = result.setdefault("meta", {})
             meta["elapsed_ms"] = elapsed
             meta["mode"] = "dry_run" if self.sim_mode else "active"
-            meta["degraded"] = sorted(set(self._degraded))
+            meta["degraded"] = list(self._degraded)
             meta["partial"] = bool(self._degraded)
         try:
             self.intel_log.record(result)
@@ -1206,92 +1067,63 @@ class TspuIntel:
     def run(self, ctx: dict) -> dict:
         bd = _Budget(self.budget_ms / 1000.0)
         sim = self.sim_mode
-        sni = ctx.get("sni") or ctx.get("hostname") or _guess_domain(ctx.get("strategy_name")) or self.sni
         result = {
             "dataset_version": DATASET_VERSION,
             "ts": _utcnow_iso(),
-            "meta": {"sni": sni, "ttl_max": self.ttl_max,
+            "meta": {"sni": self.sni, "ttl_max": self.ttl_max,
                      "dataset_path": self.intel_log.path},
         }
         if sim:
             result["meta"]["simulated"] = True
             result["meta"]["dry_run"] = True
             self.log("warn", "dry-run simulator: raw socket unavailable")
-        dst = self._resolve_dst(ctx, bd, sni)
-        result["meta"]["dst"] = dst
-        # resolve ASN offline so it never eats the active probe budget
-        asn_res = {"isp": None}
-        if not sim:
-            t = threading.Thread(target=_asn_worker, args=(asn_res, dst),
-                                 daemon=True, name="tspu-asn")
-            t.start()
-        try:
-            result["session_profile"] = self._session(ctx)
-            result["tspu_network_metrics"] = self._network(ctx, dst, bd, sim)
-            result["tspu_l7_vulnerabilities"] = self._l7(ctx, dst, bd, sim)
-        finally:
-            if not sim:
-                rem = bd.remaining()
-                if rem > 0.05:
-                    t.join(min(0.4, rem))
-        result["environment"] = self._environment(ctx, dst, bd, sim, asn_res["isp"])
+        dst = self._resolve_dst(ctx, bd)
+        result["environment"] = self._environment(ctx, dst, bd, sim)
+        result["session_profile"] = self._session(ctx)
+        result["tspu_network_metrics"] = self._network(ctx, dst, bd, sim)
+        result["tspu_l7_vulnerabilities"] = self._l7(ctx, dst, bd, sim)
         result["strategy_context"] = self._strategy(ctx)
-        # keep the original block order: environment right after meta
-        env = result.pop("environment")
-        head = {}
-        for k in ("dataset_version", "ts", "meta"):
-            head[k] = result.pop(k)
-        head["environment"] = env
-        head.update(result)
-        return head
+        return result
 
-    def _resolve_dst(self, ctx, budget: _Budget, sni=None):
-        # 1. explicit IP from any context key
-        ip = ctx.get("remote_ip") or ctx.get("ip") or ctx.get("dst")
+    def _resolve_dst(self, ctx, budget: _Budget):
+        # 1. Пытаемся взять IP из всех возможных вариаций ключей контекста
+        ip = ctx.get("remote_ip") or ctx.get("ip") or ctx.get("dst") or ctx.get("remote_host")
         if ip:
             return ip
-        # 2. hostname: context itself may carry a host or a strategy label
-        host_src = ctx.get("sni") or ctx.get("hostname") or ctx.get("remote_host")
-        host = _guess_domain(host_src) or _guess_domain(sni) or self.sni
-        if len(host) <= 2:
-            return DEFAULT_TARGET_IP
-        now = time.time()
-        hit = _RESOLVE_CACHE.get(host)
-        if hit and (now - hit[0]) < _RESOLVE_CACHE_TTL:
-            return hit[1]
+            
+        # 2. Пытаемся динамически взять SNI из контекста сессии, если он там есть
+        ctx_sni = ctx.get("sni") or ctx.get("hostname") or ctx.get("applied_strategy_name")
+        sni_to_resolve = ctx_sni if ctx_sni else self.sni
+        
         left = budget.remaining()
-        if left <= 0.1 and not hit:
+        if left <= 0.1:
             return DEFAULT_TARGET_IP
-        res = {"ip": hit[1] if hit else None}
-
+        res = {"ip": None}
         def _w():
             try:
-                infos = socket.getaddrinfo(host.lower(), 443, socket.AF_INET,
+                # Резолвим динамический SNI вместо жесткого дефолта
+                infos = socket.getaddrinfo(sni_to_resolve, 443, socket.AF_INET,
                                            socket.SOCK_STREAM)
                 if infos:
                     res["ip"] = infos[0][4][0]
             except Exception:
                 res["ip"] = None
-
-        t = threading.Thread(target=_w, daemon=True, name="tspu-resolve")
-        t.start()
-        t.join(max(0.05, min(left, 0.4)))
-        if res["ip"]:
-            _RESOLVE_CACHE[host] = (time.time(), res["ip"])
-        return res["ip"] or (hit[1] if hit else None) or DEFAULT_TARGET_IP
+        t = threading.Thread(target=_w, daemon=True)
+        t.start(); t.join(max(0.1, min(left, 0.4)))
+        return res["ip"] or DEFAULT_TARGET_IP
 
 
-    def _environment(self, ctx, dst, budget: _Budget, sim, isp=None):
+    def _environment(self, ctx, dst, budget: _Budget, sim):
         if sim:
             return {"isp_asn": "AS12345", "isp_name": "Rostelecom-sim",
                     "connection_type": "broadband",
                     "target_host_type": classify_target_host(
                         ctx.get("strategy_name") or "", self.sni)}
-        if isp is None:
-            try:
-                isp = lookup_asn(dst, timeout=min(0.35, max(0.1, budget.remaining())))
-            except Exception:
-                isp = None
+        isp = None
+        try:
+            isp = lookup_asn(dst, timeout=min(0.35, max(0.1, budget.remaining())))
+        except Exception:
+            isp = None
         if not isp:
             self._degraded.append("isp_lookup_failed")
             isp_name = "unknown"
@@ -1311,14 +1143,12 @@ class TspuIntel:
             lifetime = 0.0
         bdelta = ctx.get("bytes_delta")
         recv = None; sent = None
-        bsource = ctx.get("bytes_source")
         if bdelta is not None:
             recv = int(bdelta)
             # per-flow tx is unavailable here (no nf_conntrack host access);
             # the queue aggregate is downstream (recv) only
             sent = None
-            if not bsource:
-                self._degraded.append("bytes_sent_unavailable")
+            self._degraded.append("bytes_sent_unavailable")
         term = ctx.get("termination_type")
         if not term:
             if ctx.get("reset_confirmed"):
@@ -1330,14 +1160,12 @@ class TspuIntel:
         return {"session_lifetime_sec": round(lifetime, 3),
                 "bytes_sent_before_cut": sent,
                 "bytes_recv_before_cut": recv,
-                "bytes_source": bsource or "unknown",
                 "termination_type": term}# - network metrics (TTL scan) + L7 micro-tests -
 
 def _empty_l7(note="no_data"):
     return {"split_pos_2_bypass": None, "split_pos_5_bypass": None,
             "seqovl_bypass": None, "disorder_bypass": None,
             "fake_payload_strictness": None, "quic_handshake_drop": None,
-            "quic_response_seen": False, "tspu_reachable": None,
             "note": note}
 
 
@@ -1359,26 +1187,17 @@ def _network(self, ctx, dst, budget: "_Budget", sim):
     try:
         dst_hop, tmap = scan_destination_hop(
             dst, src, random.randint(32768, 60000), sniffer,
-            budget.remaining() * 0.45, self.ttl_max, self.log,
-            probe_mark=self.probe_mark)
+            budget.remaining() * 0.45, self.ttl_max, self.log)
     except Exception as e:
         self.log("warn", "destination_hop scan failed: %s" % e)
         self._degraded.append("dest_hop_failed"); dst_hop = None; tmap = {}
-    # fallback: dst didn't answer TCP but routers leaked ICMP time-exceeded;
-    # the largest observed hop + 1 is a lower-bound estimate of the dst hop
-    if dst_hop is None and tmap:
-        icmp_hops = [k for k, v in tmap.items() if v == "icmp-ttl-exceed"]
-        if icmp_hops:
-            dst_hop = max(icmp_hops) + 1
-            self._degraded.append("dst_hop_icmp_estimated")
     tspu_h = None; near = None
     if budget.ok():
         try:
             tspu_h, near = scan_tspu_hop(dst, src, self.sni,
                                         random.randint(32768, 60000), sniffer,
                                         budget.remaining() * 0.55, dst_hop,
-                                        self.ttl_max, self.log,
-                                        probe_mark=self.probe_mark)
+                                        self.ttl_max, self.log)
         except Exception as e:
             self.log("warn", "tspu_hop scan failed: %s" % e)
             self._degraded.append("tspu_hop_failed")
@@ -1396,15 +1215,13 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         return {"split_pos_2_bypass": True, "split_pos_5_bypass": False,
                 "seqovl_bypass": True, "disorder_bypass": False,
                 "fake_payload_strictness": "low_validation",
-                "quic_handshake_drop": True, "quic_response_seen": False,
-                "tspu_reachable": True, "note": "simulated"}
+                "quic_handshake_drop": True, "note": "simulated"}
     sniffer = _Sniffer(); sniffer.set_log(self.log)
     if not sniffer.open_or_dummy():
         self._degraded.append("sniffer_unavailable")
         return _empty_l7("sniffer_unavailable")
     src = local_ip_for(dst) or "127.0.0.1"
-    pb = TspuProber(src, dst, self.sni, sniffer, self.log,
-                    probe_mark=self.probe_mark)
+    pb = TspuProber(src, dst, self.sni, sniffer, self.log)
     ex = ThreadPoolExecutor(max_workers=4)
     futs = {}
     try:
@@ -1415,8 +1232,7 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         futs["ftls"] = ex.submit(pb.test_fake_tls)
         futs["frnd"] = ex.submit(pb.test_fake_random)
         futs["q"] = ex.submit(test_quic, dst, src, self.sni, sniffer,
-                              max(0.1, budget.remaining() * 0.9), self.log,
-                              self.probe_mark)
+                              max(0.1, budget.remaining() * 0.9), self.log)
 
         def _g(key, default=None):
             try:
@@ -1459,20 +1275,12 @@ def _l7(self, ctx, dst, budget: "_Budget", sim):
         qdrop = None; qctrl = None
     else:
         qdrop, qctrl = q[0], q[1]
-    out = {"split_pos_2_bypass": s2, "split_pos_5_bypass": s5,
-           "seqovl_bypass": seq, "disorder_bypass": dis,
-           "fake_payload_strictness": strict,
-           "quic_handshake_drop": qdrop,
-           "quic_control_ok": qctrl,
-           "quic_response_seen": (q is not None)}
-    conn_cnt = sum(1 for r in (r2, r5, rseq, rdis, ftls, frnd)
-                   if r and r.get("connected"))
-    out["tspu_reachable"] = bool(conn_cnt)
-    if not conn_cnt:
-        # absolute negative: no probe got past the handshake at all
-        out["note"] = "dst_unreachable"
-        self._degraded.append("dst_unreachable")
-    return out
+    return {"split_pos_2_bypass": s2, "split_pos_5_bypass": s5,
+            "seqovl_bypass": seq, "disorder_bypass": dis,
+            "fake_payload_strictness": strict,
+            "quic_handshake_drop": qdrop,
+            "quic_control_ok": qctrl,
+            "quic_response_seen": (q is not None)}
 
 
 def _strategy(self, ctx):
@@ -1511,16 +1319,6 @@ def _env_int(name, default):
         return int(default)
 
 
-def _env_probe_mark(name="TSPU_INTEL_PROBE_MARK", default=DEFAULT_PROBE_MARK):
-    v = os.environ.get(name) or os.environ.get("DESYNC_MARK")
-    if not v:
-        return int(default)
-    try:
-        return int(v, 16) if str(v).lower().startswith("0x") else int(v)
-    except (TypeError, ValueError):
-        return int(default)
-
-
 def _default_intel_path():
     cut = os.environ.get("CUT_LOG_PATH")
     if cut:
@@ -1539,8 +1337,7 @@ def build_tspu_intel_from_env(log_fn=None):
                      budget_ms=_env_int("TSPU_INTEL_BUDGET_MS", DEFAULT_BUDGET_MS),
                      ttl_max=_env_int("TSPU_INTEL_TTL_MAX", DEFAULT_TTL_MAX),
                      sni=os.environ.get("TSPU_INTEL_SNI") or DEFAULT_SNI,
-                     dry_run=_env_bool("TSPU_INTEL_DRY_RUN", False),
-                     probe_mark=_env_probe_mark())
+                     dry_run=_env_bool("TSPU_INTEL_DRY_RUN", False))
 
 
 # - smoke run (dry-run by default outside Linux) -

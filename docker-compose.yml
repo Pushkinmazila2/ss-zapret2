@@ -14,13 +14,6 @@ services:
       - PANEL_PORT=${PANEL_PORT:-1888}
       - CUT_LOG_PATH=${CUT_LOG_PATH:-}
       - NFQWS2_EXTRA_ARGS=${NFQWS2_EXTRA_ARGS:-}
-      - TSPU_INTEL_ENABLE=${TSPU_INTEL_ENABLE:-true}
-      - TSPU_INTEL_COOLDOWN=${TSPU_INTEL_COOLDOWN:-30}
-      - TSPU_INTEL_BUDGET_MS=${TSPU_INTEL_BUDGET_MS:-1800}
-      - TSPU_INTEL_TTL_MAX=${TSPU_INTEL_TTL_MAX:-30}
-      - TSPU_INTEL_SNI=${TSPU_INTEL_SNI:-youtube.com}
-      - TSPU_INTEL_DRY_RUN=${TSPU_INTEL_DRY_RUN:-false}
-      - TSPU_INTEL_PROBE_MARK=${TSPU_INTEL_PROBE_MARK:-}
     ports:
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/tcp"
       - "127.0.0.1:${SS_PORT}:${SS_PORT}/udp"
@@ -35,6 +28,8 @@ services:
       - ./scripts/examples:/opt/zapret2/init.d/custom.d.examples.linux
       - ./scripts/custom.d:/opt/zapret2/init.d/sysv/custom.d
       - ./logs:/opt/zapret2/logs
+      - /proc/net/nf_conntrack:/proc/net/nf_conntrack:ro
+      - /sys:/sys:ro
     networks:
       - default
       - s-ui_network
