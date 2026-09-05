@@ -1464,6 +1464,30 @@ def _empty_l7(note="no_data"):
             "note": note}
 
 
+def _ttl_map_summary(tmap, dst_hop):
+    """Компактная выжимка ttl_scan_map: «молчание» промежуточных хопов —
+    тоже данные о сети (роутеры без ICMP-ответов). Даёт границу достижимости
+    цели без чтения 30 строк карты."""
+    icmp_hops = []
+    reply_hops = []
+    silent = 0
+    for t, v in (tmap or {}).items():
+        try:
+            ti = int(t)
+        except (TypeError, ValueError):
+            continue
+        if v == "icmp-ttl-exceed":
+            icmp_hops.append(ti)
+        elif v == "syn-ack/rst-from-dst":
+            reply_hops.append(ti)
+        elif v == "no-dst-reply":
+            silent += 1
+    return {"silent_hops": silent,
+            "icmp_hops": sorted(icmp_hops),
+            "first_dst_reply_ttl": (min(reply_hops) if reply_hops else None),
+            "exact_dst_hop": dst_hop}
+
+
 # collector methods are attached below via monkey-patch
 def _network(self, ctx, dst, budget: "_Budget", sim):
     if sim:
@@ -1498,12 +1522,15 @@ def _network(self, ctx, dst, budget: "_Budget", sim):
     if dst_hop is not None and tspu_h is not None and dst_hop >= tspu_h:
         delta = dst_hop - tspu_h
     sniffer.close()
-    self.log("info", "network scan done: dst_hop=%s tspu_hop=%s "
-                     "ttl_map_hops=%d degraded=%s" %
-             (dst_hop, tspu_h, len(tmap), self._degraded))
+    summ = _ttl_map_summary(tmap, dst_hop)
+    self.log("info", "network scan done: dst_hop=%s tspu_hop=%s map_summary=%s "
+                     "degraded=%s" % (dst_hop, tspu_h,
+                                      json.dumps(summ, separators=(",", ":")),
+                                      self._degraded))
     return {"tspu_hop": tspu_h, "destination_hop": dst_hop,
             "delta_distance": delta, "ingress_ttl_est": near,
-            "ttl_scan_map": tmap}
+            "ttl_scan_map": tmap,
+            "ttl_map_summary": summ}
 
 
 def _l7(self, ctx, dst, budget: "_Budget", sim):

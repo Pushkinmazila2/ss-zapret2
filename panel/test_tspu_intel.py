@@ -16,7 +16,7 @@ from tspu_intel import (
     DATASET_VERSION, DEFAULT_PROBE_MARK, DEFAULT_TARGET_IP, IntelLog,
     TspuIntel, _Budget, _RESOLVE_CACHE, _apply_probe_mark, _dns_encode_name,
     _dns_resolvers, _guess_domain, _parse_mark_value, _parse_name,
-    _raw_enabled, _reset_dns_caches, build_ip_header, build_tcp_packet,
+    _raw_enabled, _reset_dns_caches, _ttl_map_summary, build_ip_header, build_tcp_packet,
     build_tls_client_hello, build_quic_initial, classify_connection_type,
     classify_target_host, ip_checksum, lookup_asn, parse_ip, parse_tcp,
     scan_destination_hop, split_payload, tls_is_serverhello,
@@ -394,6 +394,19 @@ class TestIntelFixes(unittest.TestCase):
         self.assertEqual(env["isp_source"], "fallback_local")
         self.assertEqual(env["isp_asn"], "AS_LOCAL")
         self.assertIn("asn_unresolved_fallback", self.engine._degraded)
+
+    def test_ttl_map_summary(self):
+        tmap = {1: "no-dst-reply", 2: "no-dst-reply", 3: "icmp-ttl-exceed",
+                5: "syn-ack/rst-from-dst", 6: "syn-ack/rst-from-dst"}
+        s = _ttl_map_summary(tmap, 5)
+        self.assertEqual(s["silent_hops"], 2)
+        self.assertEqual(s["icmp_hops"], [3])
+        self.assertEqual(s["first_dst_reply_ttl"], 5)
+        self.assertEqual(s["exact_dst_hop"], 5)
+        empty = _ttl_map_summary({}, None)
+        self.assertEqual(empty["silent_hops"], 0)
+        self.assertIsNone(empty["first_dst_reply_ttl"])
+        self.assertIsNone(empty["exact_dst_hop"])
 
     def test_l7_probe_details_active(self):
         import tspu_intel as ti

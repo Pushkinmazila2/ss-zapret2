@@ -548,6 +548,21 @@ class PoolSwitcher:
 
     # ── ротация при срезе ТСПУ (соединение срезано через 30-60с) ───────
 
+    def _traffic_for_qnum(self, qnum):
+        """Агрегат очереди NFQUEUE для qnum ({} — если недоступен)."""
+        if qnum is None:
+            return {}
+        try:
+            t = (self._pool.get_traffic_stats().get(qnum)) or {}
+            return {
+                "qnum": qnum, "pkts_delta": t.get("pkts_delta"),
+                "bytes_delta": t.get("bytes_delta"), "kbps": t.get("kbps"),
+                "share": t.get("share"), "active": t.get("active"),
+                "source": t.get("source"),
+            }
+        except Exception:
+            return {}
+
     def on_connection_cut(self, event):
         """
         Колбэк от LifetimeTracker: соединение срезано ТСПУ.
@@ -602,18 +617,7 @@ class PoolSwitcher:
                 resolve_reason = "slot_for_conn error: %s" % e
 
         qnum = slot_info.get("qnum") if isinstance(slot_info, dict) else None
-        traffic = {}
-        if qnum is not None:
-            try:
-                t = (self._pool.get_traffic_stats().get(qnum)) or {}
-                traffic = {
-                    "qnum": qnum, "pkts_delta": t.get("pkts_delta"),
-                    "bytes_delta": t.get("bytes_delta"), "kbps": t.get("kbps"),
-                    "share": t.get("share"), "active": t.get("active"),
-                    "source": t.get("source"),
-                }
-            except Exception:
-                traffic = {}
+        traffic = self._traffic_for_qnum(qnum)
 
         try:
             reset_st = reset_monitor.get_status()
@@ -659,6 +663,16 @@ class PoolSwitcher:
                     nfqws_tail = self._pool.slot_log_tail(best["index"], 40)
             except Exception:
                 pass
+        # guessed-фолбэк мог подставить слот ПОСЛЕ первичного вычисления qnum —
+        # пересобираем qnum/traffic, иначе в tspu_intel уходят qnum=null и
+        # bytes_delta=null при полностью рабочем слоте
+        if isinstance(slot_info, dict) and qnum is None:
+            qnum = slot_info.get("qnum")
+            if qnum is not None:
+                traffic = self._traffic_for_qnum(qnum)
+                self._log_event("info",
+                                "Слот угадан (conntrack не ответил): "
+                                "index=%s qnum=%s" % (slot_info.get("index"), qnum))
         # хвосты всех живых слотов — контекст есть даже без определения слота
         for s in alive_slots:
             try:
