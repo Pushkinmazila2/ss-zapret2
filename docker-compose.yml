@@ -33,7 +33,6 @@ services:
       # - /proc/net/nf_conntrack:/proc/net/nf_conntrack:ro
       - /proc:/host/proc:ro
       - /sys:/sys:ro
-    network_mode: "bridge" 
     networks:
       - default
       - s-ui_network
