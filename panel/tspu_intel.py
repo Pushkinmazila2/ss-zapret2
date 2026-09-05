@@ -421,6 +421,9 @@ def classify_target_host(strategy_name: str, sni: str) -> str:
 
 _RESOLVE_TTL = 600.0  # seconds a cached A record stays hot
 _RESOLVE_CACHE = {}   # name -> (wall_ts, ipv4)
+_ASN_CACHE = {}       # ip -> (wall_ts, ttl_sec, result_dict)
+_ASN_TTL_OK = 600.0       # успешный Cymru-ответ
+_ASN_TTL_FALLBACK = 60.0  # фолбэк AS_LOCAL — короткий, чтобы снова попробовать
 
 
 def _dns_resolvers():
@@ -821,6 +824,7 @@ def scan_destination_hop(dst, src, sport, sniffer, budget,
     ttl = 1
     first_hit = None
     ttl_map = {}
+    hit_ttls = set()   # хопы с ответом, но без ack-подтверждения (fallback)
     since0 = time.monotonic()
     while ttl <= max_ttl and (time.monotonic() - since0) < budget:
         batch = list(range(ttl, min(ttl + step, max_ttl + 1)))
@@ -835,9 +839,15 @@ def scan_destination_hop(dst, src, sport, sniffer, budget,
                    and x["src"] == dst and x["dport"] == sport
                    and (x["flags"] & (TCP_RST | TCP_SYN))]
             if hit:
-                ttl_map[t] = "syn-ack/rst-from-dst"
-                if first_hit is None and any(x.get("ack") == t + 1 for x in hit):
-                    first_hit = t
+                # карту помечаем только по точному ack==seq+1: иначе граница
+                # достижимости размазывается по всей пачке (19..24 вместо 23)
+                if any(x.get("ack") == t + 1 for x in hit):
+                    ttl_map[t] = "syn-ack/rst-from-dst"
+                    if first_hit is None:
+                        first_hit = t
+                else:
+                    ttl_map[t] = "no-dst-reply"
+                    hit_ttls.add(t)
             else:
                 ttl_map[t] = "no-dst-reply"
                 if _icmp_quoted_ttl(matches, dst, t, wstart, end):
@@ -846,12 +856,11 @@ def scan_destination_hop(dst, src, sport, sniffer, budget,
             break
         ttl += step
     io.close()
-    if first_hit is None:
-        # fallback: no ack-confirmed hit — trust the first hop that answered
-        for t in sorted(ttl_map):
-            if ttl_map[t] == "syn-ack/rst-from-dst":
-                first_hit = t
-                break
+    if first_hit is None and hit_ttls:
+        # ack-аттрибуция не подтвердилась (напр. RST без нашего seq) —
+        # доверяем первому хопу, от которого пришёл любой ответ
+        first_hit = min(hit_ttls)
+        ttl_map[first_hit] = "syn-ack/rst-from-dst"
     return (first_hit, ttl_map) if first_hit is not None else (None, ttl_map)# - rst classification + tspu ttl scan -
 
 def _rst_tspu_confidence(x, dst, sport, dest_hop=None):
@@ -1395,11 +1404,22 @@ class TspuIntel:
                     "target_host_type": classify_target_host(
                         ctx.get("strategy_name") or "", self.sni)}
         isp = None
-        try:
-            isp = lookup_asn(dst, timeout=min(0.35, max(0.1, budget.remaining())))
-        except Exception as e:
-            self.log("warn", "asn lookup crashed for %s: %s" % (dst, e))
-            isp = None
+        now = time.time()
+        cached = _ASN_CACHE.get(dst)
+        if cached and (now - cached[0]) < cached[1]:
+            isp = cached[2]
+        else:
+            try:
+                isp = lookup_asn(dst, timeout=min(0.6, max(0.1, budget.remaining())))
+            except Exception as e:
+                self.log("warn", "asn lookup crashed for %s: %s" % (dst, e))
+                isp = None
+            if isp is not None:
+                # успешный ответ живёт 10 минут, фолбэк — минуту (Cymru может
+                # быть заблокирован: не тратим бюджет каждого среза)
+                _ASN_CACHE[dst] = (now,
+                                   _ASN_TTL_FALLBACK if isp.get("fallback")
+                                   else _ASN_TTL_OK, isp)
         isp_source = "cymru_txt"
         if not isp:
             self._degraded.append("isp_lookup_failed")

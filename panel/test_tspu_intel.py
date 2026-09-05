@@ -14,10 +14,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tspu_intel import (
     DATASET_VERSION, DEFAULT_PROBE_MARK, DEFAULT_TARGET_IP, IntelLog,
-    TspuIntel, _Budget, _RESOLVE_CACHE, _apply_probe_mark, _dns_encode_name,
-    _dns_resolvers, _guess_domain, _parse_mark_value, _parse_name,
-    _raw_enabled, _reset_dns_caches, _ttl_map_summary, build_ip_header, build_tcp_packet,
-    build_tls_client_hello, build_quic_initial, classify_connection_type,
+    TspuIntel, _ASN_CACHE, _Budget, _RESOLVE_CACHE, _apply_probe_mark,
+    _dns_encode_name, _dns_resolvers, _guess_domain, _parse_mark_value,
+    _parse_name, _raw_enabled, _reset_dns_caches, _ttl_map_summary,
+    build_ip_header, build_tcp_packet, build_tls_client_hello, build_quic_initial, classify_connection_type,
     classify_target_host, ip_checksum, lookup_asn, parse_ip, parse_tcp,
     scan_destination_hop, split_payload, tls_is_serverhello,
 )
@@ -243,6 +243,7 @@ class TestIntelFixes(unittest.TestCase):
 
     def tearDown(self):
         _reset_dns_caches()
+        _ASN_CACHE.clear()
         shutil.rmtree(self.d, ignore_errors=True)
 
     def test_guess_domain(self):
@@ -407,6 +408,44 @@ class TestIntelFixes(unittest.TestCase):
         self.assertEqual(empty["silent_hops"], 0)
         self.assertIsNone(empty["first_dst_reply_ttl"])
         self.assertIsNone(empty["exact_dst_hop"])
+
+    def test_scan_destination_hop_batch_attribution(self):
+        # ответили SYN-ACK'и на SYN с seq=23 и seq=24 (TTL 23/24): карта
+        # должна пометить только 23 и 24, а 19-22 остаться no-dst-reply
+        sport = 45002
+        recs = [
+            {"proto": 6, "src": "10.0.0.5", "dst": "10.0.0.2", "sport": 443,
+             "dport": sport, "seq": 100, "ack": 24, "flags": 0x12},
+            {"proto": 6, "src": "10.0.0.5", "dst": "10.0.0.2", "sport": 443,
+             "dport": sport, "seq": 101, "ack": 25, "flags": 0x12},
+        ]
+        sink = _FakeSniffer(recs)
+        dst_hop, tmap = scan_destination_hop("10.0.0.5", "10.0.0.2", sport,
+                                             sink, 2.0, max_ttl=30)
+        self.assertEqual(dst_hop, 23)
+        self.assertEqual(tmap.get(23), "syn-ack/rst-from-dst")
+        self.assertEqual(tmap.get(24), "syn-ack/rst-from-dst")
+        self.assertEqual(tmap.get(19), "no-dst-reply")
+        self.assertEqual(tmap.get(1), "no-dst-reply")
+
+    def test_asn_cache_avoids_repeat_lookup(self):
+        import tspu_intel as ti
+        orig = ti.lookup_asn
+        calls = []
+        def _fake(ip, **kw):
+            calls.append(ip)
+            return {"isp_asn": "AS15169", "isp_name": "Google LLC"}
+        ti.lookup_asn = _fake
+        try:
+            b = _Budget(1.0)
+            env1 = self.engine._environment({}, "8.8.8.8", b, False)
+            env2 = self.engine._environment({}, "8.8.8.8", b, False)
+        finally:
+            ti.lookup_asn = orig
+        self.assertEqual(calls, ["8.8.8.8"])          # второй — из кэша
+        self.assertEqual(env1["isp_asn"], "AS15169")
+        self.assertEqual(env2["isp_asn"], "AS15169")
+        self.assertNotIn("asn_unresolved_fallback", self.engine._degraded)
 
     def test_l7_probe_details_active(self):
         import tspu_intel as ti
