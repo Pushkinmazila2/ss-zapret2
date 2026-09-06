@@ -413,6 +413,8 @@ body {
       <div class="leg-row"><div class="leg-dot" style="background:var(--err)"></div>сожжён ТСПУ</div>
       <div class="leg-row"><div class="leg-dot" style="background:var(--mut);opacity:.5"></div>резервная точка</div>
       <div class="leg-row"><div class="leg-line" style="background:var(--ok);opacity:.7"></div>поток по цепочке параметров</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#4fd6ff;border-radius:2px"></div>вход · клиент</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--ok);border-radius:2px"></div>выход · интернет</div>
       <div class="leg-row"><div class="leg-line" style="background:var(--err);opacity:.7;height:1px;border-top:1px dashed var(--err)"></div>срез ТСПУ</div>
     </div>
 
@@ -607,6 +609,10 @@ let _palIdx = 0;
 
 function vecColor(v){ if(!_vecColors[v]){ _vecColors[v] = _PALETTE[_palIdx++ % _PALETTE.length]; } return _vecColors[v]; }
 
+// порты входа/выхода
+const IN_COLOR  = '#4fd6ff';
+const OUT_COLOR = '#27c97a';
+
 // ═══════════════════════════════════════════════════════════════════════
 // Canvas setup
 // ═══════════════════════════════════════════════════════════════════════
@@ -627,18 +633,27 @@ function layoutNodes(){
   const W = canvas.width, H = canvas.height;
   if(!W || !H || !_nodes.length) return;
 
-  // group by category (параметры)
+  // порты входа/выхода — слева и справа, по центру
+  for(const n of _nodes){
+    if(n.key === '__in'){  n.x = W * 0.05; n.y = H / 2; n.tx = n.x; n.ty = n.y; }
+    else if(n.key === '__out'){ n.x = W * 0.95; n.y = H / 2; n.tx = n.x; n.ty = n.y; }
+  }
+
+  // group by category (параметры); порты не входят в кластеры
   const groups = {};
-  for(const n of _nodes){ (groups[n.cat] = groups[n.cat]||[]).push(n); }
+  for(const n of _nodes){
+    if(n.key === '__in' || n.key === '__out') continue;
+    (groups[n.cat] = groups[n.cat]||[]).push(n);
+  }
   const vecs = Object.keys(groups);
   const nv   = vecs.length;
 
   vecs.forEach((v, vi) => {
     const members = [...groups[v]].sort((a, b) => (b.count||0) - (a.count||0));
-    // vector cluster centre — arranged in a circle of clusters
+    // cluster centre — размещаем в оставшемся между портами пространстве
     const angle   = (vi / nv) * Math.PI * 2 - Math.PI / 2;
-    const radius  = Math.min(W, H) * 0.30;
-    const cx      = W/2 + radius * Math.cos(angle);
+    const radius  = Math.min(W, H) * 0.26;
+    const cx      = Math.min(W * 0.82, Math.max(W * 0.18, W/2 + radius * Math.cos(angle)));
     const cy      = H/2 + radius * Math.sin(angle);
 
     // within cluster: small sunflower layout
@@ -665,32 +680,45 @@ function buildEdges(){
   }
   const nodeByKey = {};
   for(const n of _nodes) nodeByKey[n.key] = n;
+  const inN  = nodeByKey['__in'];
+  const outN = nodeByKey['__out'];
 
-  // Каждая стратегия вносит цепочку над своими точками-параметрами.
-  // Общие параметры сливают цепочки в общую сеть, по которой течёт трафик.
+  // Рёбра строятся ТОЛЬКО по активным стратегиям пула:
+  //   вход → первый параметр цепочки → … → последний параметр → выход.
+  // Общие параметры сливают цепочки в общую сеть.
   const edgeMap = new Map();
-  for(const s of _strategies){
-    const path = s._attrs || [];
-    if(path.length < 2) continue;
+  function addEdge(a, b, cat, color, slots, traf){
+    if(!a || !b || a === b) return;
+    const id = a.key < b.key ? a.key + '\u0000' + b.key : b.key + '\u0000' + a.key;
+    let e = edgeMap.get(id);
+    if(!e){ e = { from:a, to:b, cat, color, strength:0, slots:[] }; edgeMap.set(id, e); }
+    e.strength += traf;
+    e.slots = e.slots.concat(slots);
+  }
+
+  for(const s of activeStrategies()){
+    const path  = s._attrs || [];
     const slots = stratSlots[s.name] || [];
     const traf  = slots.reduce((sum, sl) => {
       const t = _traffic[sl.qnum] || {};
       return sum + (t.kbps || 0);
     }, 0);
+    if(path.length){
+      const first = nodeByKey[path[0].key];
+      const last  = nodeByKey[path[path.length-1].key];
+      if(inN  && first) addEdge(inN,  first, 'in',  IN_COLOR,  slots, traf);
+      if(outN && last)  addEdge(last, outN,  'out', OUT_COLOR, slots, traf);
+    }
     for(let i = 0; i < path.length - 1; i++){
       const a = nodeByKey[path[i].key];
       const b = nodeByKey[path[i+1].key];
       if(!a || !b || a === b) continue;
-      const id = a.key < b.key ? a.key + '\u0000' + b.key : b.key + '\u0000' + a.key;
-      let e = edgeMap.get(id);
-      if(!e){ e = { from:a, to:b, cat:path[i].cat, strength:0, slots:[] }; edgeMap.set(id, e); }
-      e.strength += traf;
-      e.slots = e.slots.concat(slots);
+      addEdge(a, b, path[i].cat, vecColor(path[i].cat), slots, traf);
     }
   }
 
   _edges = [...edgeMap.values()].map(e => ({
-    from: e.from, to: e.to, cat: e.cat,
+    from: e.from, to: e.to, cat: e.cat, color: e.color,
     strength: e.strength, slots: e.slots,
     live: e.strength > 0.1,
   }));
@@ -718,9 +746,21 @@ function drawFrame(ts){
 
   _beamPhase = (ts / 18) % 20;
 
+  if(!_nodes.length){
+    ctx.fillStyle = 'var(--mut)';
+    ctx.font = '13px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'center';
+    ctx.fillText('Пул не активен — включите пул, чтобы увидеть ландшафт параметров', W/2, H/2);
+    requestAnimationFrame(drawFrame);
+    return;
+  }
+
   // ── category cluster halos ──
   const groups = {};
-  for(const n of _nodes){ (groups[n.cat]=groups[n.cat]||[]).push(n); }
+  for(const n of _nodes){
+    if(n.key === '__in' || n.key === '__out') continue;
+    (groups[n.cat]=groups[n.cat]||[]).push(n);
+  }
   for(const [cat, members] of Object.entries(groups)){
     if(members.length < 2) continue;
     const cx = members.reduce((s,n)=>s+wtx(n.x),0)/members.length;
@@ -757,7 +797,7 @@ function drawFrame(ts){
   for(const e of _edges){
     const x1 = wtx(e.from.x), y1 = wty(e.from.y);
     const x2 = wtx(e.to.x),   y2 = wty(e.to.y);
-    const col = vecColor(e.cat);
+    const col = e.color || vecColor(e.cat);
     ctx.save();
     ctx.lineWidth = e.live ? Math.min(3, 1 + e.strength/50) : 1;
     if(e.live){
@@ -812,8 +852,15 @@ function drawFrame(ts){
       else if(sl.healthy === false) hasFail = true;
     }
 
+    const isPort = n.key === '__in' || n.key === '__out';
+
     let fillColor, strokeColor, glowColor;
-    if(n.burned){
+    if(isPort){
+      const liveAny = n.slots.some(sl => (_traffic[sl.qnum] || {}).pkts_delta > 0);
+      fillColor   = '#04121a';
+      strokeColor = n.color;
+      glowColor   = liveAny ? n.color + '95' : null;
+    } else if(n.burned){
       fillColor   = '#30101a';
       strokeColor = 'var(--err)';
       glowColor   = 'rgba(224,64,64,.6)';
@@ -832,7 +879,7 @@ function drawFrame(ts){
     } else {
       // параметр встречается только в резервных стратегиях
       fillColor   = 'var(--panel2)';
-      strokeColor = vecColor(n.cat) + '55';
+      strokeColor = n.color + '55';
       glowColor   = null;
     }
 
@@ -845,8 +892,17 @@ function drawFrame(ts){
       ctx.fillStyle = gr; ctx.fill();
     }
 
-    // circle
-    ctx.beginPath(); ctx.arc(nx, ny, r, 0, Math.PI*2);
+    // body: порты — ромбом, параметры — кругом
+    ctx.beginPath();
+    if(isPort){
+      ctx.moveTo(nx, ny - r);
+      ctx.lineTo(nx + r, ny);
+      ctx.lineTo(nx, ny + r);
+      ctx.lineTo(nx - r, ny);
+      ctx.closePath();
+    } else {
+      ctx.arc(nx, ny, r, 0, Math.PI*2);
+    }
     ctx.fillStyle   = fillColor;
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth   = n === _selected ? 2.5 : 1.5;
@@ -966,12 +1022,14 @@ const ttVec  = document.getElementById('ttVec');
 function showTooltip(cx, cy, n){
   ttName.textContent = n.label;
   const trafSum = n.slots.reduce((s, sl) => s + ((_traffic[sl.qnum] || {}).kbps || 0), 0);
+  const isPort = n.key === '__in' || n.key === '__out';
   let rows = '';
   rows += row('категория', _CAT_NAME[n.cat] || n.cat);
   rows += row('используют', n.count + ' стратегий');
   rows += row('в пуле', n.slotCount ? n.slotCount + ' слотов · ' + trafSum.toFixed(1) + ' kbps' : '—');
-  const sts = n.strategies.slice(0, 6).join(', ');
-  rows += row('стратегии', sts + (n.strategies.length > 6 ? '…' : ''));
+  const stNames = isPort ? activeStrategies().map(s => s.name) : n.strategies;
+  const sts = stNames.slice(0, 6).join(', ');
+  rows += row('стратегии', sts + (stNames.length > 6 ? '…' : ''));
   if(n.slots.length) rows += row('слоты', n.slots.map(sl => 'С' + sl.index).join(' '));
   if(n.burned) rows += `<div style="color:var(--err);margin-top:4px">⚡ компрометирован ТСПУ</div>`;
   ttRows.innerHTML = rows;
@@ -1000,7 +1058,9 @@ function openDetail(n){
   g += drow('состояние',  st);
   document.getElementById('dtGrid').innerHTML  = g;
   document.getElementById('dtOpts').textContent =
-    n.strategies.map(st2 => '• ' + st2).join('\n');
+    (n.key === '__in' || n.key === '__out')
+      ? 'Через порт проходят активные стратегии:\n' + activeStrategies().map(s => s.name).join('\n')
+      : n.strategies.map(st2 => '• ' + st2).join('\n');
   document.getElementById('detail').style.display = 'block';
 }
 function drow(k,v){ return `<span class="dt-k">${k}</span><span class="dt-v">${v}</span>`; }
@@ -1017,7 +1077,8 @@ async function refreshStrategies(){
   const d = await api('/api/strategies');
   _strategies = d.strategies || [];
   document.getElementById('hStrat').textContent = _strategies.length;
-  rebuildNodes();
+  maybeRebuild();
+  buildEdges();
 }
 
 async function refreshPool(){
@@ -1037,14 +1098,7 @@ async function refreshPool(){
 
   _poolEnabled = !!s.enabled;
   _scores = s.strategy_scores || {};
-
-  // update node state from slots
-  const slotByStrat = {};
-  for(const sl of _slots) if(sl.strategy) slotByStrat[sl.strategy] = sl;
-  for(const n of _nodes){
-    n.slot = slotByStrat[n.name] || null;
-  }
-
+  maybeRebuild();
   buildEdges();
 }
 
@@ -1101,6 +1155,7 @@ async function refreshTraffic(){
   const d = await api('/api/pool/traffic');
   if(!d || d.error) return;
   _traffic = d;
+  if(_nodes.length) buildEdges();
 }
 
 // ── curl ──────────────────────────────────────────────────────────────────
@@ -1166,6 +1221,8 @@ const _CAT_NAME  = {
   filter:       'filter',
   wssize:       'wssize',
   other:        'прочее',
+  in:           'входной порт',
+  out:          'выходной порт',
 };
 function catIndex(c){ const i = _CAT_ORDER.indexOf(c); return i < 0 ? _CAT_ORDER.length - 1 : i; }
 
@@ -1227,15 +1284,25 @@ function parseStrategyAttrs(opt){
 // ═══════════════════════════════════════════════════════════════════════
 // Node management
 // ═══════════════════════════════════════════════════════════════════════
+function activeStrategies(){
+  // Активные стратегии пула — те, что назначены в слоты. Только по ним
+  // строится ландшафт параметров.
+  const names = [...new Set(_slots.filter(s => s && s.strategy).map(s => s.strategy))];
+  const byName = {};
+  for(const s of _strategies) byName[s.name] = s;
+  return names.map(nm => byName[nm]).filter(Boolean);
+}
+
 function rebuildNodes(){
-  // Узел = уникальный параметр стратегии. Общие параметры становятся
-  // хабами, специфичные — листьями исходящих цепочек.
+  // Узел = уникальный параметр активной стратегии. Общие параметры
+  // становятся хабами, специфичные — листьями исходящих цепочек.
   const pinned = {};
   for(const n of _nodes) if(n.pinned) pinned[n.key] = n;
 
+  const act   = activeStrategies();
   const meta  = {};
   const usage = new Map();   // key -> {count, strategies:Set}
-  for(const s of _strategies){
+  for(const s of act){
     const attrs = parseStrategyAttrs(s.nfqws_opt);
     s._attrs = attrs;
     for(const a of attrs){
@@ -1258,8 +1325,9 @@ function rebuildNodes(){
     n.label      = a.label;
     n.shortName  = a.short;
     n.cat        = a.cat;
-    n.vector     = a.cat;             // группа цвета = категория
-    n.count      = u.count;           // сколько стратегий используют
+    n.vector     = a.cat;
+    n.color      = vecColor(a.cat);
+    n.count      = u.count;           // сколько активных стратегий используют
     n.strategies = [...u.strategies].sort();
     n.slots      = [];                // заполняет applyPoolToNodes()
     n.slotCount  = 0;
@@ -1268,6 +1336,33 @@ function rebuildNodes(){
     n.implicated = false;
     next.push(n);
   }
+
+  // порты: вход (клиент) и выход (интернет) — только при активном пуле
+  if(act.length){
+    for(const [key, cat, label, short, color] of [
+      ['__in',  'in',  'вход · клиент',    'вход',  IN_COLOR],
+      ['__out', 'out', 'выход · интернет', 'выход', OUT_COLOR],
+    ]){
+      const old = pinned[key];
+      const n   = old || { x: canvas.width/2, y: canvas.height/2, pinned: false };
+      n.key        = key;
+      n.name       = key;
+      n.label      = label;
+      n.shortName  = short;
+      n.cat        = cat;
+      n.vector     = cat;
+      n.color      = color;
+      n.count      = act.length;        // через порт проходят все активные стратегии
+      n.strategies = [];                // нейтральные — без импикации
+      n.slots      = [];
+      n.slotCount  = 0;
+      n.burned     = false;
+      n.hazard     = 0;
+      n.implicated = false;
+      next.push(n);
+    }
+  }
+
   _nodes = next;
   applyPoolToNodes();
   layoutNodes();
@@ -1281,13 +1376,32 @@ function applyPoolToNodes(){
   }
   for(const n of _nodes){
     const used = [];
-    for(const st of n.strategies){
-      const ss = stratSlots[st];
-      if(ss) for(const sl of ss) used.push(sl);
+    if(n.key === '__in' || n.key === '__out'){
+      // порт обслуживает все слоты пула
+      for(const sl of _slots) if(sl.strategy) used.push(sl);
+    } else {
+      for(const st of n.strategies){
+        const ss = stratSlots[st];
+        if(ss) for(const sl of ss) used.push(sl);
+      }
     }
     n.slots     = used;
     n.slotCount = used.length;
   }
+}
+
+let _graphSig = '';
+function graphSig(){
+  // Что сейчас «рисует» граф: состав активных стратегий + их NFQWS2_OPT
+  const act = activeStrategies();
+  return act.map(s => s.name + '::' + (s.nfqws_opt || '')).sort().join('#');
+}
+function maybeRebuild(){
+  // Пересборка узлов только при реальном изменении состава/начинки активных
+  // стратегий; иначе — лишь перепривязка слотов к узлам.
+  const gs = graphSig();
+  if(gs !== _graphSig){ _graphSig = gs; rebuildNodes(); }
+  else applyPoolToNodes();
 }
 
 // lightweight client-side vector classify (mirrors strategy_vectors.py)
@@ -1451,7 +1565,7 @@ async function refreshPool(){
   pp.className   = 'pill ' + ({ok:'ok',degraded:'warn',replacing:'warn',checking:'acc',idle:'idle'}[st]||'idle');
   _poolEnabled = !!s.enabled;
   _scores = s.strategy_scores || {};
-  applyPoolToNodes();
+  maybeRebuild();
   buildEdges();
   if(_activeTab === 'settings'){ syncSettingsFields(); renderCfgStratList(); }
 }
