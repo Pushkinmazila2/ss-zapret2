@@ -1198,15 +1198,13 @@ class Handler(BaseHTTPRequestHandler):
             port = int(body.get("socks_port", SOCKS_PORT or 1080))
             return self._json(run_curl(port, url))
 
-        # ── импорт JSON ──────────────────────────────────────────────────────
+                # ── импорт JSON ──────────────────────────────────────────────────────
         elif p == "/api/import-json":
-            # Фронтенд шлет распарсенный JSON напрямую в body
             slist = body.get("strategies")
             if not isinstance(slist, list) or not slist:
                 return self._json({"error": "поле 'strategies' пустое или отсутствует"}, 400)
             
             domain = body.get("domain", "imported")
-            # Берем префикс из инпута панели (name_prefix) или делаем из домена
             prefix = body.get("name_prefix") or body.get("prefix") or domain.replace(".", "_")
             prefix = prefix.strip()
             if not prefix:
@@ -1218,31 +1216,25 @@ class Handler(BaseHTTPRequestHandler):
                     errors.append("#%d: неверный формат стратегии (ожидался объект)" % i)
                     continue
 
-                # Поддерживаем ключи 'args' или 'nfqws_opt'
                 args = (s.get("args") or s.get("nfqws_opt") or "").strip()
                 if not args: 
                     errors.append("#%d: args пустые" % i)
                     continue
                 
-                # Авто-добавление базовых фильтров, если их забыли указать
                 if "--filter-tcp" not in args and "--filter-udp" not in args:
                     args = "--filter-tcp=443 --filter-l7=tls " + args
                 
-                # Безопасно вытаскиваем метаданные для комментариев
                 proto   = s.get("protocol", "tcp")
-                rate    = s.get("success_rate", 1.0)  # если нет, считаем 100%
+                rate    = s.get("success_rate", 1.0)
                 latency = s.get("median_latency_ms", 0)
                 speed   = s.get("median_speed_kbps", 0)
                 
-                # Формируем имя файла конфигурации стратегии
                 fname   = "%s_%03d.conf" % (prefix, i + 1)
                 fpath   = os.path.join(STRAT_DIR, fname)
                 
-                # Создаем информационный комментарий для админки
                 comment = "# domain=%s proto=%s rate=%.0f%% latency=%dms speed=%.0fkbps" % (
                     domain, proto, float(rate) * 100 if rate <= 1 else float(rate), latency, speed)
                 
-                # Собираем валидный формат конфига для nfqws2 пула
                 conf = '%s\nNFQWS2_OPT="\n%s\n"\n' % (comment, args)
                 
                 try:
@@ -1267,7 +1259,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "raw": open(bak).read()})
             return self._json({"ok": False, "error": "бэкап отсутствует"})
 
-        return self._json({"error": "not found"}, 404)
+        # ── дефолтный обработчик для неизвестных POST-запросов ──────────────
+        else:
+            print("[DEBUG] Путь '%s' не подошел ни под одно условие" % p, flush=True)
+            return self._json({"error": "not found", "requested_path": p}, 404)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
