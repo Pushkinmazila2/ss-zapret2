@@ -1116,7 +1116,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"events": _tlog.get_recent(n, event_type=evt)})
         else:
             print("[DEBUG] Путь '%s' не подошел ни под одно условие" % p, flush=True)
-            self._json({"error": "not found2", "requested_path": p}, 404)
+            self._json({"error": "not found1", "requested_path": p}, 404)
 
     def do_POST(self):
         p    = self.path.split("?")[0]
