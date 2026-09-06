@@ -909,6 +909,37 @@ async function refreshTraffic(){
   _traffic = d;
 }
 
+// ── curl ──────────────────────────────────────────────────────────────────
+function updateCurlCmd(){
+  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
+  const port = document.getElementById('curlPort').value || '1080';
+  document.getElementById('curlCmd').textContent = 'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
+}
+async function runCurl(){
+  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
+  const port = parseInt(document.getElementById('curlPort').value) || 1080;
+  updateCurlCmd(); showLog('curlLog','⏳ …','n');
+  const r = await post('/api/test-curl',{url, socks_port:port});
+  showLog('curlLog',(r.ok?'✅ OK':'❌ FAIL')+' (rc='+r.rc+')\n\n'+(r.output||''),r.ok?'ok':'err');
+}
+
+// ── import ────────────────────────────────────────────────────────────────
+async function importJson(){
+  const raw = document.getElementById('jsonInput').value.trim();
+  if(!raw){alert('Вставьте JSON');return;}
+  let parsed; try{parsed=JSON.parse(raw);}catch(e){alert('Невалидный JSON: '+e);return;}
+  const prefix = document.getElementById('jsonPrefix').value.trim();
+  if(prefix) parsed.name_prefix = prefix;
+  showLog('importLog','⏳ …','n');
+  const r = await post('/api/import-json', parsed);
+  let txt = r.message||'';
+  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');
+  if(r.errors?.length) txt += '\n❌ ' + r.errors.join('\n');
+  showLog('importLog', txt.trim(), r.ok?'ok':'err');
+  if(r.ok) loadStrategies();
+}
+
+
 async function refreshLog(){
   const d = await api('/api/pool/log');
   const log = d.log || [];
