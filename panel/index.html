@@ -627,14 +627,14 @@ function layoutNodes(){
   const W = canvas.width, H = canvas.height;
   if(!W || !H || !_nodes.length) return;
 
-  // group by vector
+  // group by category (параметры)
   const groups = {};
-  for(const n of _nodes){ (groups[n.vector] = groups[n.vector]||[]).push(n); }
+  for(const n of _nodes){ (groups[n.cat] = groups[n.cat]||[]).push(n); }
   const vecs = Object.keys(groups);
   const nv   = vecs.length;
 
   vecs.forEach((v, vi) => {
-    const members = groups[v];
+    const members = [...groups[v]].sort((a, b) => (b.count||0) - (a.count||0));
     // vector cluster centre — arranged in a circle of clusters
     const angle   = (vi / nv) * Math.PI * 2 - Math.PI / 2;
     const radius  = Math.min(W, H) * 0.30;
@@ -659,32 +659,41 @@ function layoutNodes(){
 // ═══════════════════════════════════════════════════════════════════════
 function buildEdges(){
   _edges = [];
-  // Each active slot is a "source" pulling traffic through its strategy node
-  // If two slots share the same vector, we draw a "chain" through them
-  // ordered by qnum, showing traffic passing sequentially.
-  const activeSlots = _slots.filter(s => s.strategy);
-
-  // group active slots by vector
-  const byVec = {};
-  for(const sl of activeSlots){
-    const n = _nodes.find(n => n.name === sl.strategy);
-    if(!n) continue;
-    const v = n.vector;
-    (byVec[v] = byVec[v]||[]).push({slot: sl, node: n});
+  const stratSlots = {};
+  for(const sl of _slots) if(sl.strategy){
+    (stratSlots[sl.strategy] = stratSlots[sl.strategy] || []).push(sl);
   }
-  for(const [v, members] of Object.entries(byVec)){
-    if(members.length < 2) continue;
-    // sort by qnum for chain ordering
-    members.sort((a,b) => a.slot.qnum - b.slot.qnum);
-    for(let i = 0; i < members.length-1; i++){
-      const a = members[i], b = members[i+1];
-      const traf_a = _traffic[a.slot.qnum] || {};
-      const traf_b = _traffic[b.slot.qnum] || {};
-      const strength = Math.max(traf_a.kbps||0, traf_b.kbps||0);
-      _edges.push({ from: a.node, to: b.node, vector: v, strength,
-                    live: strength > 0.1 });
+  const nodeByKey = {};
+  for(const n of _nodes) nodeByKey[n.key] = n;
+
+  // Каждая стратегия вносит цепочку над своими точками-параметрами.
+  // Общие параметры сливают цепочки в общую сеть, по которой течёт трафик.
+  const edgeMap = new Map();
+  for(const s of _strategies){
+    const path = s._attrs || [];
+    if(path.length < 2) continue;
+    const slots = stratSlots[s.name] || [];
+    const traf  = slots.reduce((sum, sl) => {
+      const t = _traffic[sl.qnum] || {};
+      return sum + (t.kbps || 0);
+    }, 0);
+    for(let i = 0; i < path.length - 1; i++){
+      const a = nodeByKey[path[i].key];
+      const b = nodeByKey[path[i+1].key];
+      if(!a || !b || a === b) continue;
+      const id = a.key < b.key ? a.key + '\u0000' + b.key : b.key + '\u0000' + a.key;
+      let e = edgeMap.get(id);
+      if(!e){ e = { from:a, to:b, cat:path[i].cat, strength:0, slots:[] }; edgeMap.set(id, e); }
+      e.strength += traf;
+      e.slots = e.slots.concat(slots);
     }
   }
+
+  _edges = [...edgeMap.values()].map(e => ({
+    from: e.from, to: e.to, cat: e.cat,
+    strength: e.strength, slots: e.slots,
+    live: e.strength > 0.1,
+  }));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -955,21 +964,18 @@ const ttRows = document.getElementById('ttRows');
 const ttVec  = document.getElementById('ttVec');
 
 function showTooltip(cx, cy, n){
-  ttName.textContent = n.name;
-  const sl    = n.slot;
-  const score = (_scores[n.name] || 0).toFixed(1);
-  const traf  = sl ? (_traffic[sl.qnum] || {}) : {};
+  ttName.textContent = n.label;
+  const trafSum = n.slots.reduce((s, sl) => s + ((_traffic[sl.qnum] || {}).kbps || 0), 0);
   let rows = '';
-  rows += row('вектор', n.vector);
-  rows += row('скор',   (score > 0 ? '+' : '') + score);
-  if(sl){
-    rows += row('слот',     'С' + sl.index + ' qnum=' + sl.qnum);
-    rows += row('статус',   sl.healthy === true ? '✓ работает' : sl.healthy === false ? '✗ сбой' : '⟳');
-    rows += row('трафик',   (traf.kbps||0).toFixed(1) + ' kbps');
-  }
-  if(n.burned) rows += `<div style="color:var(--err);margin-top:4px">⚡ сожжена ТСПУ</div>`;
+  rows += row('категория', _CAT_NAME[n.cat] || n.cat);
+  rows += row('используют', n.count + ' стратегий');
+  rows += row('в пуле', n.slotCount ? n.slotCount + ' слотов · ' + trafSum.toFixed(1) + ' kbps' : '—');
+  const sts = n.strategies.slice(0, 6).join(', ');
+  rows += row('стратегии', sts + (n.strategies.length > 6 ? '…' : ''));
+  if(n.slots.length) rows += row('слоты', n.slots.map(sl => 'С' + sl.index).join(' '));
+  if(n.burned) rows += `<div style="color:var(--err);margin-top:4px">⚡ компрометирован ТСПУ</div>`;
   ttRows.innerHTML = rows;
-  ttVec.textContent = n.vector;
+  ttVec.textContent = n.cat;
   ttEl.style.display = 'block';
   ttEl.style.left = (cx + 14) + 'px';
   ttEl.style.top  = (cy -  8) + 'px';
@@ -979,19 +985,22 @@ function row(k,v){ return `<div class="tt-row"><span>${k}</span><b>${v}</b></div
 
 function openDetail(n){
   _selected = n;
-  const sl  = n.slot;
-  const traf = sl ? (_traffic[sl.qnum]||{}) : {};
-  document.getElementById('dtName').textContent = n.name;
+  const trafSum = n.slots.reduce((s, sl) => s + ((_traffic[sl.qnum] || {}).kbps || 0), 0);
+  const hasFail = n.slots.some(sl => sl.healthy === false);
+  const hasGood = n.slots.some(sl => sl.healthy === true);
+  document.getElementById('dtName').textContent = n.label;
   let g = '';
-  g += drow('вектор',     n.vector);
-  g += drow('скор',       ((_scores[n.name]||0)>0?'+':'') + (_scores[n.name]||0).toFixed(1));
-  g += drow('состояние',  n.burned ? '⚡ сожжена' : sl ? (sl.healthy===true?'✓ работает':sl.healthy===false?'✗ деградация':'⟳ ожидание') : '— резерв');
-  if(sl){
-    g += drow('слот',     'С' + sl.index + '  qnum=' + sl.qnum);
-    g += drow('трафик',   (traf.kbps||0).toFixed(1) + ' kbps · ' + (traf.pps||0).toFixed(1) + ' pps');
-  }
+  g += drow('категория',    _CAT_NAME[n.cat] || n.cat);
+  g += drow('используют',   n.count + ' стратегий');
+  g += drow('слотов в пуле', n.slotCount);
+  g += drow('суммарный трафик', trafSum.toFixed(1) + ' kbps');
+  const st = n.burned ? '⚡ компрометирован' :
+             (hasFail ? '⚠ деградация' :
+             (hasGood ? '✓ активен' : (n.slotCount ? '⟳ ожидание' : '— в резерве')));
+  g += drow('состояние',  st);
   document.getElementById('dtGrid').innerHTML  = g;
-  document.getElementById('dtOpts').textContent = n.nfqws_opt || '(нет NFQWS2_OPT)';
+  document.getElementById('dtOpts').textContent =
+    n.strategies.map(st2 => '• ' + st2).join('\n');
   document.getElementById('detail').style.display = 'block';
 }
 function drow(k,v){ return `<span class="dt-k">${k}</span><span class="dt-v">${v}</span>`; }
@@ -1043,24 +1052,22 @@ async function refreshVectors(){
   const d = await api('/api/pool/vectors');
   _vectorData = (d.vectors || []);
 
-  // implication: trigger cut flash on burned nodes
-  const imp = _vectorData.filter(v=>v.implicated).map(v=>v.vector);
+  // strategy → vector info; узлы-атрибуты наследуют hazard/implication
+  // от всех стратегий, которые этот параметр используют
+  const stratInfo = {};
+  for(const v of _vectorData)
+    for(const st of (v.strategies || []))
+      stratInfo[st] = { vector: v.vector, hazard: v.hazard || 0, implicated: !!v.implicated };
+
   for(const n of _nodes){
-    const wasImp = n.implicated;
-    n.implicated = imp.includes(n.vector);
-    n.burned     = n.hazard >= 0.7;
-    if(n.implicated && !wasImp){
+    const involved = (n.strategies || []).map(st => stratInfo[st]).filter(Boolean);
+    const wasImp   = n.implicated;
+    n.implicated   = involved.some(i => i.implicated);
+    n.hazard       = involved.reduce((m, i) => Math.max(m, i.hazard), 0);
+    n.burned       = n.implicated && n.hazard >= 0.7;
+    if(n.implicated && !wasImp && n.x !== undefined){
       _cutFlashes.push({ x: n.x, y: n.y, t: performance.now() });
     }
-  }
-
-  // update hazard on nodes from vector data
-  const hazByVec = {};
-  for(const v of _vectorData) hazByVec[v.vector] = v.hazard;
-  for(const n of _nodes){
-    const vd = _vectorData.find(v=>v.vector===n.vector);
-    n.hazard = vd ? vd.hazard : 0;
-    n.burned = n.hazard >= 0.7 && n.implicated;
   }
 
   const vp = document.getElementById('vecPill');
@@ -1147,31 +1154,140 @@ function renderLog(){
 function clearLog(){ _logLen = 0; _logEntries = []; renderLog(); }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Attribute graph: точки = параметры стратегий (атрибуты NFQWS2_OPT)
+// ═══════════════════════════════════════════════════════════════════════
+const _CAT_ORDER = ['payload', 'hostlist', 'desync-mode', 'fooling', 'desync', 'filter', 'wssize', 'other'];
+const _CAT_NAME  = {
+  payload:      'payload',
+  hostlist:     'hostlist',
+  'desync-mode':'режим desync',
+  fooling:      'fooling',
+  desync:       'параметры desync',
+  filter:       'filter',
+  wssize:       'wssize',
+  other:        'прочее',
+};
+function catIndex(c){ const i = _CAT_ORDER.indexOf(c); return i < 0 ? _CAT_ORDER.length - 1 : i; }
+
+function parseStrategyAttrs(opt){
+  // Раскладывает NFQWS2_OPT в упорядоченный набор атрибутов.
+  //   --lua-desync=fake:blob=0x0:badsum:repeats=1
+  //     → (desync-mode) desync=fake, (desync) blob=0x0, badsum, repeats=1
+  //   --payload=tls_client_hello → (payload) payload=tls_client_hello
+  const attrs = [];
+  const seen  = new Set();
+  const add = (key, label, cat) => {
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    const s = String(label);
+    attrs.push({ key, label: s, cat, short: s.length > 18 ? s.slice(0, 17) + '…' : s });
+  };
+  if(!opt) return attrs;
+  const toks = String(opt).split(/\s+/).filter(Boolean);
+  for(const t of toks){
+    const m = t.match(/^--([A-Za-z0-9._-]+)(?:=(.*))?$/);
+    if(!m) continue;
+    const name = m[1];
+    const val  = m[2] === undefined ? '' : m[2];
+    if(name === 'lua-desync' || name === 'dpi-desync' ||
+       name === 'lua-desync2' || name === 'dpi-desync2'){
+      const segs = val.split(':');
+      const mode = (segs.shift() || '').trim();
+      if(mode) add('desync-mode:' + mode, 'desync=' + mode, 'desync-mode');
+      for(const seg of segs){
+        const s = seg.trim(); if(!s) continue;
+        const eq = s.indexOf('=');
+        if(eq > 0) add('desync:' + s.slice(0, eq) + '=' + s.slice(eq + 1), s, 'desync');
+        else       add('desync:' + s, s, 'desync');
+      }
+    } else if(name === 'payload'){
+      add('payload:' + val, 'payload=' + val, 'payload');
+    } else if(name === 'dpi-desync-fooling' || name === 'lua-desync-fooling'){
+      add('fooling:' + val, 'fooling=' + val, 'fooling');
+    } else if(name === 'wssize'){
+      add('wssize:' + val, 'wssize=' + val, 'wssize');
+    } else if(name.indexOf('filter-') === 0){
+      const f = name.slice('filter-'.length);
+      const short = (f === 'tcp' || f === 'udp') ? 'filter ' + val : name + '=' + val;
+      add('filter:' + name + '=' + val, short, 'filter');
+    } else if(/host|exclude/.test(name)){
+      add('hostlist:' + name + '=' + val, val || name, 'hostlist');
+    } else if(/^(lua|dpi)-desync/.test(name)){
+      add('desync:' + name + '=' + val, val ? name + '=' + val : name, 'desync');
+    } else if(!val){
+      add('flag:' + name, name, 'other');
+    } else {
+      add('other:' + name + '=' + val, name + '=' + val, 'other');
+    }
+  }
+  attrs.sort((a, b) => catIndex(a.cat) - catIndex(b.cat) || (a.key < b.key ? -1 : 1));
+  return attrs;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Node management
 // ═══════════════════════════════════════════════════════════════════════
 function rebuildNodes(){
-  const existing = {};
-  for(const n of _nodes) existing[n.name] = n;
+  // Узел = уникальный параметр стратегии. Общие параметры становятся
+  // хабами, специфичные — листьями исходящих цепочек.
+  const pinned = {};
+  for(const n of _nodes) if(n.pinned) pinned[n.key] = n;
+
+  const meta  = {};
+  const usage = new Map();   // key -> {count, strategies:Set}
+  for(const s of _strategies){
+    const attrs = parseStrategyAttrs(s.nfqws_opt);
+    s._attrs = attrs;
+    for(const a of attrs){
+      if(!meta[a.key]) meta[a.key] = a;
+      let u = usage.get(a.key);
+      if(!u){ u = { count: 0, strategies: new Set() }; usage.set(a.key, u); }
+      u.count++;
+      u.strategies.add(s.name);
+    }
+  }
 
   const next = [];
-  for(const s of _strategies){
-    const old = existing[s.name];
-    const vd  = _vectorData.find(v => v.strategies && v.strategies.includes(s.name));
-    const vec = (vd && vd.vector) || classifyVectorClient(s.nfqws_opt || '');
-    const n   = old || { x: canvas.width/2 + (Math.random()-.5)*200,
-                         y: canvas.height/2 + (Math.random()-.5)*200, pinned: false };
-    n.name      = s.name;
-    n.shortName = s.name.length > 14 ? s.name.slice(0,13) + '…' : s.name;
-    n.nfqws_opt = s.nfqws_opt || '';
-    n.vector    = vec;
-    n.slot      = null;   // filled by refreshPool
-    n.burned    = false;
-    n.hazard    = 0;
-    n.implicated= false;
+  for(const [key, u] of usage){
+    const a   = meta[key];
+    const old = pinned[key];
+    const n   = old || { x: canvas.width/2 + (Math.random()-.5)*240,
+                         y: canvas.height/2 + (Math.random()-.5)*240, pinned: false };
+    n.key        = key;
+    n.name       = key;
+    n.label      = a.label;
+    n.shortName  = a.short;
+    n.cat        = a.cat;
+    n.vector     = a.cat;             // группа цвета = категория
+    n.count      = u.count;           // сколько стратегий используют
+    n.strategies = [...u.strategies].sort();
+    n.slots      = [];                // заполняет applyPoolToNodes()
+    n.slotCount  = 0;
+    n.burned     = false;
+    n.hazard     = 0;
+    n.implicated = false;
     next.push(n);
   }
   _nodes = next;
+  applyPoolToNodes();
   layoutNodes();
+}
+
+function applyPoolToNodes(){
+  // Связывает узлы-атрибуты со слотами пула через их стратегии.
+  const stratSlots = {};
+  for(const sl of _slots) if(sl.strategy){
+    (stratSlots[sl.strategy] = stratSlots[sl.strategy] || []).push(sl);
+  }
+  for(const n of _nodes){
+    const used = [];
+    for(const st of n.strategies){
+      const ss = stratSlots[st];
+      if(ss) for(const sl of ss) used.push(sl);
+    }
+    n.slots     = used;
+    n.slotCount = used.length;
+  }
 }
 
 // lightweight client-side vector classify (mirrors strategy_vectors.py)
@@ -1335,9 +1451,7 @@ async function refreshPool(){
   pp.className   = 'pill ' + ({ok:'ok',degraded:'warn',replacing:'warn',checking:'acc',idle:'idle'}[st]||'idle');
   _poolEnabled = !!s.enabled;
   _scores = s.strategy_scores || {};
-  const slotByStrat = {};
-  for(const sl of _slots) if(sl.strategy) slotByStrat[sl.strategy] = sl;
-  for(const n of _nodes) n.slot = slotByStrat[n.name] || null;
+  applyPoolToNodes();
   buildEdges();
   if(_activeTab === 'settings'){ syncSettingsFields(); renderCfgStratList(); }
 }
