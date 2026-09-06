@@ -1115,7 +1115,8 @@ class Handler(BaseHTTPRequestHandler):
                 n, evt = 200, None
             self._json({"events": _tlog.get_recent(n, event_type=evt)})
         else:
-            self._json({"error": "not found"}, 404)
+            print("[DEBUG] Путь '%s' не подошел ни под одно условие" % p, flush=True)
+            self._json({"error": "not found2", "requested_path": p}, 404)
 
     def do_POST(self):
         p    = self.path.split("?")[0]
@@ -1262,7 +1263,7 @@ class Handler(BaseHTTPRequestHandler):
         # ── дефолтный обработчик для неизвестных POST-запросов ──────────────
         else:
             print("[DEBUG] Путь '%s' не подошел ни под одно условие" % p, flush=True)
-            return self._json({"error": "not found", "requested_path": p}, 404)
+            return self._json({"error": "not found2", "requested_path": p}, 404)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
