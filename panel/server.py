@@ -1116,7 +1116,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"events": _tlog.get_recent(n, event_type=evt)})
         else:
             print("[DEBUG] Путь '%s' не подошел ни под одно условие" % p, flush=True)
-            self._json({"error": "not found1", "requested_path": p}, 404)
+            self._json({"error": "not found", "requested_path": p}, 404)
 
     def do_POST(self):
         p    = self.path.split("?")[0]
@@ -1142,7 +1142,64 @@ class Handler(BaseHTTPRequestHandler):
                                "raw": "\n".join(written),
                                "nfqws_opt": get_nfqws(written), "restart": r})
 
-        # ── импорт JSON ──────────────────────────────────────────────────────
+        # ── pool: вкл/выкл ───────────────────────────────────────────────────
+        elif p == "/api/pool/enable":
+            return self._json(_switcher.set_enabled(body.get("enabled", True)))
+
+        # ── pool: настройки ──────────────────────────────────────────────────
+        elif p == "/api/pool/configure":
+            return self._json(_switcher.configure(body))
+
+        # ── pool: ручная смена стратегии в слоте ────────────────────────────
+        elif p == "/api/pool/slot/set":
+            idx      = body.get("index")
+            strategy = body.get("strategy")
+            if idx is None or not strategy:
+                return self._json({"error": "нужны index и strategy"}, 400)
+            return self._json(_switcher.set_slot_strategy(int(idx), strategy))
+
+        # ── pool: добавить слот ──────────────────────────────────────────────
+        elif p == "/api/pool/slot/add":
+            return self._json(_switcher.add_slot())
+
+        # ── pool: убрать слот ────────────────────────────────────────────────
+        elif p == "/api/pool/slot/remove":
+            idx = body.get("index")
+            if idx is None:
+                return self._json({"error": "нужен index"}, 400)
+            return self._json(_switcher.remove_slot(int(idx)))
+
+        # ── pool: проверить все слоты ────────────────────────────────────────
+        elif p == "/api/pool/check":
+            _switcher.force_check()
+            return self._json({"ok": True, "message": "Проверка запущена"})
+
+        elif p == "/api/monitor/configure":
+            return self._json(reset_monitor.configure(body))
+
+        # ── сохранить NFQWS2_OPT вручную ────────────────────────────────────
+        elif p == "/api/save-nfqws":
+            value      = body.get("value", "")
+            do_restart = body.get("restart", False)
+            lines = read_lines()
+            set_nfqws(lines, value)
+            write_lines(lines)
+            r = restart_zapret() if do_restart else None
+            written = read_lines()
+            return self._json({"ok": True, "raw": "\n".join(written),
+                               "nfqws_opt": get_nfqws(written), "restart": r})
+
+        # ── перезапуск zapret ────────────────────────────────────────────────
+        elif p == "/api/restart":
+            return self._json(restart_zapret())
+
+        # ── curl тест ────────────────────────────────────────────────────────
+        elif p == "/api/test-curl":
+            url  = body.get("url", "https://google.com")
+            port = int(body.get("socks_port", SOCKS_PORT or 1080))
+            return self._json(run_curl(port, url))
+
+                # ── импорт JSON ──────────────────────────────────────────────────────
         elif p == "/api/import-json":
             slist = body.get("strategies")
             if not isinstance(slist, list) or not slist:
@@ -1185,7 +1242,7 @@ class Handler(BaseHTTPRequestHandler):
                     os.makedirs(STRAT_DIR, exist_ok=True)
                     with open(fpath, "w", encoding="utf-8") as f:
                         f.write(conf)
-                    saved.append(os.path.splitext(fname)[0]) # Берем чистое имя без .conf
+                    saved.append(os.path.splitext(fname)[0])
                 except Exception as e:
                     errors.append("%s: %s" % (fname, e))
             
@@ -1196,34 +1253,17 @@ class Handler(BaseHTTPRequestHandler):
                 "message": "Сохранено %d, ошибок %d" % (len(saved), len(errors))
             })
 
-        # ── управление пулом слотов nfqws2 ──────────────────────────────────
-        elif p == "/api/pool/toggle":
-            en = body.get("enabled", False)
-            return self._json(_switcher.set_enabled(en))
-        elif p == "/api/pool/configure":
-            return self._json(_switcher.configure(body))
-        elif p == "/api/pool/check":
-            _switcher.force_check()
-            return self._json({"ok": True, "message": "Проверка пула запущена"})
-        elif p == "/api/pool/add-slot":
-            return self._json(_switcher.add_slot())
-        elif p == "/api/pool/remove-slot":
-            idx = body.get("index")
-            if idx is None: return self._json({"error": "missing index"}, 400)
-            return self._json(_switcher.remove_slot(int(idx)))
-        elif p == "/api/pool/set-strategy":
-            idx = body.get("index")
-            st = body.get("strategy")
-            if idx is None or not st: return self._json({"error": "missing params"}, 400)
-            return self._json(_switcher.set_slot_strategy(int(idx), st))
-        elif p == "/api/monitor/configure":
-            return self._json(reset_monitor.configure(body))
-        elif p == "/api/test-curl":
-            u = body.get("url", "https://google.com")
-            pt = int(body.get("socks_port") or SOCKS_PORT or 1080)
-            return self._json(run_curl(pt, u))
+        # ── бэкап ────────────────────────────────────────────────────────────
+        elif p == "/api/backup":
+            bak = CFG_PATH + ".bak"
+            if os.path.exists(bak):
+                return self._json({"ok": True, "raw": open(bak).read()})
+            return self._json({"ok": False, "error": "бэкап отсутствует"})
+
+        # ── дефолтный обработчик для неизвестных POST-запросов ──────────────
         else:
-            return self._json({"error": "not found2", "requested_path": p}, 404)
+            print("[DEBUG] Путь '%s' не подошел ни под одно условие" % p, flush=True)
+            return self._json({"error": "not found1", "requested_path": p}, 404)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
