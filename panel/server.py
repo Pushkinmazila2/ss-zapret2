@@ -1200,28 +1200,51 @@ class Handler(BaseHTTPRequestHandler):
 
         # ── импорт JSON ──────────────────────────────────────────────────────
         elif p == "/api/import-json":
-            raw_str = body.get("raw")
-            parsed  = json.loads(raw_str) if isinstance(raw_str, str) else body
-            slist   = parsed.get("strategies")
+            # Фронтенд шлет распарсенный JSON напрямую в body
+            slist = body.get("strategies")
             if not isinstance(slist, list) or not slist:
-                return self._json({"error": "поле 'strategies' пустое"}, 400)
-            domain = parsed.get("domain", "imported")
-            prefix = body.get("name_prefix") or domain.replace(".", "_")
+                return self._json({"error": "поле 'strategies' пустое или отсутствует"}, 400)
+            
+            domain = body.get("domain", "imported")
+            # Берем префикс из инпута панели (name_prefix) или делаем из домена
+            prefix = body.get("name_prefix") or body.get("prefix") or domain.replace(".", "_")
+            prefix = prefix.strip()
+            if not prefix:
+                prefix = "imported"
+
             saved, errors = [], []
             for i, s in enumerate(slist):
-                args = s.get("args", "").strip()
-                if not args: errors.append("#%d: args пустые" % i); continue
+                if not isinstance(s, dict):
+                    errors.append("#%d: неверный формат стратегии (ожидался объект)" % i)
+                    continue
+
+                # Поддерживаем ключи 'args' или 'nfqws_opt'
+                args = (s.get("args") or s.get("nfqws_opt") or "").strip()
+                if not args: 
+                    errors.append("#%d: args пустые" % i)
+                    continue
+                
+                # Авто-добавление базовых фильтров, если их забыли указать
                 if "--filter-tcp" not in args and "--filter-udp" not in args:
                     args = "--filter-tcp=443 --filter-l7=tls " + args
-                proto   = s.get("protocol", "")
-                rate    = s.get("success_rate", 0)
+                
+                # Безопасно вытаскиваем метаданные для комментариев
+                proto   = s.get("protocol", "tcp")
+                rate    = s.get("success_rate", 1.0)  # если нет, считаем 100%
                 latency = s.get("median_latency_ms", 0)
                 speed   = s.get("median_speed_kbps", 0)
+                
+                # Формируем имя файла конфигурации стратегии
                 fname   = "%s_%03d.conf" % (prefix, i + 1)
                 fpath   = os.path.join(STRAT_DIR, fname)
+                
+                # Создаем информационный комментарий для админки
                 comment = "# domain=%s proto=%s rate=%.0f%% latency=%dms speed=%.0fkbps" % (
-                    domain, proto, rate * 100, latency, speed)
+                    domain, proto, float(rate) * 100 if rate <= 1 else float(rate), latency, speed)
+                
+                # Собираем валидный формат конфига для nfqws2 пула
                 conf = '%s\nNFQWS2_OPT="\n%s\n"\n' % (comment, args)
+                
                 try:
                     os.makedirs(STRAT_DIR, exist_ok=True)
                     with open(fpath, "w", encoding="utf-8") as f:
@@ -1229,8 +1252,13 @@ class Handler(BaseHTTPRequestHandler):
                     saved.append(os.path.splitext(fname)[0])
                 except Exception as e:
                     errors.append("%s: %s" % (fname, e))
-            return self._json({"ok": True, "saved": saved, "errors": errors,
-                               "message": "Сохранено %d, ошибок %d" % (len(saved), len(errors))})
+            
+            return self._json({
+                "ok": True, 
+                "saved": saved, 
+                "errors": errors,
+                "message": "Сохранено %d, ошибок %d" % (len(saved), len(errors))
+            })
 
         # ── бэкап ────────────────────────────────────────────────────────────
         elif p == "/api/backup":
