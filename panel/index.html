@@ -282,9 +282,94 @@ body {
   justify-content: center;
 }
 .ctrl-btn:hover { border-color: var(--acc); color: var(--acc); }
+
+/* ── tab bar ── */
+#tabbar {
+  display: flex; gap: 2px; padding: 0 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0;
+}
+.tab {
+  font: inherit; font-size: 11px; padding: 7px 14px;
+  border: none; background: none; color: var(--mut); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
+}
+.tab:hover { color: var(--tx); }
+.tab.active { color: var(--acc); border-bottom-color: var(--acc); }
+#view-landscape { display: flex; flex: 1; min-height: 0; }
+#view-settings  { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 20px; background: var(--bg); }
+.cfg-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px; max-width: 1100px;
+}
+.cfg-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.cfg-card h3 {
+  font-size: 11px; color: var(--mut); letter-spacing: .06em; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cfg-card h3 .cdot { width:6px;height:6px;border-radius:50%;flex-shrink:0; }
+.frow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.frow.full  { grid-template-columns: 1fr; }
+.frow.three { grid-template-columns: 1fr 1fr 1fr; }
+.field label { display: block; font-size: 10px; color: var(--mut); margin-bottom: 4px; }
+.field input, .field select, .field textarea {
+  width: 100%; background: #060b14; border: 1px solid var(--line);
+  color: var(--tx); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 11px;
+  transition: border-color .15s;
+}
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--acc); }
+.field textarea { resize: vertical; min-height: 80px; }
+.field input.dirty, .field select.dirty { border-color: var(--warn); }
+.cfg-actions {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.sbtn {
+  font: inherit; font-size: 11px; padding: 6px 14px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel2); color: var(--tx);
+  cursor: pointer; transition: border-color .13s;
+}
+.sbtn:hover { border-color: var(--acc); }
+.sbtn.p { background: var(--acc); color: #020e22; border-color: var(--acc); font-weight: 700; }
+.sbtn.p:hover { opacity: .85; }
+.saved-note { font-size: 10px; color: var(--ok); display: none; }
+.cfg-raw {
+  background: #030609; border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; font-size: 10px; color: var(--teal);
+  white-space: pre-wrap; max-height: 140px; overflow-y: auto; margin-top: 8px; word-break: break-all;
+}
+.res-log {
+  margin-top: 8px; padding: 7px 10px; border-radius: 6px;
+  background: #030609; border: 1px solid var(--line);
+  font-size: 10px; white-space: pre-wrap; display: none; max-height: 120px; overflow-y: auto;
+}
+.res-log.ok   { color: var(--ok);  border-color: rgba(39,201,122,.3); }
+.res-log.err  { color: var(--err); border-color: rgba(224,64,64,.3); }
+.res-log.info { color: var(--mut); }
+.strat-list { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
+.strat-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; font-size: 11px;
+}
+.strat-item .si-vec  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.strat-item .si-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strat-item .si-score { font-size: 10px; min-width: 40px; text-align: right; font-weight: 700; }
+.strat-item .si-score.hot  { color: var(--ok); }
+.strat-item .si-score.cold { color: var(--err); }
+.strat-item .si-badge { font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+.strat-item .si-badge.ok   { background: var(--ok-dim);   color: var(--ok); }
+.strat-item .si-badge.fail { background: var(--warn-dim); color: var(--warn); }
+.strat-item .si-badge.idle { background: rgba(255,255,255,.05); color: var(--mut); }
 </style>
 </head>
 <body>
+
+
+<!-- tab bar -->
+<div id="tabbar">
+  <button class="tab active" id="tab-landscape" onclick="switchTab('landscape')">⬡ Ландшафт</button>
+  <button class="tab"        id="tab-settings"  onclick="switchTab('settings')">⚙ Настройки</button>
+</div>
 
 <!-- ── header ── -->
 <div id="hdr">
@@ -307,6 +392,8 @@ body {
 
 <!-- ── main ── -->
 <div id="main">
+
+<div id="view-landscape">
 
   <!-- canvas -->
   <div id="canvasWrap">
@@ -372,6 +459,102 @@ body {
     </div>
 
   </div>
+</div>
+</div><!-- /view-landscape -->
+
+<!-- settings view -->
+<div id="view-settings">
+<div class="cfg-grid">
+
+  <div class="cfg-card">
+    <h3><div class="cdot" style="background:var(--acc)"></div>пул nfqws2</h3>
+    <div class="frow">
+      <div class="field"><label>размер пула</label><input type="number" id="cfgPoolSize" value="3" min="1" max="10"></div>
+      <div class="field"><label>интервал проверки (сек)</label><input type="number" id="cfgInterval" value="60" min="10"></div>
+      <div class="field"><label>провалов до замены</label><input type="number" id="cfgThreshold" value="2" min="1"></div>
+      <div class="field"><label>URL теста</label><input type="text" id="cfgUrl" value="https://www.youtube.com"></div>
+    </div>
+    <div class="frow">
+      <div class="field"><label>ротация при срезе ТСПУ</label>
+        <select id="cfgCutEn"><option value="1">вкл</option><option value="0">выкл</option></select>
+      </div>
+      <div class="field"><label>cooldown ротации (сек)</label><input type="number" id="cfgCutCool" value="30" min="0"></div>
+    </div>
+    <div class="frow three">
+      <div class="field"><label>мин. lifetime среза (сек)</label><input type="number" id="cfgCutMin" value="30" min="5"></div>
+      <div class="field"><label>макс. lifetime среза (сек)</label><input type="number" id="cfgCutMax" value="60" min="10"></div>
+      <div class="field"><label>cooldown вектора (сек)</label><input type="number" id="cfgVecCool" value="600" min="60"></div>
+    </div>
+    <div class="cfg-actions">
+      <button class="sbtn p" onclick="savePoolCfg()">сохранить</button>
+      <button class="sbtn" onclick="togglePool()">вкл/выкл</button>
+      <button class="sbtn" onclick="forceCheck()">↻ проверить</button>
+      <button class="sbtn" onclick="addSlot()">+ слот</button>
+      <span class="saved-note" id="cfgPoolSaved">✓ сохранено</span>
+    </div>
+  </div>
+
+  <div class="cfg-card">
+    <h3><div class="cdot" style="background:var(--err)"></div>детектор ТСПУ</h3>
+    <div class="frow three">
+      <div class="field"><label>окно (сек)</label><input type="number" id="monWinSec" value="60" min="10"></div>
+      <div class="field"><label>порог ratio</label><input type="number" id="monThresh" value="0.4" min="0.05" max="1" step="0.05"></div>
+      <div class="field"><label>мин. событий</label><input type="number" id="monMinEv" value="5" min="1"></div>
+    </div>
+    <div class="cfg-actions">
+      <button class="sbtn p" onclick="saveMonitorCfg()">сохранить</button>
+      <span class="saved-note" id="cfgMonSaved">✓ сохранено</span>
+    </div>
+  </div>
+
+  <div class="cfg-card">
+    <h3><div class="cdot" style="background:var(--ok)"></div>тест подключения</h3>
+    <div class="frow">
+      <div class="field"><label>URL</label><input type="text" id="curlUrl" value="https://google.com" oninput="updateCurlCmd()"></div>
+      <div class="field"><label>SOCKS5 порт</label><input type="number" id="curlPort" value="1080" oninput="updateCurlCmd()"></div>
+    </div>
+    <div class="cfg-raw" id="curlCmd"></div>
+    <div class="cfg-actions">
+      <button class="sbtn p" onclick="runCurl()">▶ запустить</button>
+    </div>
+    <div class="res-log info" id="curlLog"></div>
+  </div>
+
+  <div class="cfg-card">
+    <h3><div class="cdot" style="background:var(--purple)"></div>config файл
+      <button class="sbtn" style="margin-left:auto;padding:3px 8px;font-size:10px" onclick="refreshCfg()">↻</button>
+    </h3>
+    <span style="font-size:10px;color:var(--mut)" id="cfgFilePath"></span>
+    <div class="cfg-raw" id="cfgRawBox">загрузка…</div>
+  </div>
+
+  <div class="cfg-card" style="grid-column:span 2">
+    <h3><div class="cdot" style="background:var(--teal)"></div>импорт стратегий из JSON</h3>
+    <div class="frow">
+      <div class="field frow full" style="margin:0">
+        <label>JSON</label>
+        <textarea id="jsonInput" rows="5" placeholder='{"domain":"youtube.com","strategies":[{"args":"--dpi-desync=fake ..."}]}'></textarea>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="field"><label>префикс имён</label><input type="text" id="jsonPrefix" placeholder="yt_"></div>
+        <div class="cfg-actions" style="margin:0;padding:0;border:none">
+          <button class="sbtn p" onclick="importJson()">импортировать</button>
+          <span class="saved-note" id="cfgImportSaved">✓ готово</span>
+        </div>
+        <div class="res-log info" id="importLog"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cfg-card" style="grid-column:span 2">
+    <h3>
+      <div class="cdot" style="background:var(--warn)"></div>все стратегии
+      <span id="cfgStratCount" style="font-weight:400;color:var(--mut);margin-left:4px"></span>
+    </h3>
+    <div class="strat-list" id="cfgStratList"><div style="color:var(--mut)">загрузка…</div></div>
+  </div>
+
+</div>
 </div>
 
 <!-- tooltip -->
@@ -1084,6 +1267,215 @@ requestAnimationFrame(drawFrame);
   setInterval(refreshTraffic,    2000);
   setInterval(refreshStrategies, 15000);
 })();
+
+// ═══════════════════════════════════════════════════════════════════════
+// Tab switching
+// ═══════════════════════════════════════════════════════════════════════
+let _activeTab = 'landscape';
+function switchTab(name){
+  _activeTab = name;
+  document.getElementById('view-landscape').style.display = name === 'landscape' ? 'flex' : 'none';
+  document.getElementById('view-settings').style.display  = name === 'settings'  ? 'flex' : 'none';
+  document.getElementById('tab-landscape').classList.toggle('active', name === 'landscape');
+  document.getElementById('tab-settings').classList.toggle('active', name === 'settings');
+  if(name === 'settings'){ syncSettingsFields(); refreshCfg(); renderCfgStratList(); updateCurlCmd(); }
+  if(name === 'landscape') resize();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Cache last API responses for settings sync
+// ═══════════════════════════════════════════════════════════════════════
+let _lastPoolStatus = null;
+let _lastMonStatus  = null;
+
+function syncSettingsFields(){
+  const ps = _lastPoolStatus;
+  if(ps){
+    const pmap = {cfgPoolSize:'pool_size',cfgInterval:'check_interval',cfgThreshold:'fail_threshold',
+      cfgUrl:'test_url',cfgCutMin:'cut_min_sec',cfgCutMax:'cut_max_sec',
+      cfgCutCool:'cut_cooldown',cfgVecCool:'vector_cooldown_sec'};
+    for(const [id,key] of Object.entries(pmap)){
+      const el = document.getElementById(id);
+      if(el && ps[key] !== undefined && !el.dataset.dirty) el.value = ps[key];
+    }
+    const cutEn = document.getElementById('cfgCutEn');
+    if(cutEn && !cutEn.dataset.dirty && ps.cut_rotate_enabled !== undefined)
+      cutEn.value = ps.cut_rotate_enabled ? '1' : '0';
+  }
+  const ms = _lastMonStatus;
+  if(ms){
+    const mmap = {monWinSec:'window_sec',monThresh:'threshold',monMinEv:'min_events'};
+    for(const [id,key] of Object.entries(mmap)){
+      const el = document.getElementById(id);
+      if(el && ms[key] !== undefined && !el.dataset.dirty) el.value = ms[key];
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Override refreshPool / refreshMonitor to cache results
+// ═══════════════════════════════════════════════════════════════════════
+async function refreshPool(){
+  const s = await api('/api/pool/status');
+  if(s && !s.error) _lastPoolStatus = s;
+  _slots  = s.slots || [];
+  _cuts   = s.total_cuts || 0;
+  document.getElementById('hCuts').textContent   = _cuts;
+  document.getElementById('hConns').textContent  = s.active_conns !== undefined ? s.active_conns : '—';
+  document.getElementById('hHealth').textContent = s.healthy_count !== undefined
+    ? s.healthy_count + '/' + _slots.length : '—';
+  const st = s.state || 'idle';
+  const labels = {idle:'pool idle',ok:'pool ✓',degraded:'деградация',checking:'проверка…',replacing:'замена…'};
+  const pp = document.getElementById('poolPill');
+  pp.textContent = labels[st] || st;
+  pp.className   = 'pill ' + ({ok:'ok',degraded:'warn',replacing:'warn',checking:'acc',idle:'idle'}[st]||'idle');
+  _poolEnabled = !!s.enabled;
+  _scores = s.strategy_scores || {};
+  const slotByStrat = {};
+  for(const sl of _slots) if(sl.strategy) slotByStrat[sl.strategy] = sl;
+  for(const n of _nodes) n.slot = slotByStrat[n.name] || null;
+  buildEdges();
+  if(_activeTab === 'settings'){ syncSettingsFields(); renderCfgStratList(); }
+}
+
+async function refreshMonitor(){
+  const s = await api('/api/monitor/status');
+  if(!s || s.error) return;
+  _lastMonStatus = s;
+  const pct   = Math.min(100, s.ratio * 100);
+  const color = s.degraded ? 'var(--err)' : (pct > 25 ? 'var(--warn)' : 'var(--ok)');
+  document.getElementById('monRatio').textContent    = (s.ratio*100).toFixed(1) + '%';
+  document.getElementById('monRatio').style.color    = color;
+  document.getElementById('monBar').style.width      = pct.toFixed(1) + '%';
+  document.getElementById('monBar').style.background = color;
+  document.getElementById('monResets').textContent   = s.resets_window;
+  document.getElementById('monCloses').textContent   = s.closes_window;
+  document.getElementById('monWindow').textContent   = s.window_sec + 's';
+  document.getElementById('monDot').className        = 'dot ' + (s.degraded ? 'err' : 'ok');
+  const mp = document.getElementById('monPill');
+  mp.textContent = s.degraded ? '⚠ деградация' : 'monitor ✓';
+  mp.className   = 'pill ' + (s.degraded ? 'err' : 'ok');
+  if(_activeTab === 'settings') syncSettingsFields();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Settings saves
+// ═══════════════════════════════════════════════════════════════════════
+function markSaved(id){ const el=document.getElementById(id); el.style.display='inline'; setTimeout(()=>el.style.display='none',2200); }
+
+async function savePoolCfg(){
+  const g = id => document.getElementById(id);
+  await post('/api/pool/configure', {
+    pool_size:           +g('cfgPoolSize').value,
+    check_interval:      +g('cfgInterval').value,
+    fail_threshold:      +g('cfgThreshold').value,
+    test_url:             g('cfgUrl').value.trim(),
+    cut_rotate_enabled:  +g('cfgCutEn').value,
+    cut_min_sec:         +g('cfgCutMin').value,
+    cut_max_sec:         +g('cfgCutMax').value,
+    cut_cooldown:        +g('cfgCutCool').value,
+    vector_cooldown_sec: +g('cfgVecCool').value,
+  });
+  ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl','cfgCutEn',
+   'cfgCutMin','cfgCutMax','cfgCutCool','cfgVecCool'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.dataset.dirty='';el.classList.remove('dirty');}
+  });
+  markSaved('cfgPoolSaved'); refreshPool();
+}
+
+async function saveMonitorCfg(){
+  await post('/api/monitor/configure', {
+    window_sec: +document.getElementById('monWinSec').value,
+    threshold:  +document.getElementById('monThresh').value,
+    min_events: +document.getElementById('monMinEv').value,
+  });
+  ['monWinSec','monThresh','monMinEv'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.dataset.dirty='';el.classList.remove('dirty');}
+  });
+  markSaved('cfgMonSaved');
+}
+
+['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl','cfgCutEn',
+ 'cfgCutMin','cfgCutMax','cfgCutCool','cfgVecCool','monWinSec','monThresh','monMinEv'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('input',()=>{el.dataset.dirty='1';el.classList.add('dirty');});
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Config / curl / import
+// ═══════════════════════════════════════════════════════════════════════
+async function refreshCfg(){
+  const c = await api('/api/config');
+  const fp = document.getElementById('cfgFilePath');
+  const rb = document.getElementById('cfgRawBox');
+  if(fp) fp.textContent = c.path || '';
+  if(rb) rb.textContent = c.raw  || '(пусто)';
+}
+
+function updateCurlCmd(){
+  const url  = (document.getElementById('curlUrl')  ||{}).value  || 'https://google.com';
+  const port = (document.getElementById('curlPort') ||{}).value  || '1080';
+  const el   = document.getElementById('curlCmd');
+  if(el) el.textContent = 'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
+}
+
+async function runCurl(){
+  const url  = document.getElementById('curlUrl').value.trim()  || 'https://google.com';
+  const port = parseInt(document.getElementById('curlPort').value) || 1080;
+  updateCurlCmd();
+  const log = document.getElementById('curlLog');
+  log.style.display='block'; log.className='res-log info'; log.textContent='⏳ …';
+  const r = await post('/api/test-curl',{url,socks_port:port});
+  log.className   = 'res-log '+(r.ok?'ok':'err');
+  log.textContent = (r.ok?'✅ OK':'❌ FAIL')+'  rc='+r.rc+'\n\n'+(r.output||'');
+}
+
+async function importJson(){
+  const raw = document.getElementById('jsonInput').value.trim();
+  if(!raw){alert('Вставьте JSON');return;}
+  let parsed; try{parsed=JSON.parse(raw);}catch(e){alert('JSON error: '+e);return;}
+  const prefix = document.getElementById('jsonPrefix').value.trim();
+  if(prefix) parsed.name_prefix = prefix;
+  const log = document.getElementById('importLog');
+  log.style.display='block'; log.className='res-log info'; log.textContent='⏳ …';
+  const r = await post('/api/import-json', parsed);
+  let txt = r.message||'';
+  if(r.saved  && r.saved.length)  txt += '\n✅ '+r.saved.join(', ');
+  if(r.errors && r.errors.length) txt += '\n❌ '+r.errors.join('\n');
+  log.className='res-log '+(r.ok?'ok':'err'); log.textContent=txt.trim();
+  if(r.ok){markSaved('cfgImportSaved');refreshStrategies();renderCfgStratList();}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Strategy list in settings tab
+// ═══════════════════════════════════════════════════════════════════════
+function renderCfgStratList(){
+  const box = document.getElementById('cfgStratList');
+  if(!box) return;
+  const cnt = document.getElementById('cfgStratCount');
+  if(cnt) cnt.textContent = '(' + _strategies.length + ')';
+  if(!_strategies.length){box.innerHTML='<div style="color:var(--mut);font-size:11px">нет стратегий</div>';return;}
+  const slotStrats={}, slotHealth={};
+  for(const sl of _slots){if(sl.strategy){slotStrats[sl.strategy]=true;slotHealth[sl.strategy]=sl.healthy;}}
+  box.innerHTML = _strategies.map(s=>{
+    const col   = vecColor(classifyVectorClient(s.nfqws_opt||''));
+    const sc    = _scores[s.name]||0;
+    const scCls = sc>0.5?'hot':sc<-0.5?'cold':'';
+    const inSlot= slotStrats[s.name];
+    const h     = slotHealth[s.name];
+    const bCls  = !inSlot?'idle':h===true?'ok':h===false?'fail':'idle';
+    const bTx   = !inSlot?'резерв':h===true?'✓ активна':h===false?'✗ сбой':'⟳';
+    return '<div class="strat-item">'+
+      '<div class="si-vec" style="background:'+col+'"></div>'+
+      '<div class="si-name" title="'+s.name+'">'+s.name+'</div>'+
+      '<span class="si-badge '+bCls+'">'+bTx+'</span>'+
+      '<div class="si-score '+scCls+'">'+(sc>0?'+':'')+sc.toFixed(1)+'</div>'+
+      '</div>';
+  }).join('');
+}
+
 </script>
 </body>
 </html>
