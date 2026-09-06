@@ -3,1001 +3,1055 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>zapret2 · панель</title>
+<title>Evasion Landscape · zapret2</title>
 <style>
-:root{
-  --bg:#0c1118;--panel:#141b27;--panel2:#1c2535;--line:#263147;
-  --tx:#dde6f5;--mut:#7a90b5;--acc:#4da3ff;--ok:#2ecc71;--warn:#f39c12;--err:#e74c3c;
-  --ok-dim:rgba(46,204,113,.12);--warn-dim:rgba(243,156,18,.12);--err-dim:rgba(231,76,60,.12);
+:root {
+  --bg:     #080c14;
+  --panel:  #0d1420;
+  --panel2: #111a2b;
+  --line:   #1e2d45;
+  --tx:     #c8d8f0;
+  --mut:    #546a8a;
+  --acc:    #3d8ef0;
+  --ok:     #27c97a;
+  --warn:   #e8a020;
+  --err:    #e04040;
+  --purple: #9060e0;
+  --teal:   #20b8a0;
+
+  --ok-dim:   rgba(39,201,122,.12);
+  --warn-dim: rgba(232,160,32,.12);
+  --err-dim:  rgba(224,64,64,.12);
+  --acc-dim:  rgba(61,142,240,.12);
 }
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font:13px/1.55 system-ui,Segoe UI,Roboto,Arial;color:var(--tx);background:var(--bg);}
-header{padding:12px 18px;display:flex;align-items:center;gap:10px;background:var(--panel);
-  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;}
-header h1{font-size:15px;font-weight:700;}
-.hpath{color:var(--mut);font-size:11px;font-family:monospace;margin-left:auto;}
-.wrap{display:grid;grid-template-columns:270px 1fr;gap:12px;padding:12px;align-items:start;}
-@media(max-width:800px){.wrap{grid-template-columns:1fr;}}
-.rcol{display:flex;flex-direction:column;gap:12px;}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;}
-.card h2{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;
-  margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body {
+  font: 12px/1.5 'JetBrains Mono', 'Fira Code', ui-monospace, Consolas, monospace;
+  background: var(--bg);
+  color: var(--tx);
+  display: flex;
+  flex-direction: column;
+}
 
-/* strategy list */
-.slist{display:flex;flex-direction:column;gap:5px;}
-.strat{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel2);
-  cursor:default;transition:border-color .13s,background .13s;position:relative;}
-.strat .sname{font-weight:700;font-size:12px;}
-.strat .sdesc{color:var(--mut);font-size:11px;margin-top:1px;}
-.strat .sscore{position:absolute;right:8px;bottom:8px;font-size:10px;color:var(--mut);}
-.strat .sscore.hot{color:var(--ok);}
-.strat .sscore.cold{color:var(--err);}
-.strat .sbadge{position:absolute;right:8px;top:50%;transform:translateY(-50%);
-  font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;}
-.sbadge.ok  {background:var(--ok-dim);color:var(--ok);}
-.sbadge.warn{background:var(--warn-dim);color:var(--warn);}
-.sbadge.idle{background:rgba(255,255,255,.05);color:var(--mut);}
+/* ── header ── */
+#hdr {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  z-index: 20;
+}
+#hdr .logo {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--tx);
+}
+#hdr .logo span { color: var(--acc); }
+#hdr .sep { width: 1px; height: 16px; background: var(--line); }
+.pill {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.pill.ok   { background: var(--ok-dim);   color: var(--ok);   }
+.pill.warn { background: var(--warn-dim); color: var(--warn); }
+.pill.err  { background: var(--err-dim);  color: var(--err);  }
+.pill.idle { background: rgba(255,255,255,.06); color: var(--mut); }
+.pill.acc  { background: var(--acc-dim);  color: var(--acc);  }
+#hdr .hstats { display: flex; gap: 10px; margin-left: auto; align-items: center; }
+#hdr .hstats .hs {
+  font-size: 10px; color: var(--mut);
+  display: flex; align-items: center; gap: 4px;
+}
+#hdr .hstats .hs b { font-size: 12px; color: var(--tx); }
+.hbtn {
+  font: inherit; font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--tx);
+  cursor: pointer;
+}
+.hbtn:hover { border-color: var(--acc); color: var(--acc); }
+.hbtn.p { background: var(--acc); color: #020e22; border-color: var(--acc); font-weight: 700; }
+.hbtn.p:hover { opacity: .85; }
 
-/* connections */
-.conn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.connbox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;}
-.cbtitle{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
-.cbport{color:var(--acc);font-family:monospace;}
-.cbcount{font-size:24px;font-weight:700;margin:2px 0 4px;line-height:1;}
-.cbips{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--mut);
-  line-height:1.7;max-height:60px;overflow-y:auto;}
+/* ── main layout ── */
+#main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
 
-/* pool slots */
-.pool-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
-.pool-state{font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;}
-.pool-state.ok      {background:var(--ok-dim);color:var(--ok);}
-.pool-state.degraded{background:var(--warn-dim);color:var(--warn);}
-.pool-state.checking{background:rgba(77,163,255,.12);color:var(--acc);}
-.pool-state.replacing{background:var(--warn-dim);color:var(--warn);}
-.pool-state.idle    {background:rgba(255,255,255,.05);color:var(--mut);}
+/* ── canvas area ── */
+#canvasWrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+#scape {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
 
-.slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin:10px 0;}
-.slot{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;
-  position:relative;transition:border-color .2s;}
-.slot.ok  {border-color:rgba(46,204,113,.4);}
-.slot.fail{border-color:rgba(231,76,60,.4);}
-.slot.unknown{border-color:var(--line);}
-.slot .slot-num{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
-.slot .slot-qnum{font-family:monospace;color:var(--acc);font-size:10px;margin-left:4px;}
-.slot .slot-name{font-weight:700;font-size:12px;margin:3px 0;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;padding-right:24px;}
-.slot .slot-status{font-size:11px;}
-.slot .slot-status.ok  {color:var(--ok);}
-.slot .slot-status.fail{color:var(--err);}
-.slot .slot-status.unknown{color:var(--mut);}
-.slot-del{position:absolute;top:8px;right:8px;background:none;border:none;
-  color:var(--mut);cursor:pointer;font-size:14px;line-height:1;padding:2px;}
-.slot-del:hover{color:var(--err);}
+/* ── right sidebar ── */
+#sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sb-section {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+.sb-section:last-child { border-bottom: none; flex: 1; overflow: hidden; }
+.sb-title {
+  font-size: 10px;
+  color: var(--mut);
+  letter-spacing: .06em;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sb-title .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--mut);
+  flex-shrink: 0;
+}
+.sb-title .dot.ok   { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.sb-title .dot.warn { background: var(--warn); }
+.sb-title .dot.err  { background: var(--err);  box-shadow: 0 0 6px var(--err); }
 
-/* cut log */
-#cutsList .cut{margin:6px 0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 12px;}
-#cutsList .cut summary{cursor:pointer;list-style:none;font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-#cutsList .cut summary::-webkit-details-marker{display:none;}
-#cutsList .cut summary:hover{background:rgba(255,255,255,.03);}
-#cutsList .cut pre{margin-top:8px;font-family:ui-monospace,Consolas,monospace;font-size:10px;color:var(--mut);}
-.cut-kind.classic{color:var(--warn);}
-.cut-kind.epidemic{color:var(--err);}
-.slot-sel{width:100%;margin-top:6px;background:#080d18;border:1px solid var(--line);
-  color:var(--tx);border-radius:6px;padding:4px 6px;font:inherit;font-size:11px;}
+/* monitor bar */
+.mbar-wrap { height: 5px; background: rgba(255,255,255,.07); border-radius: 3px; overflow: hidden; margin: 5px 0 8px; }
+.mbar      { height: 100%; border-radius: 3px; transition: width .6s, background .4s; }
+.mon-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+.mon-stat  { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px;
+             padding: 5px 8px; text-align: center; }
+.mon-stat .val { font-size: 16px; font-weight: 700; line-height: 1; }
+.mon-stat .lbl { font-size: 9px; color: var(--mut); margin-top: 2px; }
 
-/* slot traffic bar */
-.slot-traffic{margin-top:5px;}
-.tbar-wrap{height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;margin-top:2px;}
-.tbar{height:100%;border-radius:2px;transition:width .8s ease,background .4s;background:var(--acc);}
-.tbar.live{background:var(--ok);}
-.tbar-label{font-size:10px;color:var(--mut);font-family:monospace;}
+/* vector list */
+#vectorList { flex: 1; overflow-y: auto; }
+.vrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  cursor: pointer;
+}
+.vrow:hover { background: rgba(255,255,255,.03); }
+.vrow:last-child { border-bottom: none; }
+.vcircle {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid transparent;
+}
+.vcircle.implicated { border-color: var(--err); animation: pulse-err 1s infinite; }
+@keyframes pulse-err { 0%,100%{opacity:1} 50%{opacity:.4} }
+.vname { flex: 1; font-size: 10px; color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vcount { font-size: 10px; color: var(--mut); }
+.vscore { font-size: 10px; font-weight: 700; min-width: 36px; text-align: right; }
+.vscore.hot  { color: var(--ok); }
+.vscore.cold { color: var(--err); }
+.vscore.mid  { color: var(--warn); }
 
-/* slot live badge */
-.slot-live{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;
-  border-radius:5px;margin-top:5px;}
-.slot-live.on {background:var(--ok-dim);color:var(--ok);}
-.slot-live.off{background:rgba(255,255,255,.05);color:var(--mut);}
+/* tooltip */
+#tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  max-width: 220px;
+  z-index: 100;
+  display: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+}
+#tooltip .tt-name { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+#tooltip .tt-row  { display: flex; justify-content: space-between; gap: 8px; color: var(--mut); }
+#tooltip .tt-row b { color: var(--tx); }
+#tooltip .tt-vec  { font-size: 10px; color: var(--mut); margin-top: 4px; padding-top: 4px;
+                    border-top: 1px solid var(--line); word-break: break-all; }
 
-/* traffic ribbon */
-.tf-ribbon{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
-  padding:8px 10px;margin:10px 0;display:flex;flex-direction:column;gap:6px;}
-.tf-top{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--mut);
-  text-transform:uppercase;letter-spacing:.06em;}
-.tf-top .tf-conns{margin-left:auto;color:var(--tx);text-transform:none;letter-spacing:0;}
-.tf-bars{display:flex;gap:3px;height:14px;align-items:stretch;}
-.tf-seg{border-radius:3px;background:rgba(77,163,255,.35);color:#04111f;
-  font-size:9px;font-weight:700;line-height:14px;text-align:center;overflow:hidden;
-  white-space:nowrap;min-width:3px;}
-.tf-seg.live{background:var(--ok);}
-.tf-empty{font-size:11px;color:var(--mut);}
+/* detail panel (bottom of canvas) */
+#detail {
+  position: absolute;
+  bottom: 12px; left: 12px;
+  background: rgba(13,20,32,.92);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 14px;
+  font-size: 11px;
+  max-width: 380px;
+  display: none;
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+#detail .dt-name { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+#detail .dt-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; }
+#detail .dt-k { color: var(--mut); }
+#detail .dt-v { color: var(--tx); }
+#detail .dt-opts {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: #020509;
+  border-radius: 6px;
+  font-size: 10px;
+  color: var(--teal);
+  word-break: break-all;
+  max-height: 80px;
+  overflow-y: auto;
+}
+#detail .dt-close {
+  position: absolute; top: 8px; right: 10px;
+  background: none; border: none; color: var(--mut); cursor: pointer; font-size: 14px;
+}
+#detail .dt-close:hover { color: var(--err); }
 
-/* reset monitor */
-.mon-bar-wrap{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;margin:6px 0;}
-.mon-bar{height:100%;border-radius:3px;transition:width .6s ease,background .4s;}
-.mon-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px;}
-.mon-stat{background:var(--panel2);border:1px solid var(--line);border-radius:7px;
-  padding:7px 10px;text-align:center;}
-.mon-stat .val{font-size:18px;font-weight:700;line-height:1;}
-.mon-stat .lbl{font-size:10px;color:var(--mut);margin-top:2px;}
-.cut{background:var(--panel2);border:1px solid var(--line);border-radius:7px;
-  padding:5px 9px;margin:4px 0;}
-.cut summary{cursor:pointer;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;}
-.cut summary b{font-family:ui-monospace,Consolas,monospace;color:var(--mut);}
-.cut-kind{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;}
-.cut-kind.classic{background:var(--err-dim);color:var(--err);}
-.cut-kind.epidemic{background:var(--warn-dim);color:var(--warn);}
-.cut-kind.manual{background:rgba(255,255,255,.06);color:var(--mut);}
-.cut-conn{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--acc);}
-.cut-slot{font-size:11px;color:var(--mut);}
-.sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}
-.sg label{display:block;font-size:11px;color:var(--mut);margin-bottom:3px;}
-.sg input,.sg select{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
-  border-radius:7px;padding:5px 8px;font:inherit;font-size:12px;}
+/* legend */
+#legend {
+  position: absolute;
+  top: 10px; right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--mut);
+  pointer-events: none;
+}
+.leg-row { display: flex; align-items: center; gap: 6px; }
+.leg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.leg-line { width: 22px; height: 2px; border-radius: 1px; flex-shrink: 0; }
 
-/* strategy vectors */
-.vec-summary{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
-.vec-chip{font-size:10px;font-weight:600;padding:3px 8px;border-radius:5px;
-  background:var(--panel2);border:1px solid var(--line);color:var(--tx);}
-.vec-chip.hot{background:var(--err-dim);color:var(--err);border-color:rgba(231,76,60,.4);}
-.vec-row{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
-  padding:8px 10px;margin:6px 0;transition:border-color .2s;}
-.vec-row.implicated{border-color:rgba(231,76,60,.5);background:rgba(231,76,60,.06);}
-.vec-head{display:flex;align-items:center;gap:8px;}
-.vec-name{font-family:ui-monospace,Consolas,monospace;font-size:11px;font-weight:700;
-  color:var(--acc);word-break:break-all;}
-.vec-badge{font-size:10px;padding:1px 6px;border-radius:4px;font-weight:700;
-  background:var(--err-dim);color:var(--err);white-space:nowrap;}
-.vec-meta{margin-left:auto;font-size:10px;color:var(--mut);white-space:nowrap;flex-shrink:0;}
-.vec-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
-.vec-stat .lbl{font-size:10px;color:var(--mut);}
-.vec-bar{height:5px;background:rgba(255,255,255,.07);border-radius:3px;
-  overflow:hidden;margin-top:2px;}
-.vec-bar > div{height:100%;border-radius:3px;transition:width .5s ease,background .3s;}
-.vec-strategies{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
-.vec-strat{font-size:10px;background:#080d18;border:1px solid var(--line);
-  border-radius:4px;padding:1px 5px;color:var(--tx);}
-.svec{margin-top:3px;font-size:10px;font-family:ui-monospace,Consolas,monospace;
-  color:var(--acc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-.svec.haz{color:var(--warn);}
-.svec.impl{color:var(--err);}
+/* log section */
+#logBox {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 10px;
+  line-height: 1.6;
+  padding: 6px 0;
+}
+.le { display: flex; gap: 6px; padding: 2px 12px; }
+.le .ts  { color: var(--mut); flex-shrink: 0; }
+.le.ok   .msg { color: var(--ok); }
+.le.warn .msg { color: var(--warn); }
+.le.error .msg { color: var(--err); }
+.le.info  .msg { color: var(--tx); }
 
-/* log */
-.swlog{background:#080d18;border:1px solid var(--line);border-radius:8px;
-  padding:8px 10px;max-height:180px;overflow-y:auto;
-  font-family:ui-monospace,Consolas,monospace;font-size:11px;}
-.entry{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04);}
-.entry:last-child{border:none;}
-.entry .ts{color:var(--mut);flex-shrink:0;}
-.entry.ok   .msg{color:var(--ok);}
-.entry.warn .msg{color:var(--warn);}
-.entry.error .msg{color:var(--err);}
-.entry.info .msg{color:var(--tx);}
-
-/* config/editor */
-#configBox{background:#080d18;border:1px solid var(--line);border-radius:8px;
-  padding:9px 11px;font-family:ui-monospace,Consolas,monospace;font-size:11px;
-  color:#c0d4f0;white-space:pre-wrap;max-height:170px;overflow:auto;margin-top:7px;}
-textarea{width:100%;background:#080d18;border:1px solid var(--line);color:var(--tx);
-  border-radius:8px;padding:9px 11px;font-family:ui-monospace,Consolas,monospace;
-  font-size:11px;resize:vertical;}
-
-/* curl */
-.crl{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
-.inp{background:#080d18;border:1px solid var(--line);color:var(--tx);
-  border-radius:7px;padding:6px 9px;font:inherit;font-size:12px;}
-
-/* buttons */
-.row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;align-items:center;}
-.btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);
-  background:var(--panel2);color:var(--tx);cursor:pointer;font-size:12px;transition:border-color .13s;}
-.btn:hover{border-color:var(--acc);}
-.btn.p{background:var(--acc);color:#04111f;font-weight:600;border-color:var(--acc);}
-.btn.p:hover{opacity:.88;}
-.btn.g{background:var(--ok);color:#021a0d;font-weight:600;border-color:var(--ok);}
-.btn.d{border-color:var(--warn);color:var(--warn);}
-.btn.d:hover{background:var(--warn-dim);}
-.btn.r{border-color:var(--err);color:var(--err);}
-.btn.r:hover{background:var(--err-dim);}
-.btn.sm{padding:3px 8px;font-size:11px;}
-.btn.tog-on {background:var(--ok);color:#021a0d;font-weight:700;border-color:var(--ok);}
-.btn.tog-off{background:var(--panel2);color:var(--mut);border-color:var(--line);}
-
-.log{margin-top:9px;padding:8px 10px;border-radius:8px;background:#080d18;
-  border:1px solid var(--line);white-space:pre-wrap;max-height:160px;overflow:auto;
-  font-family:ui-monospace,Consolas,monospace;font-size:11px;display:none;}
-.log.ok {color:var(--ok); border-color:rgba(46,204,113,.3);}
-.log.err{color:var(--err);border-color:rgba(231,76,60,.3);}
-.log.n  {color:var(--mut);}
+/* scrub controls */
+#controls {
+  position: absolute;
+  top: 10px; left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+}
+.ctrl-btn {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--mut);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ctrl-btn:hover { border-color: var(--acc); color: var(--acc); }
 </style>
 </head>
 <body>
-<header>
-  <h1>zapret2 · пул стратегий</h1>
-  <span class="hpath" id="hpath"></span>
-</header>
-<div class="wrap">
 
-  <!-- LEFT: список всех стратегий -->
-  <div class="card">
-    <h2>Все стратегии <span id="stratCount" style="font-weight:400"></span></h2>
-    <div class="slist" id="slist"><div style="color:var(--mut)">Загрузка…</div></div>
+<!-- ── header ── -->
+<div id="hdr">
+  <div class="logo">zapret2 · <span>evasion landscape</span></div>
+  <div class="sep"></div>
+  <span class="pill idle" id="poolPill">pool idle</span>
+  <span class="pill idle" id="monPill">monitor —</span>
+  <span class="pill idle" id="vecPill">0 vectors</span>
+  <div class="hstats">
+    <div class="hs">стратегий <b id="hStrat">—</b></div>
+    <div class="hs">срезов <b id="hCuts" style="color:var(--err)">0</b></div>
+    <div class="hs">здоровых <b id="hHealth" style="color:var(--ok)">—</b></div>
+    <div class="hs">YT-соед. <b id="hConns">—</b></div>
+  </div>
+  <div class="sep"></div>
+  <button class="hbtn" onclick="togglePool()">вкл/выкл пул</button>
+  <button class="hbtn" onclick="forceCheck()">↻ проверить</button>
+  <button class="hbtn p" onclick="addSlot()">+ слот</button>
+</div>
+
+<!-- ── main ── -->
+<div id="main">
+
+  <!-- canvas -->
+  <div id="canvasWrap">
+    <canvas id="scape"></canvas>
+
+    <!-- zoom controls -->
+    <div id="controls">
+      <button class="ctrl-btn" title="приблизить" onclick="zoom(1.2)">+</button>
+      <button class="ctrl-btn" title="отдалить"   onclick="zoom(0.8)">−</button>
+      <button class="ctrl-btn" title="сброс вида" onclick="resetView()" style="font-size:11px">⌂</button>
+    </div>
+
+    <!-- legend -->
+    <div id="legend">
+      <div class="leg-row"><div class="leg-dot" style="background:var(--ok)"></div>активная стратегия</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--warn)"></div>деградирует</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--err)"></div>сожжена ТСПУ</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--mut);opacity:.5"></div>в резерве</div>
+      <div class="leg-row"><div class="leg-line" style="background:var(--ok);opacity:.7"></div>поток трафика</div>
+      <div class="leg-row"><div class="leg-line" style="background:var(--err);opacity:.7;height:1px;border-top:1px dashed var(--err)"></div>срез ТСПУ</div>
+    </div>
+
+    <!-- node detail popup -->
+    <div id="detail">
+      <button class="dt-close" onclick="closeDetail()">×</button>
+      <div class="dt-name" id="dtName"></div>
+      <div class="dt-grid" id="dtGrid"></div>
+      <div class="dt-opts" id="dtOpts"></div>
+    </div>
   </div>
 
-  <!-- RIGHT -->
-  <div class="rcol">
+  <!-- right sidebar -->
+  <div id="sidebar">
 
-    <!-- подключения -->
-    <div class="card">
-      <h2>Подключения <span id="connTs" style="font-weight:400;margin-left:auto"></span></h2>
-      <div class="conn-grid">
-        <div class="connbox">
-          <div class="cbtitle">Shadowsocks <span id="ssPort" class="cbport"></span></div>
-          <div class="cbcount" id="ssCount">—</div>
-          <div class="cbips" id="ssIps"></div>
-        </div>
-        <div class="connbox">
-          <div class="cbtitle">SOCKS5 <span id="socksPortLbl" class="cbport"></span></div>
-          <div class="cbcount" id="socksCount">—</div>
-          <div class="cbips" id="socksIps"></div>
-        </div>
+    <!-- TSPU monitor -->
+    <div class="sb-section">
+      <div class="sb-title"><div class="dot" id="monDot"></div>детектор ТСПУ</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+        <span style="color:var(--mut);font-size:10px">reset ratio</span>
+        <span id="monRatio" style="font-size:14px;font-weight:700">—</span>
       </div>
-    </div>
-
-    <!-- монитор reset/close -->
-    <div class="card">
-      <h2>Детектор блокировки ТСПУ
-        <span id="monAlert" style="display:none;margin-left:6px;font-size:11px;
-          padding:2px 7px;border-radius:4px;background:var(--err-dim);color:var(--err);font-weight:600">
-          ⚠ Деградация
-        </span>
-      </h2>
-
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <span style="font-size:11px;color:var(--mut)">Reset ratio за окно:</span>
-        <span id="monRatio" style="font-size:13px;font-weight:700;font-family:monospace">—</span>
-        <span style="font-size:11px;color:var(--mut)" id="monThreshLbl"></span>
-      </div>
-      <div class="mon-bar-wrap">
-        <div class="mon-bar" id="monBar" style="width:0%;background:var(--ok)"></div>
-      </div>
-
+      <div class="mbar-wrap"><div class="mbar" id="monBar" style="width:0%;background:var(--ok)"></div></div>
       <div class="mon-stats">
-        <div class="mon-stat">
-          <div class="val" id="monResets" style="color:var(--err)">—</div>
-          <div class="lbl">Resets (окно)</div>
-        </div>
-        <div class="mon-stat">
-          <div class="val" id="monCloses" style="color:var(--ok)">—</div>
-          <div class="lbl">Closes (окно)</div>
-        </div>
-        <div class="mon-stat">
-          <div class="val" id="monWindow">—</div>
-          <div class="lbl">Окно (сек)</div>
-        </div>
-      </div>
-
-      <!-- настройки -->
-      <div class="sg" style="margin-top:10px">
-        <div>
-          <label>Окно наблюдения (сек)</label>
-          <input type="number" id="monWinSec" value="60" min="10">
-        </div>
-        <div>
-          <label>Порог ratio (0.0–1.0)</label>
-          <input type="number" id="monThresh" value="0.09" min="0.05" max="1" step="0.05">
-        </div>
-        <div>
-          <label>Мин. событий для срабатывания</label>
-          <input type="number" id="monMinEv" value="5" min="1">
-        </div>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <button class="btn p sm" onclick="saveMonitorCfg()">Сохранить</button>
-        <span id="monSaved" style="font-size:11px;color:var(--ok);display:none">✓</span>
+        <div class="mon-stat"><div class="val" id="monResets" style="color:var(--err)">—</div><div class="lbl">resets</div></div>
+        <div class="mon-stat"><div class="val" id="monCloses" style="color:var(--ok)">—</div><div class="lbl">closes</div></div>
+        <div class="mon-stat"><div class="val" id="monWindow">—</div><div class="lbl">окно</div></div>
       </div>
     </div>
 
-    <!-- пул nfqws2 -->
-    <div class="card">
-      <div class="pool-header">
-        <h2 style="margin:0">Пул nfqws2</h2>
-        <span class="pool-state idle" id="poolState">idle</span>
-        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
-          <button class="btn sm" onclick="forceCheck()">Проверить</button>
-          <button class="btn sm p" onclick="addSlot()">+ Слот</button>
-          <button class="btn sm tog-off" id="poolToggle" onclick="togglePool()">Вкл авто</button>
-        </div>
-      </div>
-
-      <!-- активность трафика сейчас -->
-      <div class="tf-ribbon">
-        <div class="tf-top">
-          <span>Трафик сейчас</span>
-          <span style="color:var(--mut)">здоровых: <span id="tfHealthy" style="color:var(--ok)">-/-</span></span>
-          <span style="color:var(--mut)">срезов: <span id="tfCuts" style="color:var(--tx)">0</span></span>
-          <span class="tf-conns">соед. YT: <span id="tfActiveConns" style="color:var(--tx)">—</span></span>
-        </div>
-        <div class="tf-bars" id="tfBars"><span class="tf-empty">нет данных</span></div>
-      </div>
-
-      <!-- слоты -->
-      <div class="slots-grid" id="slotsGrid">
-        <div style="color:var(--mut);font-size:12px;grid-column:1/-1">Пул не запущен</div>
-      </div>
-
-      <!-- настройки -->
-      <div class="sg" style="margin-top:12px">
-        <div>
-          <label>Размер пула (слотов)</label>
-          <input type="number" id="cfgPoolSize" value="3" min="1" max="10">
-        </div>
-        <div>
-          <label>Интервал проверки (сек)</label>
-          <input type="number" id="cfgInterval" value="60" min="10">
-        </div>
-        <div>
-          <label>Провалов до замены слота</label>
-          <input type="number" id="cfgThreshold" value="2" min="1">
-        </div>
-        <div>
-          <label>URL для теста</label>
-          <input type="text" id="cfgUrl" value="https://www.youtube.com">
-        </div>
-        <div>
-          <label>Ротация при срезе ТСПУ</label>
-          <select id="cfgCutEn">
-            <option value="1">вкл</option>
-            <option value="0">выкл</option>
-          </select>
-        </div>
-        <div>
-          <label>Мин. lifetime среза (сек)</label>
-          <input type="number" id="cfgCutMin" value="30" min="5">
-        </div>
-        <div>
-          <label>Макс. lifetime среза (сек)</label>
-          <input type="number" id="cfgCutMax" value="60" min="10">
-        </div>
-                <div>
-          <label>Cooldown ротации (сек)</label>
-          <input type="number" id="cfgCutCool" value="30" min="0">
-        </div>
-        <div>
-          <label>Эпидемия: ≥ RST-смертей за 60с</label>
-          <input type="number" id="cfgCutEpi" value="4" min="2">
-        </div>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <button class="btn p sm" onclick="savePoolCfg()">Сохранить настройки</button>
-        <span id="cfgSaved" style="font-size:11px;color:var(--ok);display:none">✓ Сохранено</span>
-      </div>
-
-      <!-- лог пула -->
-      <div style="margin-top:12px">
-        <div style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em;
-          margin-bottom:5px;display:flex;align-items:center;gap:6px;">
-          Лог <button class="btn sm" onclick="clearLog()">очистить</button>
-        </div>
-        <div class="swlog" id="poolLog"><div style="color:var(--mut)">—</div></div>
-      </div>
+    <!-- vector list -->
+    <div class="sb-section" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0">
+      <div class="sb-title"><div class="dot"></div>векторы уязвимости</div>
+      <div id="vectorList"></div>
     </div>
 
-    <!-- векторы техник обхода -->
-    <div class="card">
-      <h2>Векторы (техники обхода)
-        <span id="vecCount" style="font-weight:400"></span>
-        <span id="vecTs" style="font-weight:400;margin-left:auto;font-size:10px;color:var(--mut)"></span>
-      </h2>
-      <div id="vecList"><div style="color:var(--mut)">Загрузка…</div></div>
-    </div>
-
-    <!-- журнал срезов ТСПУ -->
-    <div class="card">
-      <h2>Журнал срезов ТСПУ
-        <button class="btn sm" onclick="exportCuts()" style="margin-left:4px">⬇ Скачать</button>
-        <button class="btn sm" onclick="clearCuts()">Очистить</button>
-        <span id="cutPath" style="font-weight:400;margin-left:4px;color:var(--mut)"></span>
-      </h2>
-      <div id="cutsList"><div style="color:var(--mut)">Загрузка…</div></div>
-    </div>
-
-    <!-- текущий config -->
-    <div class="card">
-      <h2>Config
-        <button class="btn sm" onclick="refreshCfg()" style="margin-left:4px">↻</button>
-        <span id="cfgTs" style="font-weight:400;margin-left:4px"></span>
-      </h2>
-      <div id="configBox">Загрузка…</div>
-    </div>
-
-    <!-- curl тест -->
-    <div class="card">
-      <h2>Тест подключения</h2>
-      <div class="crl">
-        <input class="inp" id="curlUrl" style="flex:1;min-width:140px" type="text"
-          value="https://google.com" oninput="updateCurlCmd()">
-        <input class="inp" id="curlPort" type="number" value="1080" style="width:80px"
-          oninput="updateCurlCmd()">
-        <button class="btn p" onclick="runCurl()">▶ Тест</button>
+    <!-- event log -->
+    <div class="sb-section" style="flex:0 0 180px;display:flex;flex-direction:column;overflow:hidden">
+      <div class="sb-title" style="margin-bottom:4px">
+        <div class="dot"></div>лог событий
+        <button class="hbtn" style="margin-left:auto;padding:1px 6px;font-size:9px" onclick="clearLog()">очист.</button>
       </div>
-      <div id="curlCmd" style="font-size:10px;color:var(--mut);margin-top:4px;font-family:monospace"></div>
-      <div class="log n" id="curlLog"></div>
-    </div>
-
-    <!-- импорт -->
-    <div class="card">
-      <h2>Импорт стратегий из JSON</h2>
-      <textarea id="jsonInput" rows="4"
-        placeholder='{"domain":"youtube.com","strategies":[{"args":"..."}]}'></textarea>
-      <div class="row">
-        <input class="inp" id="jsonPrefix" type="text" style="width:160px" placeholder="Префикс (необяз.)">
-        <button class="btn p" onclick="importJson()">Импортировать</button>
-      </div>
-      <div class="log n" id="importLog"></div>
+      <div id="logBox"></div>
     </div>
 
   </div>
 </div>
 
+<!-- tooltip -->
+<div id="tooltip">
+  <div class="tt-name" id="ttName"></div>
+  <div id="ttRows"></div>
+  <div class="tt-vec" id="ttVec"></div>
+</div>
+
 <script>
-async function api(path, opts){ return (await fetch(path, opts)).json(); }
-function post(path, data){
-  return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+'use strict';
+// ═══════════════════════════════════════════════════════════════════════
+// API helpers
+// ═══════════════════════════════════════════════════════════════════════
+async function api(path){ try{ return await (await fetch(path)).json(); }catch{ return {}; } }
+function post(path,d){ return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); }
+
+// ═══════════════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════════════
+let _strategies  = [];   // [{name, nfqws_opt, description}, ...]
+let _slots       = [];   // current pool slots
+let _scores      = {};   // name → score
+let _vectorData  = [];   // [{vector, strategies[], score, hazard, implicated}]
+let _traffic     = {};   // qnum → {kbps, pkts_delta, ...}
+let _cuts        = 0;
+let _logEntries  = [];
+let _logLen      = 0;
+
+// canvas scene graph
+let _nodes       = [];   // enriched strategy nodes for canvas
+let _edges       = [];   // traffic beam segments [{from, to, strength, live}]
+let _cutFlashes  = [];   // [{x,y,t}] — burn animations at TSPU-cut coordinates
+let _beamPhase   = 0;    // animated offset for flowing beam dashes
+
+// camera
+let _cam = { x: 0, y: 0, scale: 1 };
+let _drag = null;
+
+// selected node
+let _selected = null;
+
+// vector colour table (built on first /api/pool/vectors fetch)
+const _vecColors = {};
+const _PALETTE = [
+  '#3d8ef0','#27c97a','#e8a020','#9060e0','#20b8a0',
+  '#e04898','#60a0e0','#80d040','#e06030','#8080ff',
+];
+let _palIdx = 0;
+
+function vecColor(v){ if(!_vecColors[v]){ _vecColors[v] = _PALETTE[_palIdx++ % _PALETTE.length]; } return _vecColors[v]; }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Canvas setup
+// ═══════════════════════════════════════════════════════════════════════
+const canvas = document.getElementById('scape');
+const ctx    = canvas.getContext('2d');
+
+function resize(){
+  canvas.width  = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  layoutNodes();
 }
-function showLog(id, text, cls){
-  const el = document.getElementById(id);
-  el.style.display = 'block'; el.className = 'log ' + (cls||'n'); el.textContent = text;
+window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Layout: place nodes deterministically, group by vector
+// ═══════════════════════════════════════════════════════════════════════
+function layoutNodes(){
+  const W = canvas.width, H = canvas.height;
+  if(!W || !H || !_nodes.length) return;
+
+  // group by vector
+  const groups = {};
+  for(const n of _nodes){ (groups[n.vector] = groups[n.vector]||[]).push(n); }
+  const vecs = Object.keys(groups);
+  const nv   = vecs.length;
+
+  vecs.forEach((v, vi) => {
+    const members = groups[v];
+    // vector cluster centre — arranged in a circle of clusters
+    const angle   = (vi / nv) * Math.PI * 2 - Math.PI / 2;
+    const radius  = Math.min(W, H) * 0.30;
+    const cx      = W/2 + radius * Math.cos(angle);
+    const cy      = H/2 + radius * Math.sin(angle);
+
+    // within cluster: small sunflower layout
+    members.forEach((n, i) => {
+      if(n.pinned && n.x !== undefined) return;   // keep user-dragged nodes
+      const golden = 2.399963;
+      const r  = i === 0 ? 0 : (i < members.length ? 22 * Math.sqrt(i) : 0);
+      const a  = i * golden;
+      n.x  = cx + r * Math.cos(a);
+      n.y  = cy + r * Math.sin(a);
+      n.tx = n.x; n.ty = n.y;
+    });
+  });
 }
 
-// ── reset monitor ─────────────────────────────────────────────────────────
-async function refreshMonitor(){
-  const s = await api('/api/monitor/status');
-  if(!s || s.error) return;
+// ═══════════════════════════════════════════════════════════════════════
+// Build traffic beam edges
+// ═══════════════════════════════════════════════════════════════════════
+function buildEdges(){
+  _edges = [];
+  // Each active slot is a "source" pulling traffic through its strategy node
+  // If two slots share the same vector, we draw a "chain" through them
+  // ordered by qnum, showing traffic passing sequentially.
+  const activeSlots = _slots.filter(s => s.strategy);
 
-  const pct     = Math.min(100, s.ratio * 100);
-  const color   = s.degraded ? 'var(--err)' : (pct > 25 ? 'var(--warn)' : 'var(--ok)');
-  const ratioTx = (s.ratio * 100).toFixed(1) + '%';
-
-  document.getElementById('monRatio').textContent   = ratioTx;
-  document.getElementById('monRatio').style.color   = color;
-  document.getElementById('monBar').style.width     = pct.toFixed(1) + '%';
-  document.getElementById('monBar').style.background = color;
-  document.getElementById('monThreshLbl').textContent = '(порог ' + (s.threshold*100).toFixed(0) + '%)';
-  document.getElementById('monResets').textContent  = s.resets_window;
-  document.getElementById('monCloses').textContent  = s.closes_window;
-  document.getElementById('monWindow').textContent  = s.window_sec + 's';
-  document.getElementById('monAlert').style.display = s.degraded ? 'inline' : 'none';
-
-  // Синхронизируем поля если не редактируем
-  if(document.getElementById('monWinSec').dataset.dirty !== '1')
-    document.getElementById('monWinSec').value  = s.window_sec;
-  if(document.getElementById('monThresh').dataset.dirty !== '1')
-    document.getElementById('monThresh').value  = s.threshold;
-  if(document.getElementById('monMinEv').dataset.dirty !== '1')
-    document.getElementById('monMinEv').value   = s.min_events;
+  // group active slots by vector
+  const byVec = {};
+  for(const sl of activeSlots){
+    const n = _nodes.find(n => n.name === sl.strategy);
+    if(!n) continue;
+    const v = n.vector;
+    (byVec[v] = byVec[v]||[]).push({slot: sl, node: n});
+  }
+  for(const [v, members] of Object.entries(byVec)){
+    if(members.length < 2) continue;
+    // sort by qnum for chain ordering
+    members.sort((a,b) => a.slot.qnum - b.slot.qnum);
+    for(let i = 0; i < members.length-1; i++){
+      const a = members[i], b = members[i+1];
+      const traf_a = _traffic[a.slot.qnum] || {};
+      const traf_b = _traffic[b.slot.qnum] || {};
+      const strength = Math.max(traf_a.kbps||0, traf_b.kbps||0);
+      _edges.push({ from: a.node, to: b.node, vector: v, strength,
+                    live: strength > 0.1 });
+    }
+  }
 }
 
-async function saveMonitorCfg(){
-  const cfg = {
-    window_sec:  +document.getElementById('monWinSec').value,
-    threshold:   +document.getElementById('monThresh').value,
-    min_events:  +document.getElementById('monMinEv').value,
-  };
-  await post('/api/monitor/configure', cfg);
-  ['monWinSec','monThresh','monMinEv'].forEach(id =>
-    document.getElementById(id).dataset.dirty = '0');
-  const s = document.getElementById('monSaved');
-  s.style.display = 'inline'; setTimeout(() => s.style.display = 'none', 2000);
-}
+// ═══════════════════════════════════════════════════════════════════════
+// Draw
+// ═══════════════════════════════════════════════════════════════════════
+function wtx(x){ return x * _cam.scale + _cam.x; }
+function wty(y){ return y * _cam.scale + _cam.y; }
 
-['monWinSec','monThresh','monMinEv'].forEach(id =>
-  document.getElementById(id).addEventListener('input', () =>
-    document.getElementById(id).dataset.dirty = '1'));
+function drawFrame(ts){
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
 
-// ── traffic stats ─────────────────────────────────────────────────────────
-let _maxKbps = 1;
-const _qnumToIndex = {};
+  // faint grid
+  ctx.save();
+  ctx.strokeStyle = 'rgba(30,45,69,.4)';
+  ctx.lineWidth = 1;
+  const gs = 80 * _cam.scale;
+  const ox = _cam.x % gs, oy = _cam.y % gs;
+  for(let x = ox; x < W; x+=gs){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y = oy; y < H; y+=gs){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  ctx.restore();
 
-async function refreshTraffic(){
-  const data = await api('/api/pool/traffic');
-  if(!data || data.error) return;
-  let maxK = 1;
-  for(const s of Object.values(data)) if(s.kbps > maxK) maxK = s.kbps;
-  _maxKbps = Math.max(_maxKbps * 0.85, maxK, 1);
+  _beamPhase = (ts / 18) % 20;
 
-  let totalDp = 0;
-  for(const s of Object.values(data)) totalDp += (s.pkts_delta || 0);
+  // ── vector cluster halos ──
+  const groups = {};
+  for(const n of _nodes){ (groups[n.vector]=groups[n.vector]||[]).push(n); }
+  for(const [v, members] of Object.entries(groups)){
+    if(members.length < 2) continue;
+    const cx = members.reduce((s,n)=>s+wtx(n.x),0)/members.length;
+    const cy = members.reduce((s,n)=>s+wty(n.y),0)/members.length;
+    let maxR  = 0;
+    for(const m of members) maxR = Math.max(maxR, Math.hypot(wtx(m.x)-cx, wty(m.y)-cy));
+    const r   = Math.max(maxR + 28, 36);
+    const col = vecColor(v);
+    const vd  = _vectorData.find(x=>x.vector===v);
+    const imp = vd && vd.implicated;
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    const baseAlpha = imp ? .10 : .04;
+    grd.addColorStop(0, col + '28');
+    grd.addColorStop(1, col + '00');
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+    if(imp){
+      ctx.strokeStyle = 'rgba(224,64,64,.25)';
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([4,4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // vector label
+    ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = col + '99';
+    ctx.textAlign = 'center';
+    ctx.fillText(v, cx, cy - r - 4);
+    ctx.textAlign = 'left';
+  }
 
-  // лента «Трафик сейчас» — сегменты по слотам
-  const box = document.getElementById('tfBars');
-  if(box){
-    const rows = Object.values(data).filter(s => s.pkts > 0);
-    const seen = rows.filter(s => (s.pkts_delta || 0) > 0);
-    box.innerHTML = '';
-    if(!rows.length){
-      box.innerHTML = '<span class="tf-empty">нет трафика</span>';
-    } else if(!seen.length){
-      box.innerHTML = '<span class="tf-empty">нет активного трафика (ждём…)</span>';
+  // ── traffic beam edges ──
+  for(const e of _edges){
+    const x1 = wtx(e.from.x), y1 = wty(e.from.y);
+    const x2 = wtx(e.to.x),   y2 = wty(e.to.y);
+    const col = vecColor(e.vector);
+    ctx.save();
+    ctx.lineWidth = e.live ? Math.min(3, 1 + e.strength/50) : 1;
+    if(e.live){
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = .55;
+      ctx.setLineDash([8, 5]);
+      ctx.lineDashOffset = -_beamPhase;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      // arrow head
+      const ang = Math.atan2(y2-y1, x2-x1);
+      const al  = 10 * _cam.scale;
+      ctx.setLineDash([]);
+      ctx.globalAlpha = .8;
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - al*Math.cos(ang-.4), y2 - al*Math.sin(ang-.4));
+      ctx.lineTo(x2 - al*Math.cos(ang+.4), y2 - al*Math.sin(ang+.4));
+      ctx.closePath();
+      ctx.fillStyle = col;
+      ctx.fill();
     } else {
-      seen.forEach(s => {
-        const idx = _qnumToIndex[s.qnum] !== undefined ? _qnumToIndex[s.qnum] : '?';
-        const share = totalDp > 0 ? ((s.pkts_delta || 0) / totalDp * 100) : 0;
-        const seg = document.createElement('div');
-        seg.className = 'tf-seg live';
-        seg.style.width = Math.max(share, 4).toFixed(1) + '%';
-        seg.title = 'Слот ' + idx + ' · ' + (s.kbps||0).toFixed(1) + ' kbps · ' +
-                    (s.pps||0).toFixed(1) + ' pps · доля ' + share.toFixed(0) + '%';
-        seg.textContent = share >= 10 ? ('С' + idx) : '';
-        box.appendChild(seg);
-      });
+      ctx.strokeStyle = col + '44';
+      ctx.setLineDash([3,5]);
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
     }
+    ctx.restore();
   }
 
-  for(const [qnum, s] of Object.entries(data)){
-    const lbl = document.getElementById('tkbps-' + qnum);
-    const bar = document.getElementById('tbar-'  + qnum);
-    if(!lbl || !bar) continue;
-    const pct = Math.min(100, s.kbps / _maxKbps * 100);
-    lbl.textContent = s.kbps > 0
-      ? (s.kbps.toFixed(1) + ' kbps' + (s.bytes_estimated ? '~' : ''))
-      : '—';
-    bar.style.width  = pct.toFixed(1) + '%';
-    bar.className    = 'tbar' + (s.kbps > 0.5 ? ' live' : '');
+  // ── TSPU cut flashes ──
+  _cutFlashes = _cutFlashes.filter(f => ts - f.t < 1400);
+  for(const f of _cutFlashes){
+    const age   = (ts - f.t) / 1400;
+    const alpha = Math.max(0, 1 - age);
+    const r     = 18 + age * 60;
+    ctx.save();
+    ctx.globalAlpha = alpha * .7;
+    ctx.strokeStyle = 'var(--err)';
+    ctx.lineWidth   = 2;
+    ctx.beginPath(); ctx.arc(wtx(f.x), wty(f.y), r * _cam.scale, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
 
-    // бейдж активности слота
-    const idx = _qnumToIndex[qnum];
-    if(idx !== undefined){
-      const live = document.getElementById('slotlive-' + idx);
-      if(live){
-        const active = (s.pkts_delta || 0) > 0;
-        live.textContent = active
-          ? ('▶ Активен · ' + (s.kbps||0).toFixed(1) + ' kbps')
-          : 'ожидание';
-        live.className = 'slot-live ' + (active ? 'on' : 'off');
+  // ── nodes ──
+  for(const n of _nodes){
+    const nx = wtx(n.x), ny = wty(n.y);
+    const r  = (n.slot ? 11 : 7) * _cam.scale;
+
+    let fillColor, strokeColor, glowColor;
+    if(n.burned){
+      fillColor   = '#30101a';
+      strokeColor = 'var(--err)';
+      glowColor   = 'rgba(224,64,64,.6)';
+    } else if(n.slot){
+      const sl = n.slot;
+      if(sl.healthy === true){
+        fillColor   = '#0d2a1a';
+        strokeColor = 'var(--ok)';
+        glowColor   = 'rgba(39,201,122,.5)';
+      } else if(sl.healthy === false){
+        fillColor   = '#2a1a0a';
+        strokeColor = 'var(--warn)';
+        glowColor   = 'rgba(232,160,32,.4)';
+      } else {
+        fillColor   = 'var(--panel2)';
+        strokeColor = 'var(--mut)';
+        glowColor   = null;
       }
+    } else {
+      fillColor   = 'var(--panel2)';
+      strokeColor = vecColor(n.vector) + '88';
+      glowColor   = null;
+    }
+
+    // glow
+    if(glowColor){
+      const gr = ctx.createRadialGradient(nx, ny, 0, nx, ny, r * 2.4);
+      gr.addColorStop(0, glowColor);
+      gr.addColorStop(1, 'transparent');
+      ctx.beginPath(); ctx.arc(nx, ny, r * 2.4, 0, Math.PI*2);
+      ctx.fillStyle = gr; ctx.fill();
+    }
+
+    // circle
+    ctx.beginPath(); ctx.arc(nx, ny, r, 0, Math.PI*2);
+    ctx.fillStyle   = fillColor;
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth   = n === _selected ? 2.5 : 1.5;
+    ctx.fill(); ctx.stroke();
+
+    // traffic dot (inner live indicator)
+    const traf = n.slot ? (_traffic[n.slot.qnum] || {}) : {};
+    if(traf.pkts_delta > 0){
+      const pulse = .5 + .5 * Math.sin(ts / 220);
+      ctx.beginPath(); ctx.arc(nx, ny, 3 * _cam.scale, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(39,201,122,${.5 + .5*pulse})`;
+      ctx.fill();
+    }
+
+    // label
+    if(_cam.scale > 0.5){
+      const fs = Math.max(8, 10 * _cam.scale);
+      ctx.font = `${fs}px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.fillStyle = n.slot ? 'var(--tx)' : 'var(--mut)';
+      ctx.textAlign = 'center';
+      ctx.fillText(n.shortName, nx, ny + r + fs + 1);
+      ctx.textAlign = 'left';
+    }
+
+    // slot badge
+    if(n.slot && _cam.scale > 0.65){
+      const badge = 'С' + n.slot.index;
+      const bfs   = Math.max(7, 8 * _cam.scale);
+      ctx.font      = `bold ${bfs}px monospace`;
+      ctx.fillStyle = strokeColor;
+      ctx.textAlign = 'center';
+      ctx.fillText(badge, nx, ny + 4 * _cam.scale);
+      ctx.textAlign = 'left';
     }
   }
+
+  requestAnimationFrame(drawFrame);
 }
 
-function renderSlots(slots){
-  const grid = document.getElementById('slotsGrid');
-  if(!slots.length){
-    grid.innerHTML = '<div style="color:var(--mut);font-size:12px;grid-column:1/-1">Нет активных слотов</div>';
+// ═══════════════════════════════════════════════════════════════════════
+// Camera / interaction
+// ═══════════════════════════════════════════════════════════════════════
+function toWorld(cx, cy){ return { x: (cx - _cam.x) / _cam.scale, y: (cy - _cam.y) / _cam.scale }; }
+
+canvas.addEventListener('mousedown', e => {
+  const w = toWorld(e.offsetX, e.offsetY);
+  const hit = hitTest(w.x, w.y);
+  if(hit){
+    _drag = { node: hit, sx: e.offsetX, sy: e.offsetY, ox: hit.x, oy: hit.y };
+  } else {
+    _drag = { cam: true, sx: e.offsetX, sy: e.offsetY, ox: _cam.x, oy: _cam.y };
+  }
+});
+canvas.addEventListener('mousemove', e => {
+  if(_drag){
+    const dx = e.offsetX - _drag.sx, dy = e.offsetY - _drag.sy;
+    if(_drag.node){
+      _drag.node.x = _drag.ox + dx / _cam.scale;
+      _drag.node.y = _drag.oy + dy / _cam.scale;
+      _drag.node.pinned = true;
+    } else {
+      _cam.x = _drag.ox + dx;
+      _cam.y = _drag.oy + dy;
+    }
     return;
   }
-  grid.innerHTML = '';
-  for(const slot of slots){
-    _qnumToIndex[slot.qnum] = slot.index;
-    const ok  = slot.healthy === true;
-    const bad = slot.healthy === false;
-    const excluded = slot.fw_excluded;
-    const cls = excluded ? 'unknown' : ok ? 'ok' : bad ? 'fail' : 'unknown';
-    const stTx  = excluded ? '⏸ Замена…' : ok ? '✓ Работает' : bad ? '✗ Не работает' : '— Ожидание';
-    const stCls = excluded ? 'unknown' : ok ? 'ok' : bad ? 'fail' : 'unknown';
-    const el = document.createElement('div');
-    el.className = 'slot ' + cls;
-    el.id = 'slot-' + slot.index;
-    el.dataset.qnum = slot.qnum;
-    el.innerHTML =
-      '<div><span class="slot-num">Слот ' + slot.index + '</span>' +
-      '<span class="slot-qnum"> qnum=' + slot.qnum + '</span></div>' +
-      '<div class="slot-name">' + (slot.strategy || '—') + '</div>' +
-      '<div class="slot-status ' + stCls + '">' + stTx + '</div>' +
-      '<div class="slot-live off" id="slotlive-' + slot.index + '">ожидание</div>' +
-      '<div class="slot-traffic">' +
-        '<span class="tbar-label" id="tkbps-' + slot.qnum + '">—</span>' +
-        '<div class="tbar-wrap"><div class="tbar" id="tbar-' + slot.qnum + '" style="width:0%"></div></div>' +
-      '</div>' +
-      (slot.started ? '<div style="font-size:10px;color:var(--mut);margin-top:2px">старт ' + slot.started + '</div>' : '') +
-      '<select class="slot-sel" onchange="changeSlotStrategy(' + slot.index + ',this.value)">' +
-        '<option value="">— сменить стратегию —</option>' +
-        _allStrategies.map(s => '<option value="' + s.name + '"' +
-          (s.name === slot.strategy ? ' selected' : '') + '>' + s.name + '</option>').join('') +
-      '</select>' +
-      '<button class="slot-del" onclick="removeSlot(' + slot.index + ')" title="Убрать">×</button>';
-    grid.appendChild(el);
+  // tooltip
+  const w = toWorld(e.offsetX, e.offsetY);
+  const hit = hitTest(w.x, w.y);
+  if(hit) showTooltip(e.clientX, e.clientY, hit);
+  else    hideTooltip();
+});
+canvas.addEventListener('mouseup', e => {
+  if(_drag && !_drag.cam){
+    const dx = Math.abs(e.offsetX - _drag.sx), dy = Math.abs(e.offsetY - _drag.sy);
+    if(dx < 4 && dy < 4) openDetail(_drag.node);   // click, not drag
   }
-  // сразу обновляем трафик для новых карточек
-  refreshTraffic();
+  _drag = null;
+});
+canvas.addEventListener('mouseleave', () => { _drag = null; hideTooltip(); });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = e.deltaY < 0 ? 1.12 : 0.89;
+  const cx = e.offsetX, cy = e.offsetY;
+  _cam.x = cx + (_cam.x - cx) * f;
+  _cam.y = cy + (_cam.y - cy) * f;
+  _cam.scale *= f;
+}, { passive: false });
+
+function hitTest(wx, wy){
+  const hitR = 14 / _cam.scale;
+  for(const n of _nodes)
+    if(Math.hypot(n.x - wx, n.y - wy) < hitR) return n;
+  return null;
 }
 
-// ── pool status ───────────────────────────────────────────────────────────
-let _allStrategies = [];
-let _poolEnabled   = false;
+function zoom(f){
+  const cx = canvas.width/2, cy = canvas.height/2;
+  _cam.x = cx + (_cam.x - cx) * f;
+  _cam.y = cy + (_cam.y - cy) * f;
+  _cam.scale *= f;
+}
+
+function resetView(){
+  _cam = { x: 0, y: 0, scale: 1 };
+  layoutNodes();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Tooltip / detail
+// ═══════════════════════════════════════════════════════════════════════
+const ttEl   = document.getElementById('tooltip');
+const ttName = document.getElementById('ttName');
+const ttRows = document.getElementById('ttRows');
+const ttVec  = document.getElementById('ttVec');
+
+function showTooltip(cx, cy, n){
+  ttName.textContent = n.name;
+  const sl    = n.slot;
+  const score = (_scores[n.name] || 0).toFixed(1);
+  const traf  = sl ? (_traffic[sl.qnum] || {}) : {};
+  let rows = '';
+  rows += row('вектор', n.vector);
+  rows += row('скор',   (score > 0 ? '+' : '') + score);
+  if(sl){
+    rows += row('слот',     'С' + sl.index + ' qnum=' + sl.qnum);
+    rows += row('статус',   sl.healthy === true ? '✓ работает' : sl.healthy === false ? '✗ сбой' : '⟳');
+    rows += row('трафик',   (traf.kbps||0).toFixed(1) + ' kbps');
+  }
+  if(n.burned) rows += `<div style="color:var(--err);margin-top:4px">⚡ сожжена ТСПУ</div>`;
+  ttRows.innerHTML = rows;
+  ttVec.textContent = n.vector;
+  ttEl.style.display = 'block';
+  ttEl.style.left = (cx + 14) + 'px';
+  ttEl.style.top  = (cy -  8) + 'px';
+}
+function hideTooltip(){ ttEl.style.display = 'none'; }
+function row(k,v){ return `<div class="tt-row"><span>${k}</span><b>${v}</b></div>`; }
+
+function openDetail(n){
+  _selected = n;
+  const sl  = n.slot;
+  const traf = sl ? (_traffic[sl.qnum]||{}) : {};
+  document.getElementById('dtName').textContent = n.name;
+  let g = '';
+  g += drow('вектор',     n.vector);
+  g += drow('скор',       ((_scores[n.name]||0)>0?'+':'') + (_scores[n.name]||0).toFixed(1));
+  g += drow('состояние',  n.burned ? '⚡ сожжена' : sl ? (sl.healthy===true?'✓ работает':sl.healthy===false?'✗ деградация':'⟳ ожидание') : '— резерв');
+  if(sl){
+    g += drow('слот',     'С' + sl.index + '  qnum=' + sl.qnum);
+    g += drow('трафик',   (traf.kbps||0).toFixed(1) + ' kbps · ' + (traf.pps||0).toFixed(1) + ' pps');
+  }
+  document.getElementById('dtGrid').innerHTML  = g;
+  document.getElementById('dtOpts').textContent = n.nfqws_opt || '(нет NFQWS2_OPT)';
+  document.getElementById('detail').style.display = 'block';
+}
+function drow(k,v){ return `<span class="dt-k">${k}</span><span class="dt-v">${v}</span>`; }
+function closeDetail(){ document.getElementById('detail').style.display='none'; _selected=null; }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Data refresh
+// ═══════════════════════════════════════════════════════════════════════
+async function refreshAll(){
+  await Promise.all([refreshStrategies(), refreshPool(), refreshVectors(), refreshMonitor(), refreshLog(), refreshTraffic()]);
+}
+
+async function refreshStrategies(){
+  const d = await api('/api/strategies');
+  _strategies = d.strategies || [];
+  document.getElementById('hStrat').textContent = _strategies.length;
+  rebuildNodes();
+}
 
 async function refreshPool(){
   const s = await api('/api/pool/status');
-  _poolEnabled = s.enabled;
+  _slots  = s.slots || [];
+  _cuts   = s.total_cuts || 0;
+  document.getElementById('hCuts').textContent   = _cuts;
+  document.getElementById('hConns').textContent  = s.active_conns !== undefined ? s.active_conns : '—';
+  document.getElementById('hHealth').textContent = s.healthy_count !== undefined
+    ? s.healthy_count + '/' + _slots.length : '—';
 
-  // state badge
-  const stateEl = document.getElementById('poolState');
-  stateEl.textContent = {
-    idle:'Выключен', ok:'Работает ✓', degraded:'Деградация', checking:'Проверка…',
-    replacing:'Замена…'
-  }[s.state] || s.state;
-  stateEl.className = 'pool-state ' + (s.state || 'idle');
+  const st = s.state || 'idle';
+  const labels = {idle:'pool idle', ok:'pool ✓', degraded:'деградация', checking:'проверка…', replacing:'замена…'};
+  const pp = document.getElementById('poolPill');
+  pp.textContent = labels[st] || st;
+  pp.className   = 'pill ' + ({ok:'ok',degraded:'warn',replacing:'warn',checking:'acc',idle:'idle'}[st]||'idle');
 
-  // toggle
-  const tog = document.getElementById('poolToggle');
-  tog.textContent = s.enabled ? 'Авто вкл' : 'Вкл авто';
-  tog.className = 'btn sm ' + (s.enabled ? 'tog-on' : 'tog-off');
+  _poolEnabled = !!s.enabled;
+  _scores = s.strategy_scores || {};
 
-  // settings sync (только если не редактируем)
-  const fields = {cfgPoolSize:'pool_size', cfgInterval:'check_interval',
-                  cfgThreshold:'fail_threshold', cfgUrl:'test_url',
-                  cfgCutMin:'cut_min_sec', cfgCutMax:'cut_max_sec',
-                  cfgCutCool:'cut_cooldown', cfgCutEpi:'cut_epidemic'};
-  Object.entries(fields).forEach(([id, key]) => {
-    const el = document.getElementById(id);
-    if(el.dataset.dirty !== '1' && s[key] !== undefined) el.value = s[key];
-  });
-  const cutEn = document.getElementById('cfgCutEn');
-  if(cutEn && cutEn.dataset.dirty !== '1' && s.cut_rotate_enabled !== undefined)
-    cutEn.value = s.cut_rotate_enabled ? '1' : '0';
-
-  // индикатор активности / срезов
-  if(s.active_conns !== undefined)
-    document.getElementById('tfActiveConns').textContent = s.active_conns;
-  if(s.total_cuts !== undefined)
-    document.getElementById('tfCuts').textContent = s.total_cuts;
-  if(s.healthy_count !== undefined && s.slots)
-    document.getElementById('tfHealthy').textContent =
-      s.healthy_count + '/' + s.slots.length;
-
-  // скоринг стратегий в левом списке
-  if(s.strategy_scores){
-    document.querySelectorAll('.strat').forEach(el => {
-      const sc = el.querySelector('.sscore');
-      const nm = el.dataset.name;
-      if(!sc) return;
-      if(nm in s.strategy_scores){
-        const v = s.strategy_scores[nm];
-        sc.textContent = 'скор ' + (v > 0 ? '+' : '') + v.toFixed(1);
-        sc.className = 'sscore ' + (v > 0.5 ? 'hot' : v < -0.5 ? 'cold' : '');
-      } else {
-        sc.textContent = '';
-      }
-    });
+  // update node state from slots
+  const slotByStrat = {};
+  for(const sl of _slots) if(sl.strategy) slotByStrat[sl.strategy] = sl;
+  for(const n of _nodes){
+    n.slot = slotByStrat[n.name] || null;
   }
 
-  // slots grid
-  renderSlots(s.slots || []);
-
-  // strategy list badges
-  updateStrategyBadges(s.slots || []);
+  buildEdges();
 }
-
-function updateStrategyBadges(slots){
-  const inUse = {};
-  slots.forEach(s => { if(s.strategy) inUse[s.strategy] = s.healthy; });
-  document.querySelectorAll('.strat').forEach(el => {
-    let badge = el.querySelector('.sbadge');
-    const name = el.dataset.name;
-    if(name in inUse){
-      if(!badge){ badge = document.createElement('span'); badge.className='sbadge'; el.appendChild(badge); }
-      const h = inUse[name];
-      badge.className = 'sbadge ' + (h === true ? 'ok' : h === false ? 'warn' : 'idle');
-      badge.textContent = h === true ? '✓ активна' : h === false ? '✗ сбой' : '⟳';
-    } else {
-      if(badge) badge.remove();
-    }
-  });
-}
-
-// ── стратегические векторы ─────────────────────────────────────────────────
-let _vectorMap = {};          // strategy name -> vector key
-let _vectorImpl = new Set();  // векторные ключи, сейчас implicated
-let _vectorHaz = {};          // vector key -> hazard (0..1)
 
 async function refreshVectors(){
-  let d;
-  try{ d = await api('/api/pool/vectors'); }catch(e){ return; }
-  const list = (d && d.vectors) ? d.vectors : [];
-  const box = document.getElementById('vecList');
-  if(!box) return;
-  document.getElementById('vecCount').textContent = '(' + list.length + ')';
-  document.getElementById('vecTs').textContent = new Date().toLocaleTimeString();
-  if(!list.length){
-    box.innerHTML = '<div style="color:var(--mut)">Нет данных о векторах</div>';
-    return;
+  const d = await api('/api/pool/vectors');
+  _vectorData = (d.vectors || []);
+
+  // implication: trigger cut flash on burned nodes
+  const imp = _vectorData.filter(v=>v.implicated).map(v=>v.vector);
+  for(const n of _nodes){
+    const wasImp = n.implicated;
+    n.implicated = imp.includes(n.vector);
+    n.burned     = n.hazard >= 0.7;
+    if(n.implicated && !wasImp){
+      _cutFlashes.push({ x: n.x, y: n.y, t: performance.now() });
+    }
   }
-  // implicated сверху, затем hazard, затем модуль скора
-  const sorted = [...list].sort((a,b)=>
-    (b.implicated?1:0) - (a.implicated?1:0) ||
-    (b.hazard||0) - (a.hazard||0) ||
-    Math.abs(b.score||0) - Math.abs(a.score||0));
-  _vectorMap = {}; _vectorImpl = new Set(); _vectorHaz = {};
-  let html = '<div class="vec-summary">' +
-    sorted.map(v => '<span class="vec-chip' + (v.implicated ? ' hot' : '') + '">' +
-      esc(v.vector) + ' · ' + v.strategies.length +
-      (v.implicated ? ' ⚠' : '') + '</span>').join('') +
-    '</div>';
-  for(const v of sorted){
-    v.strategies.forEach(n => _vectorMap[n] = v.vector);
-    if(v.implicated) _vectorImpl.add(v.vector);
-    _vectorHaz[v.vector] = v.hazard || 0;
-    const sc = v.score || 0;
-    const hz = Math.max(0, Math.min(1, v.hazard || 0));
-    const scPct = Math.max(0, Math.min(100, (sc + 20) / 40 * 100)).toFixed(0);
-    const hzPct = (hz * 100).toFixed(0);
-    const scCls = sc > 0.5 ? 'var(--ok)' : sc < -0.5 ? 'var(--err)' : 'var(--mut)';
-    const hzCls = hz > 0.5 ? 'var(--err)' : hz > 0.2 ? 'var(--warn)' : 'var(--ok)';
-    html += '<div class="vec-row' + (v.implicated ? ' implicated' : '') + '">' +
-      '<div class="vec-head">' +
-        '<span class="vec-name">' + esc(v.vector) + '</span>' +
-        (v.implicated ? '<span class="vec-badge">⚠ implicated</span>' : '') +
-        '<span class="vec-meta">' + v.strategies.length + ' стр. · скор ' +
-          (sc > 0 ? '+' : '') + sc.toFixed(1) + ' · hazard ' + hzPct + '%</span>' +
-      '</div>' +
-      '<div class="vec-stats">' +
-        '<div class="vec-stat"><div class="lbl">скор</div>' +
-          '<div class="vec-bar"><div style="width:' + scPct + '%;background:' + scCls + '"></div></div></div>' +
-        '<div class="vec-stat"><div class="lbl">cut-hazard</div>' +
-          '<div class="vec-bar"><div style="width:' + hzPct + '%;background:' + hzCls + '"></div></div></div>' +
-      '</div>' +
-      '<div class="vec-strategies">' +
-        v.strategies.map(s => '<span class="vec-strat">' + esc(s) + '</span>').join('') +
-      '</div>' +
-    '</div>';
+
+  // update hazard on nodes from vector data
+  const hazByVec = {};
+  for(const v of _vectorData) hazByVec[v.vector] = v.hazard;
+  for(const n of _nodes){
+    const vd = _vectorData.find(v=>v.vector===n.vector);
+    n.hazard = vd ? vd.hazard : 0;
+    n.burned = n.hazard >= 0.7 && n.implicated;
   }
-  box.innerHTML = html;
-  applyVectorTags();
+
+  const vp = document.getElementById('vecPill');
+  vp.textContent = _vectorData.length + ' векторов';
+  const anyImp = _vectorData.some(v=>v.implicated);
+  vp.className  = 'pill ' + (anyImp ? 'err' : 'idle');
+
+  renderVectorList();
 }
 
-// подсветка вектора в левом списке стратегий
-function applyVectorTags(){
-  document.querySelectorAll('.strat').forEach(el => {
-    const tag = el.querySelector('.svec');
-    if(!tag) return;
-    const vector = _vectorMap[el.dataset.name];
-    if(!vector){ tag.textContent = ''; tag.className = 'svec'; return; }
-    tag.textContent = '⤳ ' + vector;
-    const haz = _vectorHaz[vector] || 0;
-    tag.className = 'svec' +
-      (_vectorImpl.has(vector) ? ' impl' : (haz > 0.5 ? ' haz' : ''));
-  });
+async function refreshMonitor(){
+  const s = await api('/api/monitor/status');
+  if(!s || s.error) return;
+  const pct   = Math.min(100, s.ratio * 100);
+  const color = s.degraded ? 'var(--err)' : (pct > 25 ? 'var(--warn)' : 'var(--ok)');
+  document.getElementById('monRatio').textContent    = (s.ratio*100).toFixed(1) + '%';
+  document.getElementById('monRatio').style.color    = color;
+  document.getElementById('monBar').style.width      = pct.toFixed(1) + '%';
+  document.getElementById('monBar').style.background = color;
+  document.getElementById('monResets').textContent   = s.resets_window;
+  document.getElementById('monCloses').textContent   = s.closes_window;
+  document.getElementById('monWindow').textContent   = s.window_sec + 's';
+  const dot = document.getElementById('monDot');
+  dot.className = 'dot ' + (s.degraded ? 'err' : 'ok');
+  const mp  = document.getElementById('monPill');
+  mp.textContent = s.degraded ? '⚠ деградация' : 'monitor ✓';
+  mp.className   = 'pill ' + (s.degraded ? 'err' : 'ok');
 }
 
-// ── pool log ──────────────────────────────────────────────────────────────
-let _logLen = 0;
+async function refreshTraffic(){
+  const d = await api('/api/pool/traffic');
+  if(!d || d.error) return;
+  _traffic = d;
+}
+
 async function refreshLog(){
-  const data = await api('/api/pool/log');
-  const log = data.log || [];
+  const d = await api('/api/pool/log');
+  const log = d.log || [];
   if(log.length === _logLen) return;
   _logLen = log.length;
-  const box = document.getElementById('poolLog');
-  if(!log.length){ box.innerHTML = '<div style="color:var(--mut)">—</div>'; return; }
-  box.innerHTML = [...log].reverse().map(e =>
-    '<div class="entry ' + e.level + '"><span class="ts">' + e.ts + '</span>' +
-    '<span class="msg">' + e.msg + '</span></div>'
+  _logEntries = log;
+  renderLog();
+}
+
+function renderLog(){
+  const box = document.getElementById('logBox');
+  if(!_logEntries.length){ box.innerHTML = '<div style="color:var(--mut);padding:0 12px">—</div>'; return; }
+  box.innerHTML = [..._logEntries].reverse().slice(0,60).map(e=>
+    `<div class="le ${e.level}"><span class="ts">${e.ts}</span><span class="msg">${e.msg}</span></div>`
   ).join('');
 }
 
-function clearLog(){ document.getElementById('poolLog').innerHTML='<div style="color:var(--mut)">—</div>'; _logLen=0; }
+function clearLog(){ _logLen = 0; _logEntries = []; renderLog(); }
 
-// ── pool controls ─────────────────────────────────────────────────────────
-async function togglePool(){
-  await post('/api/pool/enable', {enabled: !_poolEnabled});
-  refreshPool(); setTimeout(refreshLog, 500);
+// ═══════════════════════════════════════════════════════════════════════
+// Node management
+// ═══════════════════════════════════════════════════════════════════════
+function rebuildNodes(){
+  const existing = {};
+  for(const n of _nodes) existing[n.name] = n;
+
+  const next = [];
+  for(const s of _strategies){
+    const old = existing[s.name];
+    const vd  = _vectorData.find(v => v.strategies && v.strategies.includes(s.name));
+    const vec = (vd && vd.vector) || classifyVectorClient(s.nfqws_opt || '');
+    const n   = old || { x: canvas.width/2 + (Math.random()-.5)*200,
+                         y: canvas.height/2 + (Math.random()-.5)*200, pinned: false };
+    n.name      = s.name;
+    n.shortName = s.name.length > 14 ? s.name.slice(0,13) + '…' : s.name;
+    n.nfqws_opt = s.nfqws_opt || '';
+    n.vector    = vec;
+    n.slot      = null;   // filled by refreshPool
+    n.burned    = false;
+    n.hazard    = 0;
+    n.implicated= false;
+    next.push(n);
+  }
+  _nodes = next;
+  layoutNodes();
 }
 
+// lightweight client-side vector classify (mirrors strategy_vectors.py)
+function classifyVectorClient(opt){
+  if(!opt || !opt.trim()) return 'other';
+  const text = opt.split('--new')[0];
+  const modeMatch = text.match(/--dpi-desync=(\S+)/);
+  let family = 'other';
+  if(modeMatch){
+    const MODE = {split:'seg',split2:'seg',multisplit:'seg',disorder:'seg',disorder2:'seg',
+                  multidisorder:'seg',fake:'fake',fakedsplit:'fake',fakeddisorder:'fake',
+                  fakedisorder:'fake',fake_syndata:'fake',ipfrag1:'ipfrag',ipfrag2:'ipfrag',
+                  hopbyhop:'ipv6ext',hopbyhop2:'ipv6ext',destopt:'ipv6ext',
+                  syndata:'tcpstate',rst:'tcpstate',rstack:'tcpstate'};
+    const fams = new Set(modeMatch[1].split(',').map(t=>MODE[t.trim()]).filter(Boolean));
+    family = [...fams].sort().join('+') || 'other';
+  }
+  const fool = (text.match(/--dpi-desync-fooling=(\S+)/)||[])[1];
+  const foolPart = fool ? [...new Set(fool.split(',').filter(t=>
+    ['md5sig','ts','badsum','badseq','datanoack','hopbyhop','hopbyhop2'].includes(t)))].sort().join(',') : '';
+  const ttlPart  = /--dpi-desync-(auto)?ttl/.test(text) ? 'ttl' : '';
+  const extra    = [];
+  if(/--dpi-desync-fake-tls/.test(text))  extra.push('faketls');
+  if(/--dpi-desync-fake-quic/.test(text)) extra.push('fakequic');
+  const l7m  = text.match(/--filter-l7=(\S+)/);
+  const l7   = l7m ? l7m[1].trim() : 'generic';
+  return [family, foolPart, ttlPart, ...extra, l7].filter(Boolean).join('+');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Vector sidebar list
+// ═══════════════════════════════════════════════════════════════════════
+function renderVectorList(){
+  const box = document.getElementById('vectorList');
+  if(!_vectorData.length){ box.innerHTML = '<div style="color:var(--mut);padding:5px 0;font-size:10px">нет данных</div>'; return; }
+
+  const sorted = [..._vectorData].sort((a,b) => {
+    if(a.implicated !== b.implicated) return a.implicated ? -1 : 1;
+    return (b.hazard||0) - (a.hazard||0);
+  });
+
+  box.innerHTML = sorted.map(v => {
+    const col   = vecColor(v.vector);
+    const sc    = (v.score||0);
+    const scCls = sc > 0.5 ? 'hot' : sc < -0.5 ? 'cold' : 'mid';
+    const imp   = v.implicated;
+    const hz    = ((v.hazard||0)*100).toFixed(0);
+    return `<div class="vrow" onclick="focusVector('${CSS.escape(v.vector)}')">
+      <div class="vcircle ${imp?'implicated':''}" style="background:${col}${imp?'':'88'}"></div>
+      <div class="vname" title="${v.vector}">${v.vector}</div>
+      <div class="vcount">${v.strategies.length}σ</div>
+      <div class="vcount" style="color:${imp?'var(--err)':hz>50?'var(--warn)':'var(--mut)'}">${hz}%</div>
+      <div class="vscore ${scCls}">${sc>0?'+':''}${sc.toFixed(1)}</div>
+    </div>`;
+  }).join('');
+}
+
+function focusVector(v){
+  // pan camera to centre of the vector cluster
+  const members = _nodes.filter(n => n.vector === v);
+  if(!members.length) return;
+  const cx = members.reduce((s,n)=>s+n.x,0)/members.length;
+  const cy = members.reduce((s,n)=>s+n.y,0)/members.length;
+  _cam.x = canvas.width/2  - cx * _cam.scale;
+  _cam.y = canvas.height/2 - cy * _cam.scale;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Pool controls
+// ═══════════════════════════════════════════════════════════════════════
+let _poolEnabled = false;
+async function togglePool(){
+  const s = await api('/api/pool/status');
+  _poolEnabled = s.enabled;
+  await post('/api/pool/enable', {enabled: !_poolEnabled});
+  refreshPool();
+}
+async function forceCheck(){ await post('/api/pool/check', {}); setTimeout(refreshPool, 900); }
 async function addSlot(){
   const r = await post('/api/pool/slot/add', {});
   if(r.error) alert(r.error);
-  else { refreshPool(); setTimeout(refreshLog, 300); }
+  else refreshPool();
 }
 
-async function removeSlot(index){
-  if(!confirm('Убрать слот ' + index + '?')) return;
-  await post('/api/pool/slot/remove', {index});
-  refreshPool(); setTimeout(refreshLog, 300);
-}
+// ═══════════════════════════════════════════════════════════════════════
+// Boot
+// ═══════════════════════════════════════════════════════════════════════
+resize();
+requestAnimationFrame(drawFrame);
 
-async function changeSlotStrategy(index, strategy){
-  if(!strategy) return;
-  const r = await post('/api/pool/slot/set', {index, strategy});
-  if(r.error) alert(r.error);
-  setTimeout(()=>{ refreshPool(); refreshLog(); }, 400);
-}
-
-async function forceCheck(){
-  await post('/api/pool/check', {});
-  setTimeout(()=>{ refreshPool(); refreshLog(); }, 800);
-}
-
-async function savePoolCfg(){
-  const cfg = {
-    pool_size:      +document.getElementById('cfgPoolSize').value,
-    check_interval: +document.getElementById('cfgInterval').value,
-    fail_threshold: +document.getElementById('cfgThreshold').value,
-    test_url:        document.getElementById('cfgUrl').value.trim(),
-    cut_rotate_enabled: +document.getElementById('cfgCutEn').value,
-    cut_min_sec:    +document.getElementById('cfgCutMin').value,
-    cut_max_sec:    +document.getElementById('cfgCutMax').value,
-        cut_cooldown:   +document.getElementById('cfgCutCool').value,
-    cut_epidemic:  +document.getElementById('cfgCutEpi').value,
-  };
-  await post('/api/pool/configure', cfg);
-  ['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl',
-   'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool','cfgCutEpi'].forEach(id =>
-    document.getElementById(id).dataset.dirty = '0');
-  const saved = document.getElementById('cfgSaved');
-  saved.style.display = 'inline'; setTimeout(()=> saved.style.display='none', 2000);
-  refreshPool();
-}
-
-['cfgPoolSize','cfgInterval','cfgThreshold','cfgUrl',
- 'cfgCutEn','cfgCutMin','cfgCutMax','cfgCutCool','cfgCutEpi'].forEach(id =>
-  document.getElementById(id).addEventListener('input', () =>
-    document.getElementById(id).dataset.dirty = '1'));
-
-// ── strategies list ───────────────────────────────────────────────────────
-async function loadStrategies(){
-  const data = await api('/api/strategies');
-  _allStrategies = data.strategies || [];
-  const box = document.getElementById('slist');
-  document.getElementById('stratCount').textContent = '(' + _allStrategies.length + ')';
-  box.innerHTML = '';
-  if(!_allStrategies.length){
-    box.innerHTML = '<div style="color:var(--mut);font-size:12px">Нет стратегий</div>'; return;
-  }
-  for(const s of _allStrategies){
-    const el = document.createElement('div');
-    el.className = 'strat'; el.dataset.name = s.name;
-    el.innerHTML = '<div class="sname">' + s.name + '</div>' +
-      (s.description ? '<div class="sdesc">' + s.description + '</div>' : '') +
-      (s.has_nfqws === false ? '<div class="sdesc" style="color:var(--err)">нет NFQWS2_OPT — исключена из ротации</div>' : '') +
-      '<div class="svec"></div>' +
-      '<div class="sscore"></div>';
-    box.appendChild(el);
-  }
-}
-
-// ── config ────────────────────────────────────────────────────────────────
-async function refreshCfg(){
-  document.getElementById('cfgTs').textContent = '…';
-  const c = await api('/api/config');
-  document.getElementById('hpath').textContent = c.path || '';
-  document.getElementById('configBox').textContent = c.raw || '(пусто)';
-  document.getElementById('cfgTs').textContent = new Date().toLocaleTimeString();
-}
-
-// ── connections ───────────────────────────────────────────────────────────
-async function refreshConnections(){
-  const d = await api('/api/connections');
-  if(d.error) return;
-  document.getElementById('ssPort').textContent      = ':' + d.ss_port;
-  document.getElementById('socksPortLbl').textContent = ':' + d.socks_port;
-  document.getElementById('ssCount').textContent     = d.ss.length;
-  document.getElementById('socksCount').textContent  = d.socks.length;
-  const rip = (id, ips) => document.getElementById(id).innerHTML = ips.length
-    ? ips.map(ip => '<span style="display:block">' + ip + '</span>').join('')
-    : '<span style="color:var(--line)">нет</span>';
-  rip('ssIps', d.ss); rip('socksIps', d.socks);
-  document.getElementById('connTs').textContent = new Date().toLocaleTimeString();
-}
-
-// ── curl ──────────────────────────────────────────────────────────────────
-function updateCurlCmd(){
-  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
-  const port = document.getElementById('curlPort').value || '1080';
-  document.getElementById('curlCmd').textContent = 'curl -x socks5h://127.0.0.1:' + port + ' ' + url + ' -I';
-}
-async function runCurl(){
-  const url  = document.getElementById('curlUrl').value.trim() || 'https://google.com';
-  const port = parseInt(document.getElementById('curlPort').value) || 1080;
-  updateCurlCmd(); showLog('curlLog','⏳ …','n');
-  const r = await post('/api/test-curl',{url, socks_port:port});
-  showLog('curlLog',(r.ok?'✅ OK':'❌ FAIL')+' (rc='+r.rc+')\n\n'+(r.output||''),r.ok?'ok':'err');
-}
-
-// ── import ────────────────────────────────────────────────────────────────
-async function importJson(){
-  const raw = document.getElementById('jsonInput').value.trim();
-  if(!raw){alert('Вставьте JSON');return;}
-  let parsed; try{parsed=JSON.parse(raw);}catch(e){alert('Невалидный JSON: '+e);return;}
-  const prefix = document.getElementById('jsonPrefix').value.trim();
-  if(prefix) parsed.name_prefix = prefix;
-  showLog('importLog','⏳ …','n');
-  const r = await post('/api/import-json', parsed);
-  let txt = r.message||'';
-  if(r.saved?.length)  txt += '\n✅ ' + r.saved.join(', ');
-  if(r.errors?.length) txt += '\n❌ ' + r.errors.join('\n');
-  showLog('importLog', txt.trim(), r.ok?'ok':'err');
-  if(r.ok) loadStrategies();
-}
-
-// ── init & polling ────────────────────────────────────────────────────────
-// ── журнал срезов ТСПУ ──────────────────────────────────────────────
-async function refreshCuts(){
-  const d = await api('/api/cuts');
-  if(!d || d.error) return;
-  if(d.status && d.status.path)
-    document.getElementById('cutPath').textContent = d.status.path + ' · ' + d.status.count + ' зап.';
-  const box = document.getElementById('cutsList');
-  const list = d.entries || [];
-  if(!list.length){ box.innerHTML = '<div style="color:var(--mut)">Пока нет срезов</div>'; return; }
-  let html = '';
-  for(const e of list){
-    const conn = e.connection || {};
-    const ip   = conn.remote_ip || '?';
-    const dp   = conn.local_port || '?';
-    const slot = e.slot;
-    let slotTxt = 'слот ?';
-    if (slot && slot.index !== undefined) {
-      slotTxt = 'слот ' + slot.index + ' · ' + (slot.strategy || '?') +
-        (slot.qnum !== undefined ? (' · q' + slot.qnum) : '') +
-        (e.slot_resolved === false ? ' (guess)' : '');
-    }
-    const kind = e.event_kind || e.kind || '?';
-    const ts  = (e.ts || '').toString().slice(11,19) || '';
-    const rot = e.pool && e.pool.rotation_triggered ? '⟳' : (e.pool && e.pool.skip_reason ? '⧗' : '');
-    html += '<details class="cut"><summary>' +
-      '<b>' + ts + '</b> ' +
-      '<span class="cut-kind ' + kind + '">' + kind + '</span> ' +
-      '<span>' + (e.lifetime_sec!==undefined ? e.lifetime_sec+'s' : '') + '</span> ' +
-      '<span>' + rot + '</span> ' +
-      '<span class="cut-conn">:' + dp + '→' + ip + ':443</span> ' +
-      '<span class="cut-slot">' + slotTxt + '</span>' +
-      '</summary>' +
-      '<pre style="font-size:10px;line-height:1.35;overflow:auto;max-height:220px">' +
-      esc(JSON.stringify(e, null, 2)) + '</pre></details>';
-  }
-  box.innerHTML = html || '<div style="color:var(--mut)">—</div>';
-}
-function exportCuts(){ window.open('/api/cuts/export', '_blank'); }
-function exportIntel(){ window.open("/api/intel/export", "_blank"); }
-async function refreshIntel(){
-  let box = document.getElementById("intelList");
-  if(!box){
-    const cl = document.getElementById("cutsList");
-    if(cl){
-      const h=document.createElement("h2");
-      h.textContent="ML Recon Dataset";
-      const b=document.createElement("div");
-      b.id="intelList";
-      b.style.cssText="margin:6px 0;";
-      b.innerHTML="<div style=\"color:var(--mut)\">No vectors yet</div>";
-      h.appendChild(b);
-      cl.parentNode.insertBefore(h, cl.nextSibling);
-    }
-    box=document.getElementById("intelList");
-  }
-  if(!box){return;}
-  try{
-    const d=await api("/api/intel/list");
-    const list=(d&&d.entries)||[];
-    if(!list.length){box.innerHTML="<div style=\"color:var(--mut)\">No vectors yet</div>";return;}
-    let html="";
-    for(const e of list){
-      const v=e.vector||{};
-      const net=v.tspu_network_metrics||{};
-      const env=v.environment||{};
-      html += "<details class=\"cut\"><summary>"+(e.ts||"").toString().slice(11,19)+" <span style=\"color:var(--ok)\">recon</span> "+env.target_host_type+" (tspu="+net.tspu_hop+"/dst="+net.destination_hop+")</summary><pre>"+esc(JSON.stringify(v,null,2))+"</pre></details>";
-    }
-    box.innerHTML=html;
-  }catch(err){box.innerHTML="<div style=\"color:var(--mut)\">error</div>";}
-}
-async function clearCuts(){
-  await post('/api/cuts/clear', {});
-  refreshCuts();
-}
-function esc(s){
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-(async()=>{
-  updateCurlCmd();
-  await loadStrategies();
-  await Promise.all([refreshCfg(), refreshConnections(), refreshPool(), refreshLog(), refreshMonitor(), refreshCuts(), refreshIntel(), refreshVectors()]);
-  setInterval(refreshConnections, 5000);
-  setInterval(refreshPool,        3000);
-  setInterval(refreshLog,         4000);
-  setInterval(refreshMonitor,     3000);
-  setInterval(refreshTraffic,     2000);
-  setInterval(refreshCuts,        5000);
-  setInterval(refreshIntel,       5000);
-  setInterval(refreshVectors,     4000);
+(async () => {
+  await refreshAll();
+  setInterval(refreshPool,       3000);
+  setInterval(refreshVectors,    4000);
+  setInterval(refreshMonitor,    3000);
+  setInterval(refreshLog,        4000);
+  setInterval(refreshTraffic,    2000);
+  setInterval(refreshStrategies, 15000);
 })();
 </script>
 </body>
