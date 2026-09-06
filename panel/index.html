@@ -408,11 +408,11 @@ body {
 
     <!-- legend -->
     <div id="legend">
-      <div class="leg-row"><div class="leg-dot" style="background:var(--ok)"></div>активная стратегия</div>
-      <div class="leg-row"><div class="leg-dot" style="background:var(--warn)"></div>деградирует</div>
-      <div class="leg-row"><div class="leg-dot" style="background:var(--err)"></div>сожжена ТСПУ</div>
-      <div class="leg-row"><div class="leg-dot" style="background:var(--mut);opacity:.5"></div>в резерве</div>
-      <div class="leg-row"><div class="leg-line" style="background:var(--ok);opacity:.7"></div>поток трафика</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--ok)"></div>параметр в пуле</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--warn)"></div>точка деградации</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--err)"></div>сожжён ТСПУ</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--mut);opacity:.5"></div>резервная точка</div>
+      <div class="leg-row"><div class="leg-line" style="background:var(--ok);opacity:.7"></div>поток по цепочке параметров</div>
       <div class="leg-row"><div class="leg-line" style="background:var(--err);opacity:.7;height:1px;border-top:1px dashed var(--err)"></div>срез ТСПУ</div>
     </div>
 
@@ -585,8 +585,8 @@ let _logEntries  = [];
 let _logLen      = 0;
 
 // canvas scene graph
-let _nodes       = [];   // enriched strategy nodes for canvas
-let _edges       = [];   // traffic beam segments [{from, to, strength, live}]
+let _nodes       = [];   // attribute nodes (по одному узлу на параметр стратегии)
+let _edges       = [];   // traffic beam segments по цепочкам параметров [{from, to, strength, live}]
 let _cutFlashes  = [];   // [{x,y,t}] — burn animations at TSPU-cut coordinates
 let _beamPhase   = 0;    // animated offset for flowing beam dashes
 
@@ -924,7 +924,7 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 
 function hitTest(wx, wy){
-  const hitR = 14 / _cam.scale;
+  const hitR = 18 / _cam.scale;
   for(const n of _nodes)
     if(Math.hypot(n.x - wx, n.y - wy) < hitR) return n;
   return null;
