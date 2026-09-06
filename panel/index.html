@@ -709,19 +709,18 @@ function drawFrame(ts){
 
   _beamPhase = (ts / 18) % 20;
 
-  // ── vector cluster halos ──
+  // ── category cluster halos ──
   const groups = {};
-  for(const n of _nodes){ (groups[n.vector]=groups[n.vector]||[]).push(n); }
-  for(const [v, members] of Object.entries(groups)){
+  for(const n of _nodes){ (groups[n.cat]=groups[n.cat]||[]).push(n); }
+  for(const [cat, members] of Object.entries(groups)){
     if(members.length < 2) continue;
     const cx = members.reduce((s,n)=>s+wtx(n.x),0)/members.length;
     const cy = members.reduce((s,n)=>s+wty(n.y),0)/members.length;
     let maxR  = 0;
     for(const m of members) maxR = Math.max(maxR, Math.hypot(wtx(m.x)-cx, wty(m.y)-cy));
     const r   = Math.max(maxR + 28, 36);
-    const col = vecColor(v);
-    const vd  = _vectorData.find(x=>x.vector===v);
-    const imp = vd && vd.implicated;
+    const col = vecColor(cat);
+    const imp = members.some(m => m.implicated);
     const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     const baseAlpha = imp ? .10 : .04;
     grd.addColorStop(0, col + '28');
@@ -737,11 +736,11 @@ function drawFrame(ts){
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // vector label
+    // category label
     ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
     ctx.fillStyle = col + '99';
     ctx.textAlign = 'center';
-    ctx.fillText(v, cx, cy - r - 4);
+    ctx.fillText(_CAT_NAME[cat] || cat, cx, cy - r - 4);
     ctx.textAlign = 'left';
   }
 
@@ -749,7 +748,7 @@ function drawFrame(ts){
   for(const e of _edges){
     const x1 = wtx(e.from.x), y1 = wty(e.from.y);
     const x2 = wtx(e.to.x),   y2 = wty(e.to.y);
-    const col = vecColor(e.vector);
+    const col = vecColor(e.cat);
     ctx.save();
     ctx.lineWidth = e.live ? Math.min(3, 1 + e.strength/50) : 1;
     if(e.live){
@@ -792,34 +791,39 @@ function drawFrame(ts){
     ctx.restore();
   }
 
-  // ── nodes ──
+  // ── nodes (атрибуты стратегий) ──
   for(const n of _nodes){
     const nx = wtx(n.x), ny = wty(n.y);
-    const r  = (n.slot ? 11 : 7) * _cam.scale;
+    const usage = Math.max(n.count || 1, n.slotCount || 0);
+    const r  = (5 + Math.min(usage, 10)) * _cam.scale;
+
+    let hasFail = false, hasGood = false;
+    for(const sl of n.slots){
+      if(sl.healthy === true)       hasGood = true;
+      else if(sl.healthy === false) hasFail = true;
+    }
 
     let fillColor, strokeColor, glowColor;
     if(n.burned){
       fillColor   = '#30101a';
       strokeColor = 'var(--err)';
       glowColor   = 'rgba(224,64,64,.6)';
-    } else if(n.slot){
-      const sl = n.slot;
-      if(sl.healthy === true){
-        fillColor   = '#0d2a1a';
-        strokeColor = 'var(--ok)';
-        glowColor   = 'rgba(39,201,122,.5)';
-      } else if(sl.healthy === false){
-        fillColor   = '#2a1a0a';
-        strokeColor = 'var(--warn)';
-        glowColor   = 'rgba(232,160,32,.4)';
-      } else {
-        fillColor   = 'var(--panel2)';
-        strokeColor = 'var(--mut)';
-        glowColor   = null;
-      }
-    } else {
+    } else if(hasFail){
+      fillColor   = '#2a1a0a';
+      strokeColor = 'var(--warn)';
+      glowColor   = 'rgba(232,160,32,.4)';
+    } else if(n.slotCount > 0 && hasGood){
+      fillColor   = '#0d2a1a';
+      strokeColor = 'var(--ok)';
+      glowColor   = 'rgba(39,201,122,.5)';
+    } else if(n.slotCount > 0){
       fillColor   = 'var(--panel2)';
-      strokeColor = vecColor(n.vector) + '88';
+      strokeColor = 'var(--mut)';
+      glowColor   = null;
+    } else {
+      // параметр встречается только в резервных стратегиях
+      fillColor   = 'var(--panel2)';
+      strokeColor = vecColor(n.cat) + '55';
       glowColor   = null;
     }
 
@@ -839,9 +843,9 @@ function drawFrame(ts){
     ctx.lineWidth   = n === _selected ? 2.5 : 1.5;
     ctx.fill(); ctx.stroke();
 
-    // traffic dot (inner live indicator)
-    const traf = n.slot ? (_traffic[n.slot.qnum] || {}) : {};
-    if(traf.pkts_delta > 0){
+    // traffic dot (inner live indicator) — любой слот, использующий параметр
+    const anyLive = n.slots.some(sl => (_traffic[sl.qnum] || {}).pkts_delta > 0);
+    if(anyLive){
       const pulse = .5 + .5 * Math.sin(ts / 220);
       ctx.beginPath(); ctx.arc(nx, ny, 3 * _cam.scale, 0, Math.PI*2);
       ctx.fillStyle = `rgba(39,201,122,${.5 + .5*pulse})`;
@@ -852,15 +856,15 @@ function drawFrame(ts){
     if(_cam.scale > 0.5){
       const fs = Math.max(8, 10 * _cam.scale);
       ctx.font = `${fs}px ${getComputedStyle(document.body).fontFamily}`;
-      ctx.fillStyle = n.slot ? 'var(--tx)' : 'var(--mut)';
+      ctx.fillStyle = n.slotCount ? 'var(--tx)' : 'var(--mut)';
       ctx.textAlign = 'center';
       ctx.fillText(n.shortName, nx, ny + r + fs + 1);
       ctx.textAlign = 'left';
     }
 
-    // slot badge
-    if(n.slot && _cam.scale > 0.65){
-      const badge = 'С' + n.slot.index;
+    // usage badge
+    if(n.slotCount && _cam.scale > 0.65){
+      const badge = '×' + n.slotCount;
       const bfs   = Math.max(7, 8 * _cam.scale);
       ctx.font      = `bold ${bfs}px monospace`;
       ctx.fillStyle = strokeColor;
