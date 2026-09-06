@@ -9,16 +9,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pool_manager as _pm
+from tspu_log import get_log as _get_tlog, conn_ctx, slot_ctx, monitor_ctx
+_tlog = _get_tlog()
+
+from tspu_log import get_log as _get_tlog
+_tlog = _get_tlog()
+
 from pool_manager import PoolManager, MAX_SLOTS
 from conn_tracker import LifetimeTracker
-from cut_logger import CutLogger
-try:
-    import tspu_intel as _ti
-    from tspu_intel import build_tspu_intel_from_env
-except Exception as _tie:
-    _ti = None
-    build_tspu_intel_from_env = None
-    print("[panel] tspu_intel unavailable: %s" % _tie, flush=True)
+from strategy_vectors import classify_vector, VectorScorer, UNKNOWN_VECTOR
 
 # ── globals ────────────────────────────────────────────────────────────────
 
@@ -97,7 +96,7 @@ def ensure_pool_mode(lines):
 # ── strategies ──────────────────────────────────────────────────────────────
 
 def list_strategies():
-    if not STRAT_DIR or not os.path.isdir(STRAT_DIR): return []
+    if not os.path.isdir(STRAT_DIR): return []
     result = []
     for fn in sorted(os.listdir(STRAT_DIR)):
         if not fn.endswith(".conf"): continue
@@ -120,6 +119,20 @@ def load_strategy_nfqws(name):
     if not os.path.isfile(path): return None
     with open(path, encoding="utf-8") as f:
         return get_nfqws(f.read().splitlines())
+
+def vector_for_name(name):
+    """
+    Classify a strategy's technique vector by name, looking its NFQWS2_OPT
+    up on disk. Returns None if the strategy file is missing/renamed since
+    (e.g. it was deleted) — callers should treat that as "unclassifiable"
+    rather than crash.
+    """
+    if not name:
+        return None
+    try:
+        return classify_vector(load_strategy_nfqws(name))
+    except Exception:
+        return None
 
 # ── system ──────────────────────────────────────────────────────────────────
 
@@ -205,12 +218,6 @@ class ResetMonitor:
         self.on_degraded    = None    # callback fn() при переходе ok → degraded
         self.on_reset       = None    # callback fn() на каждое reset-событие
         self.last_reset_ts  = None    # метка последнего reset (для трекера срезов)
-        self._ss_tail       = collections.deque(maxlen=60)   # хвост сырых строк ss-server лога
-
-    def ss_log_tail(self, limit=40):
-        """Последние строки ss-server лога (для журнала срезов)."""
-        with self._lock:
-            return list(self._ss_tail)[-int(limit):]
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -267,11 +274,6 @@ class ResetMonitor:
                             self._stop_evt.wait(0.5)
                             continue
                         self._parse_line(line)
-                        try:
-                            with self._lock:
-                                self._ss_tail.append(line.rstrip())
-                        except Exception:
-                            pass
             except Exception as e:
                 print("[monitor] tail error: %s" % e, flush=True)
                 self._stop_evt.wait(2)
@@ -285,6 +287,10 @@ class ResetMonitor:
             event = "close"
         if not event:
             return
+        # keep last 5 raw ss-server lines for context
+        if not hasattr(self, "_recent_ss_lines"):
+            self._recent_ss_lines = collections.deque(maxlen=5)
+        self._recent_ss_lines.append(line.strip())
         with self._lock:
             self._events.append((now, event))
             if event == "reset":
@@ -312,6 +318,27 @@ class ResetMonitor:
                 print("[monitor] reset ratio=%.2f (%d/%d)" % (
                     self.last_ratio, resets, total), flush=True)
 
+        if fire:
+            try:
+                _tlog.degraded(
+                    ratio=self.last_ratio,
+                    resets=resets,
+                    total=total,
+                    window_sec=self.window_sec,
+                )
+            except Exception:
+                pass
+        if fire:
+            try:
+                _tlog.degraded(
+                    ratio=self.last_ratio,
+                    resets=resets,
+                    closes=closes,
+                    window_sec=self.window_sec,
+                    ss_lines=list(getattr(self, "_recent_ss_lines", [])),
+                )
+            except Exception as _e:
+                print("[tspу_log] degraded log error: %s" % _e, flush=True)
         if fire and self.on_degraded:
             print("[monitor] degraded edge — triggering immediate check", flush=True)
             threading.Thread(target=self.on_degraded, daemon=True).start()
@@ -329,29 +356,6 @@ class ResetMonitor:
 
 # глобальный экземпляр
 reset_monitor = ResetMonitor()
-
-# отдельный журнал «оборванных» соединений (срезы ТСПУ).
-# Путь: CUT_LOG_PATH, иначе — /opt/zapret2/logs/cuts.log, если каталог
-# смонтирован (переживает рестарт контейнера), иначе /run/zapret-pool/cuts.log
-_log_dir = os.environ.get("CUT_LOG_DIR", "/opt/zapret2/logs")
-if os.path.isdir(_log_dir):
-    CUT_LOG_DEFAULT = os.path.join(_log_dir, "cuts.log")
-else:
-    CUT_LOG_DEFAULT = "/run/zapret-pool/cuts.log"
-CUT_LOG_PATH = os.environ.get("CUT_LOG_PATH") or CUT_LOG_DEFAULT
-cut_logger = CutLogger(path=CUT_LOG_PATH)
-_tspu_intel = None
-_tspu_intel_log = lambda lvl, msg: print("[tspu-intel][%s] %s" % (lvl, msg), flush=True)
-if _ti is not None:
-    _tspu_intel = build_tspu_intel_from_env(log_fn=_tspu_intel_log)
-    try:
-        _parent = os.path.dirname(CUT_LOG_PATH) or "/opt/zapret2/logs"
-        os.makedirs(_parent, exist_ok=True)
-        _tspu_intel.intel_log.path = os.path.join(_parent, "tspu_intel.jsonl")
-    except Exception:
-        pass
-    _tspu_intel.register_cut_logger_callback(
-        lambda rec: cut_logger.record({"kind": "tspu_intel","cut_id": rec.get("cut_id"),"vector": rec.get("vector")}))
 
 class PoolSwitcher:
     """
@@ -386,27 +390,23 @@ class PoolSwitcher:
         self.cut_min_sec        = 30
         self.cut_max_sec        = 60
         self.cut_cooldown       = 30     # мин. пауза между ротациями по срезу
-        self.cut_require_reset  = False  # подтверждать срез reset-событием из лога
-        # эпидемия: >= N коротких RST-смертей за окно
-        self.epidemic_min_events  = 4
-        self.short_min_sec        = 5
-        self.epidemic_window_sec  = 60
-
-        # Fail-Fast замена при срезе ТСПУ (события classic / epidemic)
-        self.shadow_test_enabled = False  # теневой curl-тест ВЫКЛЮЧЕН: пока ТСПУ
-                                          # рвёт соединения, долгие тесты только
-                                          # мешают (включается через configure)
-        self.shadow_window       = 10     # окно наблюдения теневого слота, сек
-        self.shadow_min_pkts     = 2      # мин. пакетов через теневую очередь
+        self.cut_require_reset  = True   # подтверждать срез reset-событием из лога
 
         # состояние
         self.state           = "idle"
         self._slot_fails     = {}       # index → consecutive fails
         self._strategy_idx   = 0       # указатель в списке стратегий
         self._used           = set()   # имена уже назначенных стратегий
-        self._demoted        = set()   # стратегии, отправленные в конец пула резерва
         self._cut_last_ts    = None    # метка последней ротации по срезу
-        self.strategy_scores = {}   # name → score: +1.0 успех, −2.0 провал, ×0.98 старение
+        self._last_cut_type  = "rst"   # "rst" | "idle" - от последнего on_connection_cut
+
+        # скоринг по стратегиям И по "векторам уязвимости" (семействам техник
+        # обхода — split/disorder, fake, ipfrag, ttl-трюки, ...). Срез на
+        # векторе "implicate"-ится сразу при живом TSPУ-cut, что временно
+        # депприоритизирует весь вектор при подборе замены — не только
+        # конкретную стратегию, которая была в слоте.
+        self.vector_cooldown_sec = 600
+        self._vs             = VectorScorer(vector_cooldown_sec=self.vector_cooldown_sec)
         self._log            = collections.deque(maxlen=self.MAX_LOG)
 
     # ── public ────────────────────────────────────────────────────────────
@@ -430,13 +430,6 @@ class PoolSwitcher:
                 "cut_max_sec":        self.cut_max_sec,
                 "cut_cooldown":       self.cut_cooldown,
                 "cut_require_reset":  self.cut_require_reset,
-                "epidemic_min_events":  self.epidemic_min_events,
-                "short_min_sec":        self.short_min_sec,
-                "epidemic_window_sec":  self.epidemic_window_sec,
-                # fail-fast замена при срезе
-                "shadow_test_enabled": self.shadow_test_enabled,
-                "shadow_window":       self.shadow_window,
-                "shadow_min_pkts":     self.shadow_min_pkts,
                 # статус трекера соединений
                 "tracker": tstat,
                 "active_conns": tstat.get("active_conns", 0),
@@ -445,9 +438,35 @@ class PoolSwitcher:
                 "last_cut_lifetime": tstat.get("last_cut_lifetime"),
                 "slots":          pool_status,
                 "healthy_count": sum(1 for s in pool_status if s.get("healthy") is True),
-                "strategy_scores": dict(self.strategy_scores),
+                "strategy_scores": dict(self._vs.strategy_scores),
                 "strategy_idx":   self._strategy_idx,
+                # векторы уязвимости TSPУ
+                "vector_cooldown_sec": self.vector_cooldown_sec,
+                "vector_scores":       dict(self._vs.vector_scores),
+                "vector_hazard":       {v: round(self._vs.vector_hazard(v), 3)
+                                         for v in self._vs.vector_scores},
+                "implicated_vectors":  [v for v in self._vs.vector_scores
+                                         if self._vs.is_implicated(v)],
             }
+
+    def get_vector_breakdown(self):
+        """Current strategy pool grouped by technique vector, with scores."""
+        strategies = [s for s in list_strategies() if (s.get("nfqws_opt") or "").strip()]
+        groups = {}
+        for s in strategies:
+            v = classify_vector(s.get("nfqws_opt")) or UNKNOWN_VECTOR
+            groups.setdefault(v, []).append(s["name"])
+        with self._lock:
+            return {"vectors": [
+                {
+                    "vector":      v,
+                    "strategies":  names,
+                    "score":       round(self._vs.vector_scores.get(v, 0.0), 2),
+                    "hazard":      round(self._vs.vector_hazard(v), 3),
+                    "implicated":  self._vs.is_implicated(v),
+                }
+                for v, names in sorted(groups.items())
+            ]}
 
     def get_log(self):
         with self._lock:
@@ -458,40 +477,25 @@ class PoolSwitcher:
             valid = ("mode", "pool_size", "check_interval", "fail_threshold",
                      "settle_time", "test_url",
                      "cut_rotate_enabled", "cut_min_sec", "cut_max_sec",
-                     "cut_cooldown", "cut_require_reset",
-                     "epidemic_min_events", "short_min_sec", "epidemic_window_sec",
-                     "shadow_test_enabled", "shadow_window", "shadow_min_pkts")
+                     "cut_cooldown", "cut_require_reset", "vector_cooldown_sec")
             for k in valid:
                 if k in cfg:
                     setattr(self, k, cfg[k])
-            # сопоставление сокращённого имени из UI
-            if "cut_epidemic" in cfg:
-                self.epidemic_min_events = cfg["cut_epidemic"]
+            self.vector_cooldown_sec   = max(0.0, float(self.vector_cooldown_sec))
+            self._vs.vector_cooldown_sec = self.vector_cooldown_sec
             self.cut_rotate_enabled  = bool(self.cut_rotate_enabled)
             lo = min(self.cut_min_sec, self.cut_max_sec)
             hi = max(self.cut_min_sec, self.cut_max_sec)
             self.cut_min_sec  = max(5, lo)
             self.cut_max_sec  = max(max(10, hi), self.cut_min_sec)
             self.cut_cooldown = max(0, self.cut_cooldown)
-            self.epidemic_min_events = max(2, int(self.epidemic_min_events))
-            self.epidemic_window_sec = max(20, int(self.epidemic_window_sec))
-            self.short_min_sec       = max(2, float(self.short_min_sec))
-            # fail-fast: теневой тест опционален (по умолчанию выключен)
-            self.shadow_test_enabled = bool(self.shadow_test_enabled)
-            self.shadow_window       = max(2, int(self.shadow_window))
-            self.shadow_min_pkts     = max(0, int(self.shadow_min_pkts))
         # синхронизируем лимиты среза с трекером соединений
         if _tracker is not None:
             _tracker.configure({
                 "cut_min_sec":   self.cut_min_sec,
                 "cut_max_sec":   self.cut_max_sec,
                 "require_reset": self.cut_require_reset,
-                "epidemic_min_events": self.epidemic_min_events,
-                "short_min_sec":       self.short_min_sec,
-                "epidemic_window_sec": self.epidemic_window_sec,
             })
-        if _tspu_intel is not None:
-            _tspu_intel.configure({"cooldown": max(0.0, float(self.cut_cooldown))})
         return self.get_status()
 
     def set_enabled(self, enabled):
@@ -548,329 +552,118 @@ class PoolSwitcher:
 
     # ── ротация при срезе ТСПУ (соединение срезано через 30-60с) ───────
 
-    def _traffic_for_qnum(self, qnum):
-        """Агрегат очереди NFQUEUE для qnum ({} — если недоступен)."""
-        if qnum is None:
-            return {}
-        try:
-            t = (self._pool.get_traffic_stats().get(qnum)) or {}
-            return {
-                "qnum": qnum, "pkts_delta": t.get("pkts_delta"),
-                "bytes_delta": t.get("bytes_delta"), "kbps": t.get("kbps"),
-                "share": t.get("share"), "active": t.get("active"),
-                "source": t.get("source"),
-            }
-        except Exception:
-            return {}
-
-    def on_connection_cut(self, event):
+    def on_connection_cut(self, lifetime, cut_type="rst"):
         """
-        Колбэк от LifetimeTracker: соединение срезано ТСПУ.
+        Колбэк от LifetimeTracker: соединение срезано ТСПУ, прожив
+        cut_min_sec..cut_max_sec секунд (cut_type="rst"), либо трафик
+        заглох на установленном соединении (cut_type="idle").
+        Инициируем ротацию стратегий.
 
-        event — dict от детектора (см. conn_tracker._tick). Собираем максимально
-        полный контекст (соединение, слот/стратегия, трафик, reset-монитор,
-        хвосты логов панели/nfqws2/ss-server) и пишем отдельную запись в журнал
-        срезов (cut_logger). Если пул включён — дополнительно запускаем ротацию.
+        NOTE: LifetimeTracker always calls this as cb(lifetime, cut_type);
+        the cut_type kwarg has a default only so manual/test callers that
+        still pass just `lifetime` keep working.
         """
-        if not isinstance(event, dict):
-            # совместимость со старым вызовом on_cut(lifetime_sec)
-            event = {"kind": "classic",
-                     "lifetime_sec": float(event or 0.0), "conn": None}
-
-        lifetime = event.get("lifetime_sec", 0) or 0.0
-        conn     = event.get("conn")
-
+        self._last_cut_type = cut_type
         skip_reason = None
-        trigger     = False
         with self._lock:
-            if self.enabled and self.cut_rotate_enabled:
-                if self.state in ("checking", "replacing"):
-                    skip_reason = "идёт %s" % self.state
-                else:
-                    now = time.time()
-                    if self._cut_last_ts and (now - self._cut_last_ts) < self.cut_cooldown:
-                        skip_reason = "cooldown %ds" % self.cut_cooldown
-                    else:
-                        self._cut_last_ts = now
-                        trigger = True
+            if not self.enabled:
+                return
+            if not self.cut_rotate_enabled:
+                return
+            if self.state in ("checking", "replacing"):
+                skip_reason = "идёт %s" % self.state
             else:
-                skip_reason = "пул выключен / ротация отключена"
-
-        if not trigger:
-            self._log_event("info", "Срез пропущен (%s)" % (skip_reason or "—"))
-        else:
-            self._log_event("warn",
-                "⚡ Срез ТСПУ: соединение прожило %.1fs — ротация стратегий" % lifetime)
-
-        # ── собираем контекст для журнала ─────────────────────────────────
-        local_port = remote_hex = remote_ip = remote_port = None
-        slot_info  = None
-        resolve_reason = None
-        if isinstance(conn, (tuple, list)) and len(conn) == 3:
-            local_port, remote_hex, remote_port = conn
-            remote_ip = (_pm.PoolManager._hexip_to_str(remote_hex) if remote_hex else None)
-
-            try:
-                slot_info, resolve_reason = self._pool.slot_for_conn(conn)
-            except Exception as e:
-                slot_info = None
-                resolve_reason = "slot_for_conn error: %s" % e
-
-        qnum = slot_info.get("qnum") if isinstance(slot_info, dict) else None
-        traffic = self._traffic_for_qnum(qnum)
-        # честные per-flow счётчики conntrack для ЭТОГО соединения
-        flow = {}
-        if isinstance(conn, (tuple, list)) and len(conn) == 3:
-            try:
-                flow = self._pool.conn_flow_bytes(conn) or {}
-            except Exception as e:
-                self._log_event("info", "conntrack flow bytes недоступны: %s" % e)
-                flow = {}
-
+                now = time.time()
+                if self._cut_last_ts and (now - self._cut_last_ts) < self.cut_cooldown:
+                    skip_reason = "cooldown %ds" % self.cut_cooldown
+                else:
+                    self._cut_last_ts = now
+        if skip_reason:
+            self._log_event("info", "Срез пропущен (%s)" % skip_reason)
+            return
+        self._log_event("warn",
+            "TSPУ cut: conn lived %ds, rotating strategies" % int(lifetime))
+        # log full context to tspу.log
         try:
-            reset_st = reset_monitor.get_status()
-        except Exception:
-            reset_st = {}
-        try:
-            pool_log_tail = list(self._log)[-20:]
-        except Exception:
-            pool_log_tail = []
-        try:
-            ss_tail = reset_monitor.ss_log_tail(30)
-        except Exception:
-            ss_tail = []
-        nfqws_tail = []
-        nfqws_all  = {}
-        try:
-            alive_slots = [s for s in self._pool.get_status()
-                           if s.get("alive") and s.get("index") is not None]
-        except Exception:
-            alive_slots = []
-        if isinstance(slot_info, dict) and slot_info.get("index") is not None:
-            try:
-                nfqws_tail = self._pool.slot_log_tail(slot_info["index"], 40)
-            except Exception:
-                nfqws_tail = []
-        else:
-            # conntrack не смог определить слот — берём самый активный живой
-            try:
-                stats = self._pool.get_traffic_stats()
+            _stats   = self._pool.get_traffic_stats()
+            _slots   = self._pool.get_status()
+            _mon_st  = reset_monitor.get_status()
+            _candidates = [s for s in _slots if s.get("alive") and not s.get("fw_excluded")]
+            def _w(s): return (_stats.get(s["qnum"]) or {}).get("pkts_delta", 0)
+            _top     = max(_candidates, key=_w) if _candidates else {}
+            _tstat   = (_stats.get(_top.get("qnum")) or {}) if _top else {}
+            _cut_type = getattr(self, "_last_cut_type", "rst")
+            _log_fn  = _tlog.idle if _cut_type == "idle" else _tlog.cut
+            _log_fn(
+                conn=conn_ctx(
+                    lifetime_sec=lifetime,
+                    active_conns=len(_candidates),
+                ),
+                slot=slot_ctx(
+                    index=_top.get("index"),
+                    qnum=_top.get("qnum"),
+                    strategy=_top.get("strategy"),
+                    pid=_top.get("pid"),
+                    pkts_delta=_tstat.get("pkts_delta"),
+                    bytes_delta=_tstat.get("bytes_delta"),
+                    kbps=_tstat.get("kbps"),
+                ),
+                monitor=monitor_ctx(
+                    ratio=_mon_st.get("ratio"),
+                    resets=_mon_st.get("resets_window"),
+                    closes=_mon_st.get("closes_window"),
+                    window_sec=_mon_st.get("window_sec"),
+                    ss_lines=list(getattr(reset_monitor, "_recent_ss_lines", [])),
+                ),
+            )
+        except Exception as _e:
+            print("[tspу_log] cut log error: %s" % _e, flush=True)
+        threading.Thread(target=self._rotate_on_cut, args=(lifetime,), daemon=True).start()
 
-                def _act(s):
-                    st = stats.get(s.get("qnum")) or {}
-                    return st.get("pkts_delta", 0)
-                best = max(alive_slots, key=_act) if alive_slots else None
-                if best is not None:
-                    slot_info = {
-                        "index": best["index"], "qnum": best.get("qnum"),
-                        "strategy": best.get("strategy"),
-                        "nfqws_pid": best.get("pid"),
-                        "fw_excluded": best.get("fw_excluded"),
-                        "guessed": True,
-                    }
-                    nfqws_tail = self._pool.slot_log_tail(best["index"], 40)
-            except Exception:
-                pass
-        # guessed-фолбэк мог подставить слот ПОСЛЕ первичного вычисления qnum —
-        # пересобираем qnum/traffic, иначе в tspu_intel уходят qnum=null и
-        # bytes_delta=null при полностью рабочем слоте
-        if isinstance(slot_info, dict) and qnum is None:
-            qnum = slot_info.get("qnum")
-            if qnum is not None:
-                traffic = self._traffic_for_qnum(qnum)
-                self._log_event("info",
-                                "Слот угадан (conntrack не ответил): "
-                                "index=%s qnum=%s" % (slot_info.get("index"), qnum))
-        # хвосты всех живых слотов — контекст есть даже без определения слота
-        for s in alive_slots:
-            try:
-                t = self._pool.slot_log_tail(s["index"], 15)
-                if t:
-                    nfqws_all[str(s["index"])] = t
-            except Exception:
-                pass
-
-        try:
-            pool_status = self._pool.get_status()
-            healthy_count = sum(1 for s in pool_status if s.get("healthy") is True)
-        except Exception:
-            healthy_count = 0
-
-        payload = {
-            "kind": "cut",
-            "event_kind": event.get("kind", "classic"),
-            "lifetime_sec": round(lifetime, 1),
-            "rst_deaths_window": event.get("rst_deaths_window"),
-            "fin_deaths_window": event.get("fin_deaths_window"),
-            "reset_confirmed": event.get("reset_confirmed"),
-            "connection": {
-                "local_port": local_port,
-                "remote_ip": remote_ip,
-                "remote_ip_hex": remote_hex,
-                "remote_port": remote_port,
-            },
-            "slot": slot_info,
-            "slot_resolved": bool(slot_info and not slot_info.get("guessed")),
-            "slot_resolve_reason": resolve_reason,
-            "traffic": traffic,
-            "pool": {
-                "enabled": self.enabled,
-                "state": self.state,
-                "healthy_count": healthy_count,
-                "cut_rotate_enabled": self.cut_rotate_enabled,
-                "cut_min_sec": self.cut_min_sec,
-                "cut_max_sec": self.cut_max_sec,
-                "cut_cooldown": self.cut_cooldown,
-                "skip_reason": skip_reason,
-                "rotation_triggered": trigger,
-            },
-            "reset_monitor": {
-                "resets_window": reset_st.get("resets_window"),
-                "closes_window": reset_st.get("closes_window"),
-                "ratio": reset_st.get("ratio"),
-                "degraded": reset_st.get("degraded"),
-                "total_resets": reset_st.get("total_resets"),
-            },
-            "strategy_scores": dict(self.strategy_scores),
-            "traces": {
-                "panel_log_tail": pool_log_tail,
-                "ss_server_tail": ss_tail,
-                "nfqws2_log_tail": nfqws_tail,
-                "nfqws2_all_slots": nfqws_all,
-            },
-        }
-        recorded_payload = None
-        try:
-            recorded_payload = cut_logger.record(payload)
-        except Exception as e:
-            self._log_event("error", "Журнал срезов: %s" % e)
-
-        if _tspu_intel is not None:
-            # 1. Забираем ID, который сгенерировал cut_logger
-            resolved_cut_id = None
-            if recorded_payload and isinstance(recorded_payload, dict):
-                resolved_cut_id = recorded_payload.get("id")
-            if not resolved_cut_id and isinstance(payload, dict):
-                resolved_cut_id = payload.get("id")
-            if not resolved_cut_id:
-                resolved_cut_id = int(time.time())
-
-            # 2. Пытаемся вытащить IP/порты из event детектора, если распаковка conn выше не сработала
-            _ev_conn = event.get("connection") or event.get("conn") or {}
-            _r_ip = remote_ip
-            _r_port = remote_port
-            _l_port = local_port
-
-            if not _r_ip and isinstance(_ev_conn, dict):
-                _r_ip = _ev_conn.get("remote_ip") or _ev_conn.get("ip") or _ev_conn.get("dst")
-                _r_port = _ev_conn.get("remote_port") or _ev_conn.get("dport")
-                _l_port = _ev_conn.get("local_port") or _ev_conn.get("sport")
-
-            # 3. Определяем тип завершения сессии
-            _term_type = "RST" if event.get("reset_confirmed") or event.get("rst_deaths_window") else "FIN"
-
-            _ti_ctx = {
-                "cut_id": resolved_cut_id,
-                "event_kind": event.get("kind", "classic"),
-                "lifetime_sec": lifetime,
-                "reset_confirmed": bool(event.get("reset_confirmed")),
-                "remote_ip": _r_ip,
-                "remote_port": _r_port,
-                "local_port": _l_port,
-                "qnum": qnum,
-                "slot_index": (slot_info.get("index") if isinstance(slot_info, dict) else None),
-                "strategy_name": (slot_info.get("strategy") if isinstance(slot_info, dict) else None),
-                "nfqws_opt": None,
-                "strategy_score_before": 0.0,
-                "bytes_delta": (traffic or {}).get("bytes_delta"),
-                "conn_bytes_orig": (flow or {}).get("orig_bytes"),
-                "conn_bytes_reply": (flow or {}).get("reply_bytes"),
-                "conn_pkts_orig": (flow or {}).get("orig_pkts"),
-                "termination_type": _term_type,
-            }
-            
-            _sname = _ti_ctx["strategy_name"]
-            if _sname:
-                _ti_ctx["nfqws_opt"] = load_strategy_nfqws(_sname)
-                # None если истории нет — не маскируем отсутствующий скор
-                # нулём, иначе в датасете неотличимо от реального 0.0
-                _ti_ctx["strategy_score_before"] = (
-                    float(self.strategy_scores[_sname])
-                    if _sname in self.strategy_scores else None)
-            
-            threading.Thread(target=_tspu_intel.on_cut_async, args=(_ti_ctx,), daemon=True).start()
-
-
-        if trigger:
-            threading.Thread(target=self._rotate_on_cut, args=(lifetime, slot_info), daemon=True).start()
-
-    def _rotate_on_cut(self, lifetime, slot_info=None):
+    def _rotate_on_cut(self, lifetime):
         """
-        Fail-Fast ротация после среза ТСПУ (события classic / epidemic).
-
-        Слот-виновник берём ТОЧНО из conntrack (SLOT-N / QNUM-N), если он
-        определён, иначе — самый активный живой слот. Дальше мгновенно:
-          1) слот убирается из rotation, его стратегия уходит в конец пула;
-          2) из резерва (700+) берётся первая свежая стратегия;
-          3) точечный перезапуск ОДНОГО nfqws2 (kill PID + старт с тем же
-             QNUM и новыми args) — никакой restart-daemons;
-          4) штрафы сбрасываются в 0 — без «degraded» и без долгих
-             теневых curl-тестов (они опциональны и по умолчанию выключены).
+        Ротация после среза: заменяем самый активный живой слот следующей
+        рабочей стратегией. Слот берём по максимальной дельте пакетов —
+        с наибольшей вероятностью именно он нёс срезанное соединение.
         """
         try:
+            stats = self._pool.get_traffic_stats()
             slots = self._pool.get_status()
             with self._lock:
                 self.state = "replacing"
 
-            # 1. Определяем слот-виновник
-            target = None
-            if isinstance(slot_info, dict) and slot_info.get("index") is not None:
-                idx = slot_info["index"]
-                target = next((s for s in slots
-                               if s["index"] == idx and s["alive"]), None)
-            if target is None:
-                # conntrack не смог определить слот — берём самый активный живой
-                stats = self._pool.get_traffic_stats()
-                candidates = [s for s in slots if s["alive"] and not s["fw_excluded"]]
-                if not candidates:
-                    self._log_event("warn", "Нет живых слотов для ротации по срезу")
-                    with self._lock:
-                        self.state = "ok"
-                    return
-                def _w(s):
-                    st = stats.get(s["qnum"]) or {}
-                    return st.get("pkts_delta", 0)
-                target = max(candidates, key=_w)
-
+            candidates = [s for s in slots if s["alive"] and not s["fw_excluded"]]
+            if not candidates:
+                self._log_event("warn", "Нет живых слотов для ротации по срезу")
+                with self._lock:
+                    self.state = "ok"
+                return
+            def _w(s):
+                st = stats.get(s["qnum"]) or {}
+                return st.get("pkts_delta", 0)
+            target   = max(candidates, key=_w)
             idx      = target["index"]
-            qnum     = target.get("qnum")
-            pid      = target.get("pid")
             old_name = target["strategy"] or ("slot%d" % idx)
-            self._log_event("warn",
-                "⚡ Fail-Fast: срез ТСПУ на SLOT-%d (QNUM-%s, pid=%s) «%s» — "
-                "точечная замена одного nfqws2" % (idx, qnum, pid, old_name))
 
-            self._replace_slot(idx, old_name)
+            # Идентифицируем вектор уязвимости: это живой TSPУ-cut, а не
+            # предположение по shadow-тесту, поэтому implicate() бьёт сильнее
+            # и депприоритизирует ВЕСЬ вектор (а не только old_name) на
+            # vector_cooldown_sec при подборе замены.
+            old_vector = vector_for_name(old_name)
+            if old_vector:
+                with self._lock:
+                    self._vs.implicate(old_vector)
+                self._log_event("warn",
+                    "🎯 Вектор уязвимости TSPУ: «%s» (слот %d, стратегия «%s»)" % (
+                        old_vector, idx, old_name))
+
+            self._log_event("warn",
+                "⚡ Ротация: заменяю слот %d «%s» (самый активный)" % (idx, old_name))
+            self._replace_slot(idx, old_name, avoid_vector=old_vector)
         except Exception as e:
             self._log_event("error", "Ротация по срезу упала: %s" % e)
             with self._lock:
                 self.state = "ok"
-
-    def _demote_strategy(self, name):
-        """
-        Отправляет стратегию в САМЫЙ КОНЕЦ пула резерва (700+).
-
-        Рейтинг падает до минимума (−20.0), имя попадает в чёрный список
-        _demoted: стратегия больше не выбирается из резерва, пока есть
-        свежие. Когда пул исчерпывается (сброс _used/_demoted), она снова
-        может быть испытана — но уже последней. Т.е. мёртвая стратегия
-        НИКОГДА не возвращается обратно в rotation.
-        """
-        if not name or name.startswith("slot"):
-            return
-        with self._lock:
-            self.strategy_scores[name] = -20.0
-            self._demoted.add(name)
 
     def set_slot_strategy(self, index, strategy_name):
         """Ручная смена стратегии в конкретном слоте."""
@@ -907,11 +700,21 @@ class PoolSwitcher:
 
     # ── internals ─────────────────────────────────────────────────────────
 
-    def _log_event(self, level, msg):
+    def _log_event(self, level, msg, source="panel"):
         entry = {"ts": time.strftime("%H:%M:%S"), "level": level, "msg": msg}
         with self._lock:
             self._log.append(entry)
         print("[switcher][%s] %s" % (level.upper(), msg), flush=True)
+        if level in ("warn", "error", "ok"):
+            try:
+                _tlog.info(msg, source=source, level=level)
+            except Exception:
+                pass
+        try:
+            if level in ("warn", "error"):
+                _tlog.info(msg, level=level)
+        except Exception:
+            pass
 
     def _ensure_running(self):
         if self._thread and self._thread.is_alive():
@@ -945,54 +748,52 @@ class PoolSwitcher:
             self._log_event("info", "Слот %d → «%s»" % (i, name))
             time.sleep(0.5)
 
-    def _next_strategy(self):
-        """Возвращает (name, nfqws_opt) лучшей стратегии по скорингу.
-        Скор: +1.0 за успех, −2.0 за провал, ×0.98 старение за каждую попытку."""
+    def _next_strategy(self, avoid_vector=None):
+        """
+        Возвращает (name, nfqws_opt) лучшей стратегии по скорингу.
+        Скор: +1.0 за успех, −2.0 за провал, ×0.98 старение за каждую попытку.
+        Ранжирование учитывает и стратегию, и её вектор уязвимости: вектор,
+        недавно implicate-нутый живым TSPУ-cut (или явно переданный как
+        avoid_vector), при прочих равных отходит в конец списка кандидатов.
+        """
         strategies = [s for s in list_strategies() if (s.get("nfqws_opt") or "").strip()]
         if not strategies:
             return None, None
         with self._lock:
-            # старение скоров
-            for k in list(self.strategy_scores):
-                self.strategy_scores[k] = max(-20.0, min(20.0, self.strategy_scores[k] * 0.98))
-            unused = [s for s in strategies
-                      if s["name"] not in self._used and s["name"] not in self._demoted]
+            self._vs.decay_all()
+            unused = [s for s in strategies if s["name"] not in self._used]
             if not unused:
-                # пул исчерпан — сбрасываем и назначенные, и отброшенные:
-                # демотированные стратегии снова в игре (но последними)
                 self._used.clear()
-                self._demoted.clear()
                 unused = strategies
-            best = max(unused, key=lambda s: self.strategy_scores.get(s["name"], 0.0))
+            ranked = self._vs.rank_candidates(unused, avoid_vector=avoid_vector)
+            best = ranked[0]
             self._used.add(best["name"])
             return best["name"], best["nfqws_opt"]
 
-    def _next_strategy_batch(self, n):
-        """Возвращает до n уникальных (name, nfqws) кандидатов по скорингу."""
+    def _next_strategy_batch(self, n, avoid_vector=None):
+        """
+        Возвращает до n (name, nfqws) кандидатов, максимизируя разнообразие
+        векторов: если доступно ≥2 различных техники, батч не состоит из
+        n вариаций одного и того же (возможно уже вычисленного TSPУ) трюка.
+        """
         strategies = [s for s in list_strategies() if (s.get("nfqws_opt") or "").strip()]
-        out, taken = [], set()
+        if not strategies:
+            return []
         with self._lock:
-            for k in list(self.strategy_scores):
-                self.strategy_scores[k] = max(-20.0, min(20.0, self.strategy_scores[k] * 0.98))
-        while len(out) < n and len(taken) < len(strategies):
-            remaining = [s for s in strategies if s["name"] not in taken and s["name"] not in self._demoted]
-            if not remaining:
-                # пул исчерпан — демотированные стратегии снова в игре
-                self._demoted.clear()
-                remaining = [s for s in strategies if s["name"] not in taken]
-            if not remaining:
-                break
-            best = max(remaining, key=lambda s: self.strategy_scores.get(s["name"], 0.0))
-            out.append((best["name"], best["nfqws_opt"]))
-            taken.add(best["name"])
-            with self._lock:
-                self._used.add(best["name"])
-        return out
+            self._vs.decay_all()
+            unused = [s for s in strategies if s["name"] not in self._used]
+            # Если неиспользованных стратегий не хватает на полный батч —
+            # добираем из полного списка, а не молча отдаём батч короче n.
+            pool = unused if len(unused) >= n else strategies
+            batch = self._vs.diversified_batch(pool, n, avoid_vector=avoid_vector)
+            for s in batch:
+                self._used.add(s["name"])
+            return [(s["name"], s["nfqws_opt"]) for s in batch]
 
     def _bump_score(self, name, ok):
+        vector = vector_for_name(name)
         with self._lock:
-            cur = self.strategy_scores.get(name, 0.0)
-            self.strategy_scores[name] = max(-20.0, min(20.0, cur + (1.0 if ok else -2.0)))
+            self._vs.bump(name, vector, ok)
 
     def _probe_curl_ok(self, timeout=6):
         """Короткий curl через SOCKS (может попасть на теневой слот при random)."""
@@ -1136,88 +937,115 @@ class PoolSwitcher:
         with self._lock:
             self.state = "ok" if good_slots else "degraded"
 
-    def _replace_slot(self, index, old_name, max_attempts=3):
+    def _replace_slot(self, index, old_name, max_attempts=3, avoid_vector=None):
         """
-        Fail-Fast замена стратегии слота.
+        Заменяет стратегию слота БЕЗ разрыва через «теневой слот».
+        Слот временно исключается из random; кандидаты проверяются на отдельном
+        qnum, куда случайно попадает часть нового трафика. Когда стратегия
+        подтверждается — устанавливается в слот и он возвращается в rotation.
 
-        1. Слот мгновенно исключается из rotation (remove_slots_from_fw) —
-           клиенты сразу уходят на здоровые слоты, nfqws2 остаётся жив.
-        2. Погибшая стратегия отправляется в САМЫЙ КОНЕЦ пула резерва
-           (_demote_strategy) — обратно в rotation она НЕ возвращается.
-        3. Из резерва (700+) берётся первая свежая или высокорейтинговая
-           стратегия (_next_strategy_batch).
-        4. Тяжёлый restart-daemons НЕ вызывается: pool.replace_slot убивает
-           только nfqws2-процесс ЭТОГО слота и запускает новый с тем же
-           QNUM и новыми args.
-        5. Штрафные очки (strategy_scores) новой стратегии и счётчик
-           провалов слота сбрасываются в 0 — статус «degraded» не ставится.
-
-        Теневой curl-тест выполняется только при shadow_test_enabled=True
-        (по умолчанию ВЫКЛЮЧЕН — пока ТСПУ рвёт соединения, долгие тесты
-        только усугубляют проблему).
+        avoid_vector: вектор уязвимости, implicate-нутый живым TSPУ-cut на
+        этом слоте (см. _rotate_on_cut). Кандидаты подбираются с приоритетом
+        на ДРУГИЕ векторы — cм. VectorScorer.diversified_batch.
         """
+        if avoid_vector is None:
+            avoid_vector = vector_for_name(old_name)
+        self._log_event("warn",
+            "Слот %d «%s» (vector=%s): подбираю замену (теневой подбор, avoid=%s)…" % (
+                index, old_name, avoid_vector or "?", avoid_vector or "none"))
+
         with self._lock:
             self.state = "replacing"
 
-        # 1. Мгновенно выпадаем из random-распределения
+        # На время подбора слот выпадает из random-распределения
         self._pool.remove_slots_from_fw([index])
-        # 2. Мёртвая стратегия — в конец пула резерва, не обратно в rotation
-        self._demote_strategy(old_name)
 
-        try:
-            candidates = self._next_strategy_batch(max_attempts)
-            chosen = None
-            for name, nfqws in candidates:
-                ok = True
-                if self.shadow_test_enabled:
-                    # опциональный теневой тест (по умолчанию выключен)
-                    shadow = self._pool.start_shadow(name, nfqws)
-                    if not shadow:
-                        continue
-                    try:
-                        ok = self._probe_shadow(shadow,
-                                                window=self.shadow_window,
-                                                min_pkts=self.shadow_min_pkts)
-                    finally:
-                        self._pool.stop_shadow(shadow["qnum"])
-                if not ok:
-                    self._bump_score(name, False)
-                    self._log_event("warn",
-                        "✗ Слот %d: «%s» отброшена — беру следующую из резерва" % (
-                            index, name))
-                    continue
+        candidates = self._next_strategy_batch(max_attempts, avoid_vector=avoid_vector)
+        chosen = None
+        for attempt, (name, nfqws) in enumerate(candidates, start=1):
+            candidate_vector = vector_for_name(name)
+            shadow = self._pool.start_shadow(name, nfqws)
+            if not shadow:
+                continue
+            try:
+                ok = self._probe_shadow(shadow)
+            finally:
+                self._pool.stop_shadow(shadow["qnum"])
+            self._bump_score(name, ok)
+            if ok:
                 chosen = (name, nfqws)
                 break
+            self._log_event("warn",
+                "slot %d: strategy '%s' (vector=%s) failed shadow test (attempt %d/%d)" % (
+                    index, name, candidate_vector or "?", attempt, max_attempts))
+            try:
+                _tlog.test_fail(
+                    slot_index=index,
+                    strategy=name,
+                    nfqws_opt=nfqws,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    reason="vector=%s" % (candidate_vector or "?"),
+                )
+            except Exception:
+                pass
 
-            if not chosen:
-                # Резерв пуст — НЕ возвращаем мёртвую стратегию в rotation:
-                # слот остаётся вне iptables до следующей проверки
-                self._pool.set_slot_health(index, False)
-                self._log_event("error",
-                    "Слот %d «%s»: резерв стратегий исчерпан — слот выведен из rotation" % (
-                        index, old_name))
-                with self._lock:
-                    self.state = "ok"
-                return
-
+        if chosen:
             name, nfqws = chosen
-            # 3-4. Точечный перезапуск одного nfqws2: тот же QNUM, новые args
             self._pool.replace_slot(index, name, nfqws)
             self._pool.set_slot_health(index, True)
             self._pool.restore_slot_to_fw(index)
-            # 5. Сброс штрафов: новая стратегия стартует с чистого листа
             with self._lock:
-                self.strategy_scores[name] = 0.0
                 self._slot_fails[index] = 0
                 self.state = "ok"
             self._log_event("ok",
-                "✓ Слот %d (fail-fast): «%s» → «%s» — QNUM сохранён, "
-                "restart-daemons не нужен, штрафы сброшены" % (index, old_name, name))
-        except Exception as e:
-            self._log_event("error",
-                "Слот %d: fail-fast замена упала: %s" % (index, e))
-            with self._lock:
-                self.state = "ok"
+                "slot %d: '%s' -> '%s' - shadow test passed, back in rotation" % (
+                    index, old_name, name))
+            try:
+                _stats  = self._pool.get_traffic_stats()
+                _slots  = self._pool.get_status()
+                _slot_d = next((s for s in _slots if s.get("index") == index), {})
+                _tstat  = (_stats.get(_slot_d.get("qnum")) or {})
+                _mon_st = reset_monitor.get_status()
+                _tlog.test_ok(slot_index=index, strategy=name, nfqws_opt=nfqws,
+                              pkts=_tstat.get("pkts_delta"))
+                _tlog.rotation(
+                    old_slot=slot_ctx(
+                        index=index,
+                        strategy=old_name,
+                        pkts_delta=_tstat.get("pkts_delta"),
+                        kbps=_tstat.get("kbps"),
+                    ),
+                    new_strategy=name,
+                    reason=getattr(self, "_last_cut_type", "cut"),
+                    monitor=monitor_ctx(
+                        ratio=_mon_st.get("ratio"),
+                        resets=_mon_st.get("resets_window"),
+                        closes=_mon_st.get("closes_window"),
+                        window_sec=_mon_st.get("window_sec"),
+                    ),
+                )
+            except Exception as _e:
+                print("[tspу_log] rotation log error: %s" % _e, flush=True)
+            return
+
+        # Ни одна не подтвердилась — слот остаётся в rotation со старой стратегией
+        self._pool.set_slot_health(index, False)
+        self._pool.restore_slot_to_fw(index)
+        self._log_event("error",
+            "slot %d '%s': all %d strategies failed shadow test, staying in rotation" % (
+                index, old_name, max_attempts))
+        try:
+            _mon_st = reset_monitor.get_status()
+            _tlog.test_fail(
+                slot_index=index, strategy=old_name,
+                attempt=max_attempts, max_attempts=max_attempts,
+                reason="all %d candidates failed" % max_attempts,
+            )
+        except Exception:
+            pass
+        with self._lock:
+            self.state = "degraded"
 
 
 # ── globals init ─────────────────────────────────────────────────────────────
@@ -1270,45 +1098,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_switcher.get_status())
         elif p == "/api/pool/log":
             self._json({"log": _switcher.get_log()})
+        elif p == "/api/pool/vectors":
+            self._json(_switcher.get_vector_breakdown())
         elif p == "/api/pool/traffic":
             self._json(_pool.get_traffic_stats())
         elif p == "/api/monitor/status":
             self._json(reset_monitor.get_status())
-        elif p == "/api/cuts":
-            self._json({"entries": cut_logger.list(50),
-                        "status": cut_logger.status()})
-        elif p == "/api/cuts/export":
-            self._send(200, "application/x-ndjson; charset=utf-8",
-                       cut_logger.export())
-        elif p == "/api/intel/status":
-            if _tspu_intel is not None:
-                self._json(_tspu_intel.status())
-            else:
-                self._json({"enabled": False, "error": "tspu_intel not loaded"})
-        elif p == "/api/intel/list":
-            if _tspu_intel is not None:
-                from urllib.parse import urlparse, parse_qs
-                limit = 50
-                try:
-                    _qs = parse_qs(urlparse(self.path).query)
-                    limit = int(_qs.get("limit", ["50"])[0])
-                except Exception:
-                    limit = 50
-                self._json({"entries": _tspu_intel.intel_log.list(limit),
-                            "status": _tspu_intel.intel_log.status()})
-            else:
-                self._json({"error": "tspu_intel not loaded"})
-        elif p == "/api/intel/export":
-            if _tspu_intel is not None:
-                self._send(200, "application/x-ndjson; charset=utf-8",
-                           _tspu_intel.intel_log.export())
-            else:
-                self._send(404, "text/plain; charset=utf-8", "not loaded")
-        elif p == "/api/intel/clear":
-            if _tspu_intel is not None:
-                self._json(_tspu_intel.intel_log.clear())
-            else:
-                self._json({"ok": False, "error": "tspu_intel not loaded"})
+        elif p == "/api/tspу-log":
+            n = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
+            self._json({"events": _tlog.get_recent(n)})
+        elif p == "/api/tspу-log":
+            try:
+                n   = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
+                evt = self.path.split("event=")[-1].split("&")[0] if "event=" in self.path else None
+            except (ValueError, IndexError):
+                n, evt = 200, None
+            self._json({"events": _tlog.get_recent(n, event_type=evt)})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -1371,33 +1176,7 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/monitor/configure":
             return self._json(reset_monitor.configure(body))
 
-        elif p == "/api/cuts/clear":
-            return self._json(cut_logger.clear())
-
-        elif p == "/api/cuts/record":
-            # ручная запись тестового события (для отладки из UI)
-            return self._json(cut_logger.record(body.get("payload", {"kind": "manual"})))
-
         # ── сохранить NFQWS2_OPT вручную ────────────────────────────────────
-        elif p == "/api/intel/probe":
-            if _tspu_intel is None:
-                return self._json({"ok": False, "error": "tspu_intel not loaded"})
-            sname = body.get("strategy_name") or ""
-            nfqws = body.get("nfqws_opt")
-            if nfqws is None and sname:
-                nfqws = load_strategy_nfqws(sname)
-            _ctx = {"cut_id": -1, "event_kind": "manual",
-                    "lifetime_sec": float(body.get("lifetime_sec", 0.0) or 0.0),
-                    "reset_confirmed": bool(body.get("reset_confirmed", False)),
-                    "remote_ip": body.get("remote_ip"),
-                    "remote_port": body.get("remote_port", 443),
-                    "local_port": body.get("local_port", 0),
-                    "qnum": None, "strategy_name": sname,
-                    "nfqws_opt": nfqws,
-                    "strategy_score_before": float(body.get("strategy_score_before", 0.0) or 0.0),
-                    "bytes_delta": body.get("bytes_delta"),
-                    "termination_type": None}
-            return self._json(_tspu_intel.on_cut_async(_ctx))
         elif p == "/api/save-nfqws":
             value      = body.get("value", "")
             do_restart = body.get("restart", False)
@@ -1496,15 +1275,25 @@ def main():
     print("[DIAG] _switcher created, cut_min=%s, cut_max=%s, cut_require_reset=%s" % (
         _switcher.cut_min_sec, _switcher.cut_max_sec, _switcher.cut_require_reset), flush=True)
 
+    # ── восстановление знаний о стратегиях/векторах из журнала tspУ.log ──
+    # Журнал уже хранит полную историю срезов/тестов с указанием стратегии
+    # каждого события — не нужно начинать скоринг с нуля при каждом
+    # перезапуске панели.
+    try:
+        _hist = _tlog.get_recent(5000)
+        _switcher._vs.seed_from_journal(_hist, vector_for_name)
+        print("[panel] восстановлено скоринг из %d событий журнала (стратегий=%d, векторов=%d)" % (
+            len(_hist), len(_switcher._vs.strategy_scores),
+            len(_switcher._vs.vector_scores)), flush=True)
+    except Exception as e:
+        print("[panel] не удалось восстановить журнал: %s" % e, flush=True)
+
     # ── трекер времени жизни соединений (срезы ТСПУ 30-60с) ───────────
     _tracker = LifetimeTracker(
         ss_port=args.ss_port, socks_port=args.socks_port,
         panel_port=args.port, log_fn=_log,
         cut_min_sec=_switcher.cut_min_sec, cut_max_sec=_switcher.cut_max_sec,
-        require_reset=_switcher.cut_require_reset,
-        epidemic_min_events=_switcher.epidemic_min_events,
-        short_min_sec=_switcher.short_min_sec,
-        epidemic_window_sec=_switcher.epidemic_window_sec)
+        require_reset=True)   # RST-срез подтверждается reset-событием из лога
     print("[DIAG] _tracker created", flush=True)
     _tracker.on_cut = _switcher.on_connection_cut
     reset_monitor.on_reset = _tracker.note_reset

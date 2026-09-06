@@ -1,26 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Детектор блокировки ТСПУ.
+conn_tracker.py  -  LifetimeTracker
 
-Каждые poll_interval секунд читает /proc/net/tcp{,6} и следит за
-исходящими HTTPS-соединениями (remote :443, не loopback).
+Detects two TSPУ block patterns:
 
-Отличие «резкой смерти» (RST) от обычного закрытия (FIN):
+  1. RST drop (cut_type="rst")
+     Connection lived cut_min_sec..cut_max_sec, then received TCP RST.
+     Detected via: session lifetime tracking + ResetMonitor.note_reset().
 
-  - FIN: уход из ESTABLISHED через FIN_WAIT*/CLOSE_WAIT/LAST_ACK/TIME_WAIT;
-    такие закрытия считаются отдельно и НЕ являются срезом.
-  - RST: соединение было ESTABLISHED в прошлом тике и исчезло,
-    либо сразу перешло в CLOSE/CLOSING без FIN-промежуточных состояний.
+  2. Silent drop / throttle (cut_type="idle")
+     Connection stays ESTABLISHED but tx_queue and rx_queue in /proc/net/tcp
+     do not change for idle_threshold_sec.  TSPУ drops packets without RST.
 
-Два триггера «среза ТСПУ»:
-   1. Классический: одиночная RST-смерть с lifetime в [cut_min_sec, cut_max_sec].
-   2. Эпидемия: за скользящее окно epidemic_window_sec набралось
-       >= epidemic_min_events RST-смертей (живших >= short_min_sec)
-       — ловит повторяющиеся обрывы, когда плеер сразу переподключается.
-
-При срезе вызывается on_cut(event), где event — dict с полями:
-    kind, lifetime_sec, conn, rst_deaths_window, fin_deaths_window, reset_confirmed.
+Both types call  on_cut(lifetime, cut_type)  and write to tspу_log with
+full context (tx_queue, rx_queue, idle_sec, active_conns).
 """
 
 import collections
@@ -28,168 +22,199 @@ import os
 import threading
 import time
 
+try:
+    from tspu_log import get_log as _get_tlog, conn_ctx, slot_ctx, monitor_ctx
+except ImportError:
+    _get_tlog = None
+    def conn_ctx(**kw): return kw
+    def slot_ctx(**kw): return kw
+    def monitor_ctx(**kw): return kw
+
+# How many consecutive ticks with unchanged queues = silent drop.
+IDLE_TICKS = 5
+
+# Connections younger than this are not considered for idle detection.
+IDLE_MIN_LIFETIME = 15.0
+
 
 class LifetimeTracker:
     def __init__(self, ss_port, socks_port, panel_port=1888,
                  log_fn=None, poll_interval=2.0,
                  cut_min_sec=30, cut_max_sec=60,
-                 require_reset=False, reset_window_sec=10.0,
-                 epidemic_min_events=4, short_min_sec=5,
-                 epidemic_window_sec=60, proc_root=""):
+                 require_reset=True, reset_window_sec=10.0,
+                 idle_threshold_sec=None,
+                 proc_root=""):
+
         self.ss_port       = int(ss_port)
         self.socks_port    = int(socks_port)
         self.panel_port    = int(panel_port)
-        self._proc_root    = proc_root   # для тестов: корень с fake proc/
-        self._log = log_fn or (lambda lvl, msg: print("[tracker][%s] %s" % (lvl, msg), flush=True))
+        self._proc_root    = proc_root
+        self._log = log_fn or (lambda lvl, msg: print(
+            "[tracker][%s] %s" % (lvl, msg), flush=True))
 
-        self.poll_interval       = float(poll_interval)
-        self.cut_min_sec         = float(cut_min_sec)
-        self.cut_max_sec         = float(cut_max_sec)
-        self.require_reset       = bool(require_reset)
-        self.reset_window_sec    = float(reset_window_sec)
-        self.epidemic_min_events = max(2, int(epidemic_min_events))
-        self.short_min_sec       = max(2, float(short_min_sec))
-        self.epidemic_window_sec = max(20, int(epidemic_window_sec))
+        self.poll_interval    = float(poll_interval)
+        self.cut_min_sec      = float(cut_min_sec)
+        self.cut_max_sec      = float(cut_max_sec)
+        self.require_reset    = bool(require_reset)
+        self.reset_window_sec = float(reset_window_sec)
+        self._idle_threshold  = (float(idle_threshold_sec)
+                                 if idle_threshold_sec is not None
+                                 else IDLE_TICKS * self.poll_interval)
 
-        self._lock       = threading.RLock()
-        self._conns      = {}               # conn -> {"first":ts,"last":ts,"state":st}
-        self._deaths     = collections.deque(maxlen=300)  # RST-смерти: (ts,lifetime,conn)
-        self._fin_deaths = collections.deque(maxlen=300)  # FIN-закрытия: ts
-        self._reset_ts   = collections.deque(maxlen=50)
-        self._thread     = None
-        self._stop_evt   = threading.Event()
-        self._last_death_ts = None   # ts последней RST-смерти, обработанной классическим триггером
+        self._lock      = threading.RLock()
+        self._queues    = {}   # key -> {tx, rx, idle_ticks, first_seen, last_changed}
+        self._reset_ts  = collections.deque(maxlen=50)
+        self._thread    = None
+        self._stop_evt  = threading.Event()
 
-        self.on_cut = None            # callback fn(event_dict)
+        # on_cut(lifetime, cut_type)  -  cut_type: "rst" | "idle"
+        self.on_cut = None
 
-        # статус для UI
-        self.active_conns       = 0
+        # stats
+        self.active_conns      = 0
         self.tracked           = 0
-        self.rst_deaths_window = 0
-        self.fin_deaths_window = 0
         self.last_cut_lifetime = None
         self.last_cut_ts       = None
-        self.last_cut_conn     = None
         self.total_cuts        = 0
+        self.total_rst_cuts    = 0
+        self.total_idle_cuts   = 0
 
-    # ── public ─────────────────────────────────────────────────────────
+        # session tracking (for RST detection)
+        self._session_start  = None
+        self._last_activity  = None
+        self._yt_active      = False
+        self._yt_grace_sec   = 5
+
+        self._tlog = _get_tlog() if _get_tlog else None
+
+        # pool_manager reference - set by server.py after init
+        # used to enrich idle events with slot context
+        self.pool_ref   = None
+        self.monitor_ref = None
+
+    # ------------------------------------------------------------------ #
+    # Public                                                               #
+    # ------------------------------------------------------------------ #
 
     def start(self):
-        print("[DIAG] tracker.start() called, ss_port=%s, socks_port=%s, panel_port=%s" % (
-            self.ss_port, self.socks_port, self.panel_port), flush=True)
+        print("[tracker] start ss=%s socks=%s panel=%s idle_thresh=%.1fs" % (
+            self.ss_port, self.socks_port, self.panel_port, self._idle_threshold),
+            flush=True)
         if self._thread and self._thread.is_alive():
             return
         self._stop_evt.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        self._log("info", "Детектор ТСПУ запущен (poll=%ss, cut %s-%ss, epi>=%s/%ss, require_reset=%s)" % (
-            self.poll_interval, self.cut_min_sec, self.cut_max_sec,
-            self.epidemic_min_events, self.epidemic_window_sec, self.require_reset))
+        self._log("info",
+            "tracker started poll=%.1fs cut=%d-%ds idle=%.1fs require_reset=%s" % (
+                self.poll_interval, self.cut_min_sec, self.cut_max_sec,
+                self._idle_threshold, self.require_reset))
 
     def stop(self):
         self._stop_evt.set()
 
     def note_reset(self):
-        """Вызывается из ResetMonitor при событии reset в ss-server логе."""
+        """Called by ResetMonitor on each reset event from ss-server log."""
         with self._lock:
             self._reset_ts.append(time.time())
 
     def configure(self, cfg):
         with self._lock:
             for k in ("cut_min_sec", "cut_max_sec", "require_reset",
-                      "poll_interval", "reset_window_sec",
-                      "epidemic_min_events", "short_min_sec",
-                      "epidemic_window_sec"):
+                      "poll_interval", "reset_window_sec"):
                 if k in cfg and cfg[k] is not None:
-                    if k == "require_reset":
-                        setattr(self, k, bool(cfg[k]))
-                    elif k == "epidemic_min_events":
-                        setattr(self, k, max(2, int(cfg[k])))
-                    elif k == "epidemic_window_sec":
-                        setattr(self, k, max(20, int(cfg[k])))
-                    elif k == "short_min_sec":
-                        setattr(self, k, max(2, float(cfg[k])))
-                    else:
-                        setattr(self, k, float(cfg[k]))
-            # защитная нормализация границ среза (swap + клампы)
-            lo = min(self.cut_min_sec, self.cut_max_sec)
-            hi = max(self.cut_min_sec, self.cut_max_sec)
-            self.cut_min_sec = max(5.0, lo)
-            self.cut_max_sec = max(max(10.0, hi), self.cut_min_sec)
+                    setattr(self, k,
+                            bool(cfg[k]) if k == "require_reset"
+                            else float(cfg[k]))
+            if "idle_threshold_sec" in cfg and cfg["idle_threshold_sec"] is not None:
+                self._idle_threshold = float(cfg["idle_threshold_sec"])
         return self.get_status()
 
     def get_status(self):
         with self._lock:
             return {
-                "active_conns":        self.active_conns,
-                "tracked":             self.tracked,
-                "poll_interval":       self.poll_interval,
+                "active_conns":       self.active_conns,
+                "tracked":            self.tracked,
+                "poll_interval":      self.poll_interval,
                 "cut_min_sec":        self.cut_min_sec,
                 "cut_max_sec":        self.cut_max_sec,
                 "require_reset":      self.require_reset,
                 "reset_window_sec":   self.reset_window_sec,
-                "epidemic_min_events": self.epidemic_min_events,
-                "short_min_sec":        self.short_min_sec,
-                "epidemic_window_sec": self.epidemic_window_sec,
-                "recent_resets":       len(self._reset_ts),
-                "rst_deaths_window":   self.rst_deaths_window,
-                "fin_deaths_window":   self.fin_deaths_window,
-                "last_cut_lifetime":   self.last_cut_lifetime,
-                "last_cut_ts":         self.last_cut_ts,
-                "last_cut_conn":       self.last_cut_conn,
-                "total_cuts":          self.total_cuts,
+                "idle_threshold_sec": self._idle_threshold,
+                "recent_resets":      len(self._reset_ts),
+                "last_cut_lifetime":  self.last_cut_lifetime,
+                "last_cut_ts":        self.last_cut_ts,
+                "total_cuts":         self.total_cuts,
+                "total_rst_cuts":     self.total_rst_cuts,
+                "total_idle_cuts":    self.total_idle_cuts,
+                "yt_active":          self._yt_active,
+                "session_start":      self._session_start,
+                "last_activity":      self._last_activity,
             }
 
-    # ── internals ────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+    # Internal                                                             #
+    # ------------------------------------------------------------------ #
 
     def _tcp_paths(self):
         if self._proc_root:
-            return [os.path.join(self._proc_root, n) for n in ("net/tcp", "net/tcp6")]
+            return [os.path.join(self._proc_root, n)
+                    for n in ("net/tcp", "net/tcp6")]
         return ["/proc/net/tcp", "/proc/net/tcp6"]
 
     def _read_tcp_conns(self):
         """
-        Читает /proc/net/tcp и /proc/net/tcp6.
-
-        Возвращает dict: conn -> state hex для всех состояний.
-        conn=(local_port, remote_ip, remote_port). Оставляет только
-        исходящие на внешние адреса:443, исключая наши слушающие порты.
+        Read /proc/net/tcp{,6}.
+        Returns dict: (local_port, remote_ip, remote_port) -> {tx, rx}
+        tx/rx = tx_queue:rx_queue from column 4 (hex kernel socket buffers).
+        Only ESTABLISHED (state=01), remote port 443, non-loopback.
         """
         result = {}
-        first_tick = not hasattr(self, "_diag_logged")
-        if first_tick:
+        first = not hasattr(self, "_diag_logged")
+        if first:
             self._diag_logged = True
+
         for path in self._tcp_paths():
             try:
                 with open(path) as f:
                     lines = f.readlines()
             except (OSError, IOError) as e:
-                if first_tick:
-                    print("[DIAG] cannot read %s: %s" % (path, e), flush=True)
+                if first:
+                    print("[tracker] cannot read %s: %s" % (path, e), flush=True)
                 continue
-            if first_tick:
-                print("[DIAG] read %s: %d lines" % (path, len(lines)), flush=True)
+            if first:
+                print("[tracker] read %s: %d lines" % (path, len(lines)), flush=True)
+
             for line in lines[1:]:
                 parts = line.split()
-                if len(parts) < 4:
+                if len(parts) < 5:
+                    continue
+                if parts[3] != "01":
                     continue
                 try:
-                    local        = parts[1].split(":")
-                    remote       = parts[2].split(":")
-                    local_port   = int(local[1], 16)
-                    remote_ip    = remote[0]
-                    remote_port  = int(remote[1], 16)
-                    st           = parts[3]
+                    local       = parts[1].split(":")
+                    remote      = parts[2].split(":")
+                    local_port  = int(local[1], 16)
+                    remote_ip   = remote[0]
+                    remote_port = int(remote[1], 16)
+                    qparts      = parts[4].split(":")
+                    tx_q        = int(qparts[0], 16)
+                    rx_q        = int(qparts[1], 16) if len(qparts) > 1 else 0
                 except (ValueError, IndexError):
                     continue
+
                 if remote_port != 443:
                     continue
-                if remote_ip in ("00000000", "00000000000000000000000000000000",
-                                "0100007F", "00000000000000000000000001000000"):
+                if remote_ip in ("00000000",
+                                 "00000000000000000000000000000000",
+                                 "0100007F",
+                                 "00000000000000000000000001000000"):
                     continue
                 if local_port in (self.ss_port, self.socks_port, self.panel_port):
                     continue
-                result[(local_port, remote_ip, remote_port)] = st
+
+                result[(local_port, remote_ip, remote_port)] = {
+                    "tx": tx_q, "rx": rx_q}
         return result
 
     def _loop(self):
@@ -201,137 +226,198 @@ class LifetimeTracker:
             self._stop_evt.wait(timeout=self.poll_interval)
 
     def _tick(self):
-        now    = time.time()
-        states = self._read_tcp_conns()
-        est_now = sum(1 for st in states.values() if st == "01")
+        now   = time.time()
+        conns = self._read_tcp_conns()
+        yt_active = len(conns) > 0
 
-        need_cut  = False
-        cut_event = None
+        idle_events = []   # list of (key, lifetime, idle_sec, tx_q, rx_q)
 
         with self._lock:
-            prev_ = {c: dict(v) for c, v in self._conns.items()}
-            self._analyze_transitions(prev_, states, now)
-
-            # скользящее окно RST-смертей: чистим старые
-            cutoff = now - self.epidemic_window_sec
-            while self._deaths and self._deaths[0][0] < cutoff:
-                self._deaths.popleft()
-            while self._fin_deaths and self._fin_deaths[0] < cutoff:
-                self._fin_deaths.popleft()
-            self.rst_deaths_window = len(self._deaths)
-            self.fin_deaths_window = len(self._fin_deaths)
-
-            # 1. классический триггер: свежая одиночная RST-смерть в нужном диапазоне
-            new_death = None
-            if self._deaths and self._deaths[-1][0] != self._last_death_ts:
-                ts, lt, dc = self._deaths[-1]
-                self._last_death_ts = ts
-                if self.cut_min_sec <= lt <= self.cut_max_sec:
-                    new_death = (lt, dc)
-
-            # 2. эпидемия: много RST-смертей за окно
-            epi = (self.rst_deaths_window >= self.epidemic_min_events)
-
-            # подтверждение reset-событием (опционально)
-            confirmed = (not self.require_reset) or self._has_recent_reset(now)
-            if confirmed:
-                if new_death is not None:
-                    lt, dc = new_death
-                    need_cut = True
-                    cut_event = {
-                        "kind": "classic",
-                        "lifetime_sec": round(lt, 1),
-                        "conn": dc,
-                        "rst_deaths_window": self.rst_deaths_window,
-                        "fin_deaths_window": self.fin_deaths_window,
-                        "reset_confirmed": True,
+            new_queues = {}
+            for key, qv in conns.items():
+                tx, rx = qv["tx"], qv["rx"]
+                prev = self._queues.get(key)
+                if prev is None:
+                    new_queues[key] = {
+                        "tx": tx, "rx": rx,
+                        "idle_ticks": 0,
+                        "first_seen": now,
+                        "last_changed": now,
                     }
-                elif epi:
-                    ts, lt, dc = self._deaths[-1]
-                    need_cut = True
-                    cut_event = {
-                        "kind": "epidemic",
-                        "lifetime_sec": round(lt, 1),
-                        "conn": dc,
-                        "rst_deaths_window": self.rst_deaths_window,
-                        "fin_deaths_window": self.fin_deaths_window,
-                        "reset_confirmed": True,
-                    }
-                    self._deaths.clear()      # один срез на эпизод
-                    self._last_death_ts = None
-            else:
-                if new_death is not None:
-                    self._log("info", "Классический срез(%.1fs) не подтверждён reset-событием"
-                             % new_death[0])
-
-            # обновить известные соединения
-            for c, st in states.items():
-                if c in self._conns:
-                    v = self._conns[c]
-                    v["last"]  = now
-                    v["state"] = st
                 else:
-                    self._conns[c] = {"first": now, "last": now, "state": st}
-            for c in list(self._conns):
-                if c not in states:
-                    self._conns.pop(c, None)
+                    changed    = (tx != prev["tx"] or rx != prev["rx"])
+                    idle_ticks = 0 if changed else prev["idle_ticks"] + 1
+                    last_chg   = now if changed else prev["last_changed"]
+                    new_queues[key] = {
+                        "tx": tx, "rx": rx,
+                        "idle_ticks":   idle_ticks,
+                        "first_seen":   prev["first_seen"],
+                        "last_changed": last_chg,
+                    }
+                    lifetime = now - prev["first_seen"]
+                    idle_sec = now - last_chg
+                    # fire exactly once when ticks threshold is crossed
+                    if (idle_ticks == IDLE_TICKS
+                            and lifetime >= IDLE_MIN_LIFETIME
+                            and idle_sec >= self._idle_threshold):
+                        idle_events.append((key, lifetime, idle_sec, tx, rx))
 
-            self.active_conns = est_now
-            self.tracked      = len(self._conns)
+            self._queues = new_queues
 
-        if need_cut and cut_event is not None:
-            self._do_cut(cut_event)
+            # RST session tracking
+            if yt_active:
+                if self._session_start is None:
+                    self._session_start = now
+                self._last_activity = now
+                self._yt_active = True
+            else:
+                self._yt_active = False
+                if (self._last_activity is not None
+                        and self._session_start is not None):
+                    idle_time        = now - self._last_activity
+                    session_duration = self._last_activity - self._session_start
+                    if idle_time >= self._yt_grace_sec:
+                        if self.cut_min_sec <= session_duration <= self.cut_max_sec:
+                            if (not self.require_reset
+                                    or self._has_recent_reset(now)):
+                                self._do_rst_cut(session_duration + idle_time)
+                        self._session_start = None
+                        self._last_activity = None
 
-    def _analyze_transitions(self, prev_states, states, now):
-        """
-        Переходы из ESTABLISHED в другие состояния.
+            self.active_conns = len(conns)
+            self.tracked      = len(conns)
 
-        RST-смерть: соединение исчезло совсем или ушло сразу в CLOSE(07)/
-        CLOSING(0B) без FIN-промежуточных состояний (04/05/06/08/09).
-        FIN-закрытия считаются отдельно и не являются срезом.
-        """
-        for c, info in prev_states.items():
-            prev_state = info["state"]
-            if prev_state != "01":
-                continue
-            cur_state = states.get(c)
-            if cur_state == "01":
-                continue
-            lifetime = now - info["first"]
-            if (cur_state is None) or (cur_state in ("07", "0B")):
-                if lifetime >= self.short_min_sec:
-                    self._deaths.append((now, lifetime, c))
-            elif cur_state in ("04", "05", "06", "08", "09"):
-                self._fin_deaths.append(now)
-            # прочие (SYN_SENT и т.п.) — игнор
+        for (key, lifetime, idle_sec, tx_q, rx_q) in idle_events:
+            self._do_idle_cut(lifetime, idle_sec, tx_q, rx_q, len(conns))
 
     def _has_recent_reset(self, now):
-        """Было ли reset-событие из ss-server лога недавно."""
+        """
+        True if a reset event landed within reset_window_sec of `now`,
+        with a little slack in both directions:
+          - up to 2 poll ticks in the past, since the tick that first
+            observes the session as ended can lag the actual RST by
+            roughly one poll_interval, and the grace-period wait adds
+            another ~1 tick before we get here;
+          - a small margin into the "future" to absorb clock/thread
+            ordering skew between ResetMonitor's log-tailing thread
+            (which appends to _reset_ts) and this polling thread.
+        """
         with self._lock:
-            for rs in self._reset_ts:
-                if now - rs <= self.reset_window_sec:
-                    return True
-        return False
+            ts_list = list(self._reset_ts)
+        slack = self.poll_interval * 2
+        lo = now - self.reset_window_sec - slack
+        hi = now + slack
+        return any(lo <= rs <= hi for rs in ts_list)
 
-    def _do_cut(self, event):
-        """Выполняет срез: обновляет статус и вызывает on_cut callback."""
+    def _get_top_slot_ctx(self):
+        """Return slot_ctx for the most active pool slot (best-effort)."""
+        try:
+            if self.pool_ref is None:
+                return {}
+            stats = self.pool_ref.get_traffic_stats()
+            slots = self.pool_ref.get_status()
+            candidates = [s for s in slots
+                          if s.get("alive") and not s.get("fw_excluded")]
+            if not candidates:
+                return {}
+            top = max(candidates,
+                      key=lambda s: (stats.get(s["qnum"]) or {}).get("pkts_delta", 0))
+            tstat = stats.get(top["qnum"]) or {}
+            return slot_ctx(
+                index=top.get("index"),
+                qnum=top.get("qnum"),
+                strategy=top.get("strategy"),
+                pid=top.get("pid"),
+                pkts_delta=tstat.get("pkts_delta"),
+                bytes_delta=tstat.get("bytes_delta"),
+                kbps=tstat.get("kbps"),
+            )
+        except Exception:
+            return {}
+
+    def _get_monitor_ctx(self):
+        """Return monitor_ctx from ResetMonitor (best-effort)."""
+        try:
+            if self.monitor_ref is None:
+                return {}
+            st = self.monitor_ref.get_status()
+            return monitor_ctx(
+                ratio=st.get("ratio"),
+                resets=st.get("resets_window"),
+                closes=st.get("closes_window"),
+                window_sec=st.get("window_sec"),
+                ss_lines=list(getattr(self.monitor_ref, "_recent_ss_lines", [])),
+            )
+        except Exception:
+            return {}
+
+    def _do_rst_cut(self, lifetime):
         now = time.time()
         with self._lock:
-            self.last_cut_lifetime = event["lifetime_sec"]
+            self.last_cut_lifetime = round(lifetime, 1)
             self.last_cut_ts       = now
-            self.last_cut_conn     = event.get("conn")
             self.total_cuts       += 1
+            self.total_rst_cuts   += 1
             cb = self.on_cut
-        self._log("warn", "⚡ Срез ТСПУ(%s): соединение прожило %.1fs — вызываю on_cut" % (
-            event["kind"], event["lifetime_sec"]))
+
+        self._log("warn", "[CUT/RST] conn lived %.1fs" % lifetime)
+
+        if self._tlog:
+            try:
+                self._tlog.cut(
+                    conn=conn_ctx(
+                        lifetime_sec=lifetime,
+                        active_conns=self.active_conns,
+                    ),
+                    slot=self._get_top_slot_ctx(),
+                    monitor=self._get_monitor_ctx(),
+                )
+            except Exception as e:
+                print("[tracker] tspу_log.cut error: %s" % e, flush=True)
+
         if cb:
             try:
-                cb(event)
+                cb(lifetime, "rst")
+            except TypeError:
+                try:
+                    cb(lifetime)
+                except Exception as e:
+                    self._log("error", "on_cut(rst): %s" % e)
+
+    def _do_idle_cut(self, lifetime, idle_sec, tx_q, rx_q, active_conns):
+        now = time.time()
+        with self._lock:
+            self.last_cut_lifetime = round(lifetime, 1)
+            self.last_cut_ts       = now
+            self.total_cuts       += 1
+            self.total_idle_cuts  += 1
+            cb = self.on_cut
+
+        self._log("warn",
+            "[CUT/IDLE] traffic stalled %.1fs  lifetime=%.1fs  tx_q=%d rx_q=%d"
+            % (idle_sec, lifetime, tx_q, rx_q))
+
+        if self._tlog:
+            try:
+                self._tlog.idle(
+                    conn=conn_ctx(
+                        lifetime_sec=lifetime,
+                        idle_sec=idle_sec,
+                        active_conns=active_conns,
+                        tx_queue=tx_q,
+                        rx_queue=rx_q,
+                    ),
+                    slot=self._get_top_slot_ctx(),
+                    monitor=self._get_monitor_ctx(),
+                )
             except Exception as e:
-                self._log("error", "on_cut: %s" % e)
+                print("[tracker] tspу_log.idle error: %s" % e, flush=True)
 
-
-if __name__ == "__main__":
-    # быстрый самопроверочный запуск (без реального /proc — только статус)
-    t = LifetimeTracker(8388, 1080, 1888)
-    print("status OK" if "total_cuts" in t.get_status() else "status FAIL")
+        if cb:
+            try:
+                cb(lifetime, "idle")
+            except TypeError:
+                try:
+                    cb(lifetime)
+                except Exception as e:
+                    self._log("error", "on_cut(idle): %s" % e)
