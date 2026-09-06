@@ -569,7 +569,7 @@ body {
 // ═══════════════════════════════════════════════════════════════════════
 // API helpers
 // ═══════════════════════════════════════════════════════════════════════
-async function api(path){ try{ return await (await fetch(path)).json(); }catch{ return {}; } }
+async function api(path, init){ try{ return await (await fetch(path, init)).json(); }catch{ return {}; } }
 function post(path,d){ return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); }
 
 // ═══════════════════════════════════════════════════════════════════════

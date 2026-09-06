@@ -1104,10 +1104,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_pool.get_traffic_stats())
         elif p == "/api/monitor/status":
             self._json(reset_monitor.get_status())
-        elif p == "/api/tspу-log":
-            n = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
-            self._json({"events": _tlog.get_recent(n)})
-        elif p == "/api/tspу-log":
+        elif p == "/api/tspu-log":
             try:
                 n   = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
                 evt = self.path.split("event=")[-1].split("&")[0] if "event=" in self.path else None
