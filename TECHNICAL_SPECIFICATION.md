@@ -404,11 +404,9 @@ Required agent deliverables: complete runnable source; tests and fixtures; versi
 
 ### Product decisions to confirm before finalizing behavior
 
-- Default all-strategies-failed policy: direct fail-open versus fail-closed.
+- Default all-strategies-failed policy:  Fallback policy upon total strategy failure: fail-closed.
 - Whether production active reconnaissance is opt-in (recommended) or enabled by default; authorized destination policy.
-- Preferred rotation policy: validated standby fast replacement versus on-demand shadow qualification, and maximum drain time.
-- Administration authentication method and remote-access deployment model.
-- Whether epidemic detection and historical cut/intel route restoration ship in the first release or a separately declared milestone.
-- Scope of IPv6 production support and whether an nftables backend is required; neither should be silently assumed from installed binaries.
-
-Until decided, implement safe boundaries and configurable policies rather than silently choosing insecure defaults. A release is complete only when claimed workflows are connected end-to-end, accepted tests pass, historical incompatibilities are documented, and Linux data-plane behavior has been validated.
+- Preferred rotation policy: Preferred rotation policy: rapid replacement with a warm/proven standby. Upon exhaustion of all verified standby strategies, the system must not cyclically reinstate legacy, known-bad strategies. Instead, it must immediately activate the global fail-closed policy, completely isolating the queue traffic until manual intervention occurs..
+- Administration authentication method: a simple token/password specified via environment variables. A strict rate-limiting mechanism must be implemented on the API side to mitigate token brute-force vectors..
+- Epidemic detection and cut/intel route recovery are included in the initial release. Epidemic detection (triggering at 4+ resets within 60 seconds) must operate at the per-flow conntrack isolation layer (FR-08). An "outbreak" event must initially spawn an isolated, non-blocking connectivity check, and trigger firewall reconfiguration only after explicit confirmation to mitigate false-positive mass rotations.
+- Full IPv6 (Dual-Stack) support is required at the pool and conntrack layers. The firewall backend must strictly utilize nftables; no iptables rules shall be generated..

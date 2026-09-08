@@ -810,22 +810,14 @@ class PoolSwitcher:
 
     def _probe_shadow(self, shadow, window=10, min_pkts=2):
         """
-        Проверяет теневой слот: получил ли он реальный трафик (pkts) за окно,
-        либо прошёл ли хотя бы один curl-проб. НЕ захватывает весь трафик —
-        случайные соединения сами попадают на теневой qnum.
+        Проверяет теневой слот изолированно: направляет диагностический curl
+        точно в shadow qnum, не смешивая с пользовательским трафиком.
         """
         qnum = shadow["qnum"]
-        time.sleep(1.2)   # дать nfqws2 подняться и попасть в random
-        p0 = self._pool.shadow_pkts(qnum)
-        end = time.time() + window
-        while time.time() < end:
-            p1 = self._pool.shadow_pkts(qnum)
-            if (p1 - p0) >= min_pkts:
-                return True
-            if self._probe_curl_ok():
-                return True
-            time.sleep(1)
-        return False
+        time.sleep(1.2)   # дать nfqws2 подняться
+        
+        # Изолированная проверка: временно направляем только тестовый curl
+        return self._pool.test_shadow_isolated(qnum, self.test_url, timeout=window)
 
     def _check_all_slots(self):
         """
@@ -1029,11 +1021,12 @@ class PoolSwitcher:
                 print("[tspу_log] rotation log error: %s" % _e, flush=True)
             return
 
-        # Ни одна не подтвердилась — слот остаётся в rotation со старой стратегией
+        # Ни одна не подтвердилась: known-bad стратегия не возвращается.
         self._pool.set_slot_health(index, False)
-        self._pool.restore_slot_to_fw(index)
+        self._pool.activate_fail_closed(
+            "slot %d exhausted all verified standby strategies" % index)
         self._log_event("error",
-            "slot %d '%s': all %d strategies failed shadow test, staying in rotation" % (
+            "slot %d '%s': all %d strategies failed shadow test, fail-closed" % (
                 index, old_name, max_attempts))
         try:
             _mon_st = reset_monitor.get_status()
@@ -1095,7 +1088,9 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/connections":
             self._json(get_connections(SS_PORT or 8388, SOCKS_PORT or 1080))
         elif p == "/api/pool/status":
-            self._json(_switcher.get_status())
+            status = _switcher.get_status()
+            status["fail_closed"] = _pool.is_fail_closed()
+            self._json(status)
         elif p == "/api/pool/log":
             self._json({"log": _switcher.get_log()})
         elif p == "/api/pool/vectors":
@@ -1138,6 +1133,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": ok, "message": msg,
                                "raw": "\n".join(written),
                                "nfqws_opt": get_nfqws(written), "restart": r})
+
+        # ── pool: восстановить из fail-closed ───────────────────────────────
+        elif p == "/api/pool/recover-fail-closed":
+            if not _pool.is_fail_closed():
+                return self._json({"ok": False, "message": "Not in fail-closed state"})
+            _pool.clear_fail_closed()
+            return self._json({"ok": True, "message": "Fail-closed cleared. Slots remain excluded until verified."})
 
         # ── pool: вкл/выкл ───────────────────────────────────────────────────
         elif p == "/api/pool/enable":

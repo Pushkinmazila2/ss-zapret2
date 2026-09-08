@@ -61,6 +61,7 @@ class PoolManager:
         self._lock   = threading.Lock()
         self._slots  = []
         self._shadows = []   # теневые слоты для безопасного подбора стратегий
+        self._fail_closed = False
         self._log    = log_fn or (lambda lvl, msg: print("[pool][%s] %s" % (lvl, msg), flush=True))
         self._prev_counters     = {}   # qnum → (pkts, bytes)
         self._prev_counter_time = None
@@ -221,6 +222,65 @@ class PoolManager:
             if slot:
                 slot.healthy = healthy
 
+    def activate_fail_closed(self, reason="all verified strategies failed"):
+        """Disable pool routing until an operator explicitly recovers it."""
+        with self._lock:
+            self._fail_closed = True
+            for slot in self._slots:
+                slot._fw_excluded = True
+                slot.healthy = False
+            self._write_size()
+        self._reload_fw()
+        self._log("error", "FAIL-CLOSED: %s" % reason)
+
+    def clear_fail_closed(self):
+        """Explicit recovery; slots remain excluded until individually verified."""
+        with self._lock:
+            self._fail_closed = False
+        self._write_size()
+        self._reload_fw()
+
+    def is_fail_closed(self):
+        with self._lock:
+            return self._fail_closed
+
+    def test_shadow_isolated(self, qnum, url, timeout=12):
+        """
+        Изолированный тест теневого слота: направляем curl в конкретный qnum.
+        Используется для проверки shadow-кандидата без смешивания с user traffic.
+        """
+        capture_rule = [
+            "POSTROUTING", "-t", "mangle",
+            "-m", "mark", "!", "--mark", "%s/%s" % (DESYNC_MARK, DESYNC_MARK),
+            "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
+        ]
+
+        def ipt(op):
+            for cmd in (["iptables"], ["ip6tables"]):
+                try:
+                    subprocess.run(cmd + [op] + capture_rule,
+                                   capture_output=True, timeout=5)
+                except Exception:
+                    pass
+
+        ipt("-I")
+        try:
+            cmd = [
+                "curl", "-x", "socks5h://127.0.0.1:%d" % (_SOCKS_PORT or 1080),
+                url, "-I",
+                "--max-time", str(timeout),
+                "--connect-timeout", "8",
+                "-s", "-S",
+            ]
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
+            out = (p.stdout or "") + (p.stderr or "")
+            ok  = p.returncode == 0 and bool(re.search(r"HTTP/\S+ [23]", p.stdout))
+            return ok
+        except Exception:
+            return False
+        finally:
+            ipt("-D")
+
     def test_slot_isolated(self, index, url, timeout=12):
         """
         Изолированный тест слота через временный захват трафика.
@@ -299,9 +359,8 @@ class PoolManager:
     def start_shadow(self, strategy_name, nfqws_opt):
         """
         Стартует теневой слот с новой стратегией.
-        Теневой слот получает отдельный qnum и включается в random-распределение
-        наравне с основными — без «захвата» всего трафика. Реальные соединения
-        продолжают жить: лишь часть новых соединений случайно уходит на теневой слот.
+        Теневой слот получает отдельный qnum и остаётся probe-only. Он не
+        включается в пользовательское random-распределение.
         """
         if not (nfqws_opt or "").strip():
             return None
@@ -315,7 +374,7 @@ class PoolManager:
             self._start_slot_proc(shadow)
             self._write_size()
         self._reload_fw()
-        self._log("info", "Теневой слот «%s»: qnum=%d (участвует в random)" % (
+        self._log("info", "Теневой слот «%s»: qnum=%d (probe-only)" % (
             strategy_name, shadow.qnum))
         return {"index": shadow.index, "qnum": shadow.qnum}
 
@@ -712,7 +771,8 @@ class PoolManager:
         try:
             qnums = [str(s.qnum) for s in self._slots
                      if s.is_alive() and not s._fw_excluded and s.healthy is not False]
-            qnums += [str(s.qnum) for s in self._shadows if s.is_alive()]
+            if self._fail_closed:
+                qnums = []
             with open(slots_path, "w") as f:
                 f.write("\n".join(qnums) + "\n" if qnums else "")
         except Exception as e:
@@ -752,7 +812,8 @@ class PoolManager:
         with self._lock:
             active_qnums = [s.qnum for s in self._slots
                             if s.is_alive() and not s._fw_excluded and s.healthy is not False]
-            active_qnums += [s.qnum for s in self._shadows if s.is_alive()]
+            if self._fail_closed:
+                active_qnums = []
 
         def _ipset_exists(name):
             r = subprocess.run(["ipset", "list", name], capture_output=True)

@@ -74,6 +74,19 @@ class FakePool:
     def slot_log_tail(self, index, limit=40):
         return ["[NFQWS2][SLOT-%d] line" % index]
 
+    def activate_fail_closed(self, reason=""):
+        self.fail_closed = True
+        for s in self._slots:
+            s["fw_excluded"] = True
+            s["healthy"] = False
+
+    def is_fail_closed(self):
+        return getattr(self, "fail_closed", False)
+
+    def test_shadow_isolated(self, qnum, url, timeout=12):
+        # Возвращаем False для всех проверок в test_shadow_fail_never_restores_dead_strategy
+        return False
+
     def remove_slots_from_fw(self, indices):
         self.fw_removed.append(list(indices))
         for s in self._slots:

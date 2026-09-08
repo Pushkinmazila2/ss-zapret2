@@ -15,7 +15,7 @@ services:
       - PANEL_PORT=${PANEL_PORT:-1888}
       - CUT_LOG_PATH=${CUT_LOG_PATH:-}
       - NFQWS2_EXTRA_ARGS=${NFQWS2_EXTRA_ARGS:-}
-      - NF_CONNTRACK_PROC=/host/proc/sys/net/netfilter/nf_conntrack_max
+      - NF_CONNTRACK_PROC=/host/proc/net/nf_conntrack
       - TSPU_INTEL_DNS=172.19.0.4
       - SCANNER_FWMARK=0x40000000
     ports:

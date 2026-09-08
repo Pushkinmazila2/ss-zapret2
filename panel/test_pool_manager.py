@@ -26,6 +26,7 @@ def bare_manager(conntrack_path):
     pm._lock = threading.Lock()
     pm._slots = []
     pm._shadows = []
+    pm._fail_closed = False
     pm._nf_conntrack_path = conntrack_path
     pm._log = lambda lvl, msg: None
     return pm
