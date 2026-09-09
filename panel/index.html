@@ -688,12 +688,13 @@ function buildEdges(){
   //   вход → первый параметр цепочки → … → последний параметр → выход.
   // Общие параметры сливают цепочки в общую сеть.
   const edgeMap = new Map();
-  function addEdge(a, b, cat, color, slots, traf){
+  function addEdge(a, b, cat, color, slots, traf, conns){
     if(!a || !b || a === b) return;
     const id = a.key < b.key ? a.key + '\u0000' + b.key : b.key + '\u0000' + a.key;
     let e = edgeMap.get(id);
-    if(!e){ e = { from:a, to:b, cat, color, strength:0, slots:[] }; edgeMap.set(id, e); }
+    if(!e){ e = { from:a, to:b, cat, color, strength:0, conns:0, slots:[] }; edgeMap.set(id, e); }
     e.strength += traf;
+    e.conns    += conns;
     e.slots = e.slots.concat(slots);
   }
 
@@ -704,24 +705,29 @@ function buildEdges(){
       const t = _traffic[sl.qnum] || {};
       return sum + (t.kbps || 0);
     }, 0);
+    // connections pinned to this strategy via its slots (connmark) -
+    // active even when pkts_delta == 0
+    const conns = slots.reduce((sum, sl) => sum + ((_traffic[sl.qnum] || {}).conns || 0), 0);
     if(path.length){
       const first = nodeByKey[path[0].key];
       const last  = nodeByKey[path[path.length-1].key];
-      if(inN  && first) addEdge(inN,  first, 'in',  IN_COLOR,  slots, traf);
-      if(outN && last)  addEdge(last, outN,  'out', OUT_COLOR, slots, traf);
+      if(inN  && first) addEdge(inN,  first, 'in',  IN_COLOR,  slots, traf, conns);
+      if(outN && last)  addEdge(last, outN,  'out', OUT_COLOR, slots, traf, conns);
     }
     for(let i = 0; i < path.length - 1; i++){
       const a = nodeByKey[path[i].key];
       const b = nodeByKey[path[i+1].key];
       if(!a || !b || a === b) continue;
-      addEdge(a, b, path[i].cat, vecColor(path[i].cat), slots, traf);
+      addEdge(a, b, path[i].cat, vecColor(path[i].cat), slots, traf, conns);
     }
   }
 
   _edges = [...edgeMap.values()].map(e => ({
     from: e.from, to: e.to, cat: e.cat, color: e.color,
-    strength: e.strength, slots: e.slots,
-    live: e.strength > 0.1,
+    strength: e.strength, conns: e.conns, slots: e.slots,
+    flowing: e.strength > 0.1,
+    // beam stays live while traffic flows OR active connections exist
+    live: e.strength > 0.1 || e.conns > 0,
   }));
 }
 
@@ -800,8 +806,9 @@ function drawFrame(ts){
     const x2 = wtx(e.to.x),   y2 = wty(e.to.y);
     const col = e.color || vecColor(e.cat);
     ctx.save();
-    ctx.lineWidth = e.live ? Math.min(3, 1 + e.strength/50) : 1;
-    if(e.live){
+    if(e.live && e.flowing){
+      // packets are flowing - animated beam
+      ctx.lineWidth = Math.min(3, 1 + e.strength/50);
       ctx.strokeStyle = col;
       ctx.globalAlpha = .55;
       ctx.setLineDash([8, 5]);
@@ -819,7 +826,25 @@ function drawFrame(ts){
       ctx.closePath();
       ctx.fillStyle = col;
       ctx.fill();
+    } else if(e.live){
+      // connections established but no packets right now -
+      // calm solid beam with a static arrow head
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = .30;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      const ang = Math.atan2(y2-y1, x2-x1);
+      const al  = 8 * _cam.scale;
+      ctx.globalAlpha = .45;
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - al*Math.cos(ang-.4), y2 - al*Math.sin(ang-.4));
+      ctx.lineTo(x2 - al*Math.cos(ang+.4), y2 - al*Math.sin(ang+.4));
+      ctx.closePath();
+      ctx.fillStyle = col;
+      ctx.fill();
     } else {
+      ctx.lineWidth = 1;
       ctx.strokeStyle = col + '44';
       ctx.setLineDash([3,5]);
       ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
@@ -857,7 +882,8 @@ function drawFrame(ts){
 
     let fillColor, strokeColor, glowColor;
     if(isPort){
-      const liveAny = n.slots.some(sl => (_traffic[sl.qnum] || {}).pkts_delta > 0);
+      const liveAny = n.slots.some(sl => (_traffic[sl.qnum] || {}).pkts_delta > 0
+                                    || ((_traffic[sl.qnum] || {}).conns || 0) > 0);
       fillColor   = '#04121a';
       strokeColor = n.color;
       glowColor   = liveAny ? n.color + '95' : null;
@@ -911,10 +937,15 @@ function drawFrame(ts){
 
     // traffic dot (inner live indicator) — любой слот, использующий параметр
     const anyLive = n.slots.some(sl => (_traffic[sl.qnum] || {}).pkts_delta > 0);
+    const anyConn = !anyLive && n.slots.some(sl => ((_traffic[sl.qnum] || {}).conns || 0) > 0);
     if(anyLive){
       const pulse = .5 + .5 * Math.sin(ts / 220);
       ctx.beginPath(); ctx.arc(nx, ny, 3 * _cam.scale, 0, Math.PI*2);
       ctx.fillStyle = `rgba(39,201,122,${.5 + .5*pulse})`;
+      ctx.fill();
+    } else if(anyConn){
+      ctx.beginPath(); ctx.arc(nx, ny, 2.5 * _cam.scale, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(79,214,255,.75)';
       ctx.fill();
     }
 
@@ -1023,16 +1054,22 @@ const ttVec  = document.getElementById('ttVec');
 function showTooltip(cx, cy, n){
   ttName.textContent = n.label;
   const trafSum = n.slots.reduce((s, sl) => s + ((_traffic[sl.qnum] || {}).kbps || 0), 0);
+  const connsSum = n.slots.reduce((s, sl) => s + ((_traffic[sl.qnum] || {}).conns || 0), 0);
   const isPort = n.key === '__in' || n.key === '__out';
   let rows = '';
   rows += row('категория', _CAT_NAME[n.cat] || n.cat);
   rows += row('используют', n.count + ' стратегий');
-  rows += row('в пуле', n.slotCount ? n.slotCount + ' слотов · ' + trafSum.toFixed(1) + ' kbps' : '—');
+  rows += row('в пуле', n.slotCount ? n.slotCount + ' слотов · ' + trafSum.toFixed(1) + ' kbps' + (connsSum ? ' \u00b7 ' + connsSum + ' \u0441\u043e\u0435\u0434.' : '') : '—');
   const stNames = isPort ? activeStrategies().map(s => s.name) : n.strategies;
   const sts = stNames.slice(0, 6).join(', ');
   rows += row('стратегии', sts + (stNames.length > 6 ? '…' : ''));
-  if(n.slots.length) rows += row('слоты', n.slots.map(sl => 'С' + sl.index).join(' '));
-  if(n.burned) rows += `<div style="color:var(--err);margin-top:4px">⚡ компрометирован ТСПУ</div>`;
+  if(n.slots.length) {
+    rows += row('слоты', n.slots.map(sl => { 
+      const c = ((_traffic[sl.qnum] || {}).conns || 0); 
+      return `С${sl.index}${c ? ':' + c : ''}`; 
+    }).join(' '));
+  }
+  if(n.burned) rows += `<div style="color:var(--err);margin-top:4px">⚡ Cкомпрометирован ТСПУ</div>`;
   ttRows.innerHTML = rows;
   ttVec.textContent = n.cat;
   ttEl.style.display = 'block';
@@ -1045,6 +1082,7 @@ function row(k,v){ return `<div class="tt-row"><span>${k}</span><b>${v}</b></div
 function openDetail(n){
   _selected = n;
   const trafSum = n.slots.reduce((s, sl) => s + ((_traffic[sl.qnum] || {}).kbps || 0), 0);
+  const connsSum = n.slots.reduce((s, sl) => s + ((_traffic[sl.qnum] || {}).conns || 0), 0);
   const hasFail = n.slots.some(sl => sl.healthy === false);
   const hasGood = n.slots.some(sl => sl.healthy === true);
   document.getElementById('dtName').textContent = n.label;
@@ -1052,6 +1090,7 @@ function openDetail(n){
   g += drow('категория',    _CAT_NAME[n.cat] || n.cat);
   g += drow('используют',   n.count + ' стратегий');
   g += drow('слотов в пуле', n.slotCount);
+  g += drow('\u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0439', connsSum);
   g += drow('суммарный трафик', trafSum.toFixed(1) + ' kbps');
   const st = n.burned ? '⚡ компрометирован' :
              (hasFail ? '⚠ деградация' :
