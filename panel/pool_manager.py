@@ -626,11 +626,31 @@ class PoolManager:
                 groups = []
                 for w in reversed(words):
                     groups.append("%x:%x" % ((w >> 16) & 0xFFFF, w & 0xFFFF))
-                # сокращаем нули (минимально)
+                # сокращаем нули (минимательно)
                 return ":".join(groups)
         except (ValueError, IndexError):
             return None
         return None
+
+    def _read_nfqws2_ports(self):
+        """
+        Возвращает (tcp_ports_csv, udp_ports_csv) из config (NFQWS2_PORTS_TCP /
+        NFQWS2_PORTS_UDP). Нужно для port-fallback в _reload_fw, когда
+        ipset-ы отсутствуют (MODE_FILTER=none).
+        """
+        cfg_path = os.environ.get("ZAPRET_CONFIG", "/opt/zapret2/config")
+        tcp, udp = "", ""
+        try:
+            with open(cfg_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("NFQWS2_PORTS_TCP="):
+                        tcp = line.split("=", 1)[1].strip().strip('"')
+                    elif line.startswith("NFQWS2_PORTS_UDP="):
+                        udp = line.split("=", 1)[1].strip().strip('"')
+        except Exception:
+            pass
+        return tcp, udp
 
     # ── internals ─────────────────────────────────────────────────────────
 
@@ -929,16 +949,35 @@ class PoolManager:
                 ], capture_output=True)
 
         # --- 4. Привязка ZAPRET_POOL к POSTROUTING ---
+        #
+        # ВАЖНО: в `config` стоит MODE_FILTER=none, поэтому zapret2 НЕ создаёт
+        # ipset-ы zport_tcp/zport_udp. В этом случае нельзя молча пропускать
+        # правило — иначе трафик не попадёт в ZAPRET_POOL и nfqws2 будут
+        # крутиться вхолостую. Делаем fallback на порт-матч по
+        # NFQWS2_PORTS_TCP/UDP из config. Если и порт пустой — используем
+        # разумный default (80, 443 / 443).
+        nfqws2_ports_tcp, nfqws2_ports_udp = self._read_nfqws2_ports()
+
+        def _ports_for(mode):
+            if mode == "TCP":
+                p = nfqws2_ports_tcp
+            else:
+                p = nfqws2_ports_udp
+            if p:
+                return p
+            return "80,443" if mode == "TCP" else "443"
+
+        ipset_rules_added = 0
         for conf in configs:
             cmd = conf["cmd"]
             nz_set = conf["nz"]
-            
+
             for ipset, mode in [(conf["tcp"], "TCP"), (conf["udp"], "UDP")]:
                 # Если ipset для этого протокола (например, IPv6) не существует, не пытаемся добавить правило
                 if not _ipset_exists(ipset):
                     self._log("info", f"Пропуск {cmd} {mode}: ipset {ipset} не существует")
                     continue
-                    
+
                 # Если список исключений nozapret/nozapret6 почему-то отсутствует, создаем временную проверку
                 actual_nz = nz_set if _ipset_exists(nz_set) else None
 
@@ -955,21 +994,52 @@ class PoolManager:
                         "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
                         "-m", "set", "--match-set", ipset, "dst",
                     ]
-                    
+
                     # Добавляем инверсию nozapret, только если сет существует
                     if actual_nz:
                         args.extend(["-m", "set", "!", "--match-set", actual_nz, "dst"])
-                        
+
                     args.extend(["-j", "ZAPRET_POOL"])
 
                     r = subprocess.run(args, capture_output=True, text=True, timeout=5)
-                    
+
                     if r.returncode != 0:
                         self._log("error", f"{cmd} {mode} rc={r.returncode}: {r.stderr.strip()}")
                     else:
+                        ipset_rules_added += 1
                         self._log("info", f"{cmd} {mode} POSTROUTING → ZAPRET_POOL OK")
                 except Exception as e:
                     self._log("error", f"{cmd} {mode} POSTROUTING: {e}")
+
+        # --- 4b. Fallback без ipset: перехват по портам ---
+        # Срабатывает когда MODE_FILTER=none и ipset-ов нет вообще. Без
+        # этого шага трафик в ZAPRET_POOL не попадает и пул крутится
+        # вхолостую. nfqws2 сам фильтрует по SNI через --hostlist-domains.
+        if ipset_rules_added == 0:
+            self._log("warn",
+                "ipset-правил для ZAPRET_POOL не добавлено — включаю port-fallback "
+                "по NFQWS2_PORTS_TCP/UDP (MODE_FILTER=none в config)")
+            for conf in configs:
+                cmd = conf["cmd"]
+                for mode, ports in (("TCP", _ports_for("TCP")), ("UDP", _ports_for("UDP"))):
+                    port_list = [p.strip() for p in ports.split(",") if p.strip()]
+                    if not port_list:
+                        continue
+                    try:
+                        args = [
+                            cmd, "-t", "mangle", "-A", "POSTROUTING",
+                            "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
+                            "-p", mode.lower(),
+                            "-m", "multiport", "--dports", ",".join(port_list),
+                            "-j", "ZAPRET_POOL",
+                        ]
+                        r = subprocess.run(args, capture_output=True, text=True, timeout=5)
+                        if r.returncode != 0:
+                            self._log("warn", f"{cmd} {mode} (port-fallback) rc={r.returncode}: {r.stderr.strip()}")
+                        else:
+                            self._log("info", f"{cmd} {mode} POSTROUTING → ZAPRET_POOL (port-fallback) OK ports={port_list}")
+                    except Exception as e:
+                        self._log("error", f"{cmd} {mode} port-fallback: {e}")
 
         self._log("info", f"ZAPRET_POOL создана: {n} слот(ов) qnum={active_qnums}")
 
