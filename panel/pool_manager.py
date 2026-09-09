@@ -640,17 +640,32 @@ class PoolManager:
         """
         cfg_path = os.environ.get("ZAPRET_CONFIG", "/opt/zapret2/config")
         tcp, udp = "", ""
+        
+        tcp_pat = re.compile(r"^\s*NFQWS2_PORTS_TCP\s*=\s*\"?([^\"]*)\"?")
+        udp_pat = re.compile(r"^\s*NFQWS2_PORTS_UDP\s*=\s*\"?([^\"]*)\"?")
+        
         try:
-            with open(cfg_path) as f:
+            with open(cfg_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
-                    if line.startswith("NFQWS2_PORTS_TCP="):
-                        tcp = line.split("=", 1)[1].strip().strip('"')
-                    elif line.startswith("NFQWS2_PORTS_UDP="):
-                        udp = line.split("=", 1)[1].strip().strip('"')
-        except Exception:
-            pass
+                    # Игнорируем пустые строки и чистые комментарии
+                    if not line or line.startswith("#"):
+                        continue
+                    
+                    tcp_match = tcp_pat.match(line)
+                    if tcp_match:
+                        tcp = tcp_match.group(1).strip()
+                        continue
+                        
+                    udp_match = udp_pat.match(line)
+                    if udp_match:
+                        udp = udp_match.group(1).strip()
+                        continue
+        except Exception as e:
+            print(f"[pool_manager] Ошибка чтения портов из {cfg_path}: {e}", flush=True)
+            
         return tcp, udp
+
 
     # ── internals ─────────────────────────────────────────────────────────
 
