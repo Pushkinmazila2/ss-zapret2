@@ -60,11 +60,11 @@ def get_nfqws(lines):
 
 
 def set_nfqws(lines, value):
-    _remove_key(lines, MULTILINE_KEY))
+    _remove_key(lines, MULTILINE_KEY)
     lines.extend(['NFQWS2_OPT="'] + value.strip("\n").splitlines() + ['"'])
 
 
-def _remove_key(lines, key:
+def _remove_key(lines, key):
     pat = re.compile(r"^" + re.escape(key) + r"=")
     start = next((i for i, ln in enumerate(lines) if pat.match(ln)), None)
     if start is None: return
@@ -88,10 +88,14 @@ def ensure_pool_mode(lines):
                          Всеми правилами firewall управляет pool_manager напрямую.
 
     """
-    def _set_simple(key, val:
+    def _set_simple(key, val):
         pat = re.compile(r"^" + re.escape(key) + r"=")
+        line_content = f'{key}="{val}"'
         for i, ln in enumerate(lines):
-            if pat.match(ln): lines[i] = key + "=" + val; return
-        lines.append(key + "=" + val)
+            if pat.match(ln): 
+                lines[i] = line_content
+                return
+        lines.append(line_content)
+        
     _set_simple("NFQWS2_ENABLE", "0")
     _set_simple("DISABLE_CUSTOM", "1")
