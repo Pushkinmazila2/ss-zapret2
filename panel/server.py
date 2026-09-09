@@ -408,6 +408,7 @@ class PoolSwitcher:
         self.vector_cooldown_sec = 600
         self._vs             = VectorScorer(vector_cooldown_sec=self.vector_cooldown_sec)
         self._log            = collections.deque(maxlen=self.MAX_LOG)
+        self.on_tspu_intel   = None
 
     # ── public ────────────────────────────────────────────────────────────
 
@@ -618,6 +619,23 @@ class PoolSwitcher:
             )
         except Exception as _e:
             print("[tspу_log] cut log error: %s" % _e, flush=True)
+
+        if self.on_tspu_intel:
+            try:
+                _intel_ctx = {
+                    "lifetime_sec": lifetime,
+                    "event_kind": getattr(self, "_last_cut_type", "rst"),
+                    "termination_type": getattr(self, "_last_cut_type", "rst"),
+                    "qnum": _top.get("qnum") if _top else None,
+                    "slot_index": _top.get("index") if _top else None,
+                    "strategy_name": _top.get("strategy") if _top else None,
+                    "bytes_delta": _tstat.get("bytes_delta") if _tstat else None,
+                    "reset_confirmed": getattr(self, "_last_cut_type", "rst") == "rst",
+                }
+                threading.Thread(target=self.on_tspu_intel, args=(_intel_ctx,), daemon=True).start()
+            except Exception as _e:
+                print("[tspu_intel] launch error: %s" % _e, flush=True)
+
         threading.Thread(target=self._rotate_on_cut, args=(lifetime,), daemon=True).start()
 
     def _rotate_on_cut(self, lifetime):
@@ -1106,6 +1124,14 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, IndexError):
                 n, evt = 200, None
             self._json({"events": _tlog.get_recent(n, event_type=evt)})
+        elif p == "/api/tspu-intel/status":
+            self._json(_tspu_intel.status() if _tspu_intel else {"enabled": False, "error": "not initialized"})
+        elif p == "/api/tspu-intel/log":
+            try:
+                n = int(self.path.split("n=")[-1]) if "n=" in self.path else 50
+            except (ValueError, IndexError):
+                n = 50
+            self._json({"events": _tspu_intel.intel_log.list(n) if _tspu_intel else []})
         else:
             print("[DEBUG] Путь '%s' не подошел ни под одно условие" % p, flush=True)
             self._json({"error": "not found", "requested_path": p}, 404)
@@ -1175,6 +1201,9 @@ class Handler(BaseHTTPRequestHandler):
 
         elif p == "/api/monitor/configure":
             return self._json(reset_monitor.configure(body))
+
+        elif p == "/api/tspu-intel/configure":
+            return self._json(_tspu_intel.configure(body) if _tspu_intel else {"error": "not initialized"})
 
         # ── сохранить NFQWS2_OPT вручную ────────────────────────────────────
         elif p == "/api/save-nfqws":
@@ -1280,7 +1309,7 @@ def main():
     args = ap.parse_args()
 
     global CFG_PATH, STRAT_DIR, RESTART_CMD, SOCKS_PORT, SS_PORT
-    global _pool, _switcher, _tracker
+    global _pool, _switcher, _tracker, _tspu_intel
     CFG_PATH    = args.config
     STRAT_DIR   = args.strategies
     RESTART_CMD = args.restart_cmd
@@ -1295,6 +1324,21 @@ def main():
 
     _pool     = PoolManager(log_fn=_log)
     _switcher = PoolSwitcher(_pool)
+    
+    # ── TSPU Intel активная разведка ─────────────────────────────────────
+    from tspu_intel import TspuIntel
+    _tspu_intel = TspuIntel(
+        path=os.environ.get("TSPU_INTEL_LOG", "/opt/zapret2/logs/tspu_intel.jsonl"),
+        log_fn=_log,
+        enabled=os.environ.get("TSPU_INTEL_ENABLE", "true").lower() == "true",
+        cooldown=int(os.environ.get("TSPU_INTEL_COOLDOWN", "30")),
+        budget_ms=int(os.environ.get("TSPU_INTEL_BUDGET_MS", "1800")),
+        ttl_max=int(os.environ.get("TSPU_INTEL_TTL_MAX", "30")),
+        sni=os.environ.get("TSPU_INTEL_SNI", "youtube.com"),
+        dry_run=os.environ.get("TSPU_INTEL_DRY_RUN", "false").lower() == "true"
+    )
+    print("[panel] TSPU Intel initialized: enabled=%s mode=%s" % (
+        _tspu_intel.enabled, "dry_run" if _tspu_intel.sim_mode else "active"), flush=True)
     print("[DIAG] _switcher created, cut_min=%s, cut_max=%s, cut_require_reset=%s" % (
         _switcher.cut_min_sec, _switcher.cut_max_sec, _switcher.cut_require_reset), flush=True)
 
@@ -1320,7 +1364,10 @@ def main():
     print("[DIAG] _tracker created", flush=True)
     _tracker.on_cut = _switcher.on_connection_cut
     reset_monitor.on_reset = _tracker.note_reset
-    print("[DIAG] callbacks wired", flush=True)
+    
+    # Wire TSPU Intel to switcher
+    _switcher.on_tspu_intel = _tspu_intel.on_cut_async if _tspu_intel else None
+    print("[DIAG] callbacks wired (including TSPU Intel)", flush=True)
     print("[DIAG] reset_monitor type=%s, SS_LOG_PATH=%s, exists=%s" % (
         type(reset_monitor).__name__, SS_LOG_PATH,
         os.path.exists(SS_LOG_PATH)), flush=True)

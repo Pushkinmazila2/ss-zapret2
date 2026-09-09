@@ -175,6 +175,35 @@ body {
 .vscore.cold { color: var(--err); }
 .vscore.mid  { color: var(--warn); }
 
+/* slot list */
+.slot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: 10px;
+}
+.slot-item:last-child { border-bottom: none; }
+.slot-num { font-weight: 700; color: var(--acc); min-width: 22px; }
+.slot-qnum { color: var(--mut); font-size: 9px; min-width: 32px; }
+.slot-strat { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; text-align: center; }
+.slot-badge.ok   { background: var(--ok-dim); color: var(--ok); }
+.slot-badge.warn { background: var(--warn-dim); color: var(--warn); }
+.slot-badge.idle { background: rgba(255,255,255,.05); color: var(--mut); }
+.slot-traffic { font-size: 9px; color: var(--ok); min-width: 44px; text-align: right; }
+.slot-btn {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--mut);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 9px;
+  cursor: pointer;
+}
+.slot-btn:hover { border-color: var(--acc); color: var(--acc); }
+
 /* tooltip */
 #tooltip {
   position: fixed;
@@ -370,6 +399,7 @@ body {
 <div id="tabbar">
   <button class="tab active" id="tab-landscape" onclick="switchTab('landscape')">⬡ Ландшафт</button>
   <button class="tab"        id="tab-settings"  onclick="switchTab('settings')">⚙ Настройки</button>
+  <button class="tab"        id="tab-logs"      onclick="switchTab('logs')">📋 Логи</button>
 </div>
 
 <!-- ── header ── -->
@@ -386,7 +416,7 @@ body {
     <div class="hs">YT-соед. <b id="hConns">—</b></div>
   </div>
   <div class="sep"></div>
-  <button class="hbtn" onclick="togglePool()">вкл/выкл пул</button>
+  <button class="hbtn" id="poolToggleBtn" onclick="togglePool()"><span id="poolToggleTxt">⏳ загрузка...</span></button>
   <button class="hbtn" onclick="forceCheck()">↻ проверить</button>
   <button class="hbtn p" onclick="addSlot()">+ слот</button>
 </div>
@@ -452,6 +482,15 @@ body {
       <div id="vectorList"></div>
     </div>
 
+    <!-- slots panel -->
+    <div class="sb-section" style="flex:0 0 auto; max-height:220px; display:flex; flex-direction:column; overflow:hidden">
+      <div class="sb-title" style="margin-bottom:6px">
+        <div class="dot"></div>слоты пула
+        <button class="hbtn" style="margin-left:auto;padding:1px 6px;font-size:9px" onclick="addSlot()">+ слот</button>
+      </div>
+      <div id="slotList" style="flex:1; overflow-y:auto; padding:2px 0"></div>
+    </div>
+
     <!-- event log -->
     <div class="sb-section" style="flex:0 0 180px;display:flex;flex-direction:column;overflow:hidden">
       <div class="sb-title" style="margin-bottom:4px">
@@ -511,6 +550,31 @@ body {
   </div>
 
   <div class="cfg-card">
+    <h3><div class="cdot" style="background:var(--acc)"></div>активная разведка ТСПУ (Intel)</h3>
+    <div class="frow">
+      <div class="field"><label>статус разведки</label>
+        <select id="cfgIntelEn"><option value="1">включена</option><option value="0">отключена</option></select>
+      </div>
+      <div class="field"><label>режим работы</label>
+        <select id="cfgIntelDry"><option value="0">активный (raw-sockets)</option><option value="1">эмуляция (dry-run)</option></select>
+      </div>
+    </div>
+    <div class="frow three">
+      <div class="field"><label>cooldown (сек)</label><input type="number" id="cfgIntelCool" value="30" min="5"></div>
+      <div class="field"><label>бюджет (мс)</label><input type="number" id="cfgIntelBudget" value="1800" min="200" max="2500"></div>
+      <div class="field"><label>макс TTL</label><input type="number" id="cfgIntelTtl" value="30" min="5" max="64"></div>
+    </div>
+    <div class="frow">
+      <div class="field" style="grid-column: span 2"><label>тестовый SNI</label><input type="text" id="cfgIntelSni" value="youtube.com"></div>
+    </div>
+    <div class="cfg-actions">
+      <button class="sbtn p" onclick="saveIntelCfg()">сохранить</button>
+      <span class="saved-note" id="cfgIntelSaved">✓ сохранено</span>
+      <span id="cfgIntelStatusNote" style="font-size:10px; color:var(--mut); margin-left:auto"></span>
+    </div>
+  </div>
+
+  <div class="cfg-card">
     <h3><div class="cdot" style="background:var(--ok)"></div>тест подключения</h3>
     <div class="frow">
       <div class="field"><label>URL</label><input type="text" id="curlUrl" value="https://google.com" oninput="updateCurlCmd()"></div>
@@ -558,6 +622,27 @@ body {
   </div>
 
 </div>
+</div>
+
+<!-- logs view -->
+<div id="view-logs" style="display:none; flex:1; min-height:0; flex-direction:column">
+  <div style="display:flex; gap:8px; padding:12px; background:var(--panel); border-bottom:1px solid var(--line); align-items:center">
+    <button class="hbtn" onclick="refreshTspuLog()">↻ обновить</button>
+    <select id="logEventFilter" onchange="refreshTspuLog()" style="padding:4px 8px; background:var(--panel2); border:1px solid var(--line); color:var(--tx); font:inherit; font-size:11px; border-radius:5px">
+      <option value="">все события</option>
+      <option value="cut">срезы (cut)</option>
+      <option value="idle">idle-срезы</option>
+      <option value="degraded">деградация</option>
+      <option value="rotation">ротации</option>
+      <option value="test_ok">тесты OK</option>
+      <option value="test_fail">тесты FAIL</option>
+      <option value="info">info</option>
+    </select>
+    <span style="margin-left:auto; font-size:10px; color:var(--mut)">
+      показано: <b id="logCount" style="color:var(--tx)">—</b>
+    </span>
+  </div>
+  <div id="tspuLogBox" style="flex:1; overflow-y:auto; padding:12px; font-size:11px; line-height:1.6"></div>
 </div>
 
 <!-- tooltip -->
@@ -1110,7 +1195,8 @@ function closeDetail(){ document.getElementById('detail').style.display='none'; 
 // Data refresh
 // ═══════════════════════════════════════════════════════════════════════
 async function refreshAll(){
-  await Promise.all([refreshStrategies(), refreshPool(), refreshVectors(), refreshMonitor(), refreshLog(), refreshTraffic()]);
+  await Promise.all([refreshStrategies(), refreshPool(), refreshVectors(), refreshMonitor(), refreshLog(), refreshTraffic(), refreshSlots()]);
+  if(_activeTab === 'logs') refreshTspuLog();
 }
 
 async function refreshStrategies(){
@@ -1138,6 +1224,18 @@ async function refreshPool(){
 
   _poolEnabled = !!s.enabled;
   _scores = s.strategy_scores || {};
+  
+  // Update toggle button text and style
+  const btn = document.getElementById('poolToggleTxt');
+  const btnWrap = document.getElementById('poolToggleBtn');
+  if (s.enabled) {
+    btn.textContent = '⏸ остановить пул';
+    btnWrap.classList.add('p'); // primary style
+  } else {
+    btn.textContent = '▶ запустить пул';
+    btnWrap.classList.remove('p');
+  }
+  
   maybeRebuild();
   buildEdges();
 }
@@ -1539,7 +1637,9 @@ requestAnimationFrame(drawFrame);
   setInterval(refreshMonitor,    3000);
   setInterval(refreshLog,        4000);
   setInterval(refreshTraffic,    2000);
+  setInterval(refreshSlots,      3000);
   setInterval(refreshStrategies, 15000);
+  if(_activeTab === 'logs') setInterval(refreshTspuLog, 5000);
 })();
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1550,11 +1650,202 @@ function switchTab(name){
   _activeTab = name;
   document.getElementById('view-landscape').style.display = name === 'landscape' ? 'flex' : 'none';
   document.getElementById('view-settings').style.display  = name === 'settings'  ? 'flex' : 'none';
+  document.getElementById('view-logs').style.display      = name === 'logs'      ? 'flex' : 'none';
   document.getElementById('tab-landscape').classList.toggle('active', name === 'landscape');
   document.getElementById('tab-settings').classList.toggle('active', name === 'settings');
+  document.getElementById('tab-logs').classList.toggle('active', name === 'logs');
   if(name === 'settings'){ syncSettingsFields(); refreshCfg(); renderCfgStratList(); updateCurlCmd(); }
   if(name === 'landscape') resize();
+  if(name === 'logs')     refreshTspuLog();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Slots panel rendering
+// ═══════════════════════════════════════════════════════════════════════
+function renderSlots(){
+  const box = document.getElementById('slotList');
+  if(!box) return;
+  if(!_slots.length){
+    box.innerHTML = '<div style="color:var(--mut);padding:6px 4px;font-size:10px">пул неактивен</div>';
+    return;
+  }
+  box.innerHTML = _slots.map(s => {
+    const t        = _traffic[s.qnum] || {};
+    const conns    = t.conns || 0;
+    const kbps     = t.kbps || 0;
+    const pkts     = t.pkts_delta || 0;
+    const health   = s.healthy === true ? 'ok'
+                   : s.healthy === false ? 'warn' : 'idle';
+    const healthT  = s.healthy === true ? '✓'
+                   : s.healthy === false ? '✗' : '—';
+    const status   = s.alive ? (s.fw_excluded ? 'исключён' : 'в ротации') : 'мёртв';
+    const traffic  = s.alive
+      ? (conns > 0 ? `${conns}⚡ ${kbps.toFixed(0)}k` : `${kbps.toFixed(0)} kbps`)
+      : '—';
+    const stratName = s.strategy || '(пусто)';
+    return `<div class="slot-item" title="qnum=${s.qnum} pid=${s.pid||'—'} pkts_delta=${pkts}">
+      <span class="slot-num">S${s.index}</span>
+      <span class="slot-qnum">Q${s.qnum}</span>
+      <span class="slot-strat" title="${stratName}">${stratName}</span>
+      <span class="slot-badge ${health}" title="${status}">${healthT}</span>
+      <span class="slot-traffic">${traffic}</span>
+      <button class="slot-btn" onclick="forceReplaceSlot(${s.index})" title="форсировать замену стратегии">↻</button>
+    </div>`;
+  }).join('');
+}
+
+async function refreshSlots(){
+  renderSlots();
+}
+
+async function forceReplaceSlot(idx){
+  if(!_strategies.length){ alert('нет доступных стратегий'); return; }
+  const list = _strategies.map(s => s.name).filter(n => n);
+  const choice = prompt(`Заменить стратегию в слоте ${idx}. Доступные:\n` + list.slice(0,40).join('\n'), list[0] || '');
+  if(!choice) return;
+  if(!list.includes(choice)){ alert('стратегия не найдена: '+choice); return; }
+  const r = await post('/api/pool/slot/set', {index: idx, strategy: choice});
+  if(r.error) alert(r.error);
+  else refreshPool();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TSPU Logs tab
+// ═══════════════════════════════════════════════════════════════════════
+let _intelCfg = null;
+
+async function refreshTspuLog(){
+  const filter = (document.getElementById('logEventFilter') || {}).value || '';
+  const url = '/api/tspu-log?n=200' + (filter ? '&event=' + encodeURIComponent(filter) : '');
+  const d = await api(url);
+  const events = d.events || [];
+  document.getElementById('logCount').textContent = events.length;
+  renderTspuLog(events);
+
+  // Also pull TSPU intel log (exploration results)
+  if(!filter || filter === 'cut' || filter === 'info'){
+    const id = await api('/api/tspu-intel/log?n=20');
+    const intelEvents = id.events || [];
+    if(intelEvents.length){
+      renderTspuLog(events, intelEvents);
+    }
+  }
+  // Pull intel status to update settings card
+  const st = await api('/api/tspu-intel/status');
+  if(st && !st.error){
+    _intelCfg = st;
+    const note = document.getElementById('cfgIntelStatusNote');
+    if(note) note.textContent = `runs=${st.total_runs||0} mode=${st.mode||'-'} log=${st.log_count||0}`;
+  }
+}
+
+function renderTspuLog(events, intelEvents){
+  const box = document.getElementById('tspuLogBox');
+  if(!box) return;
+  if(!events.length && !(intelEvents && intelEvents.length)){
+    box.innerHTML = '<div style="color:var(--mut)">Логи отсутствуют — дождитесь среза ТСПУ или включите пул.</div>';
+    return;
+  }
+  const evColors = {
+    cut:       'var(--err)',
+    idle:      'var(--warn)',
+    degraded:  'var(--err)',
+    rotation:  'var(--acc)',
+    test_ok:   'var(--ok)',
+    test_fail: 'var(--warn)',
+    info:      'var(--mut)',
+  };
+  let html = '';
+  if(intelEvents && intelEvents.length){
+    html += '<div style="margin-bottom:14px;padding:6px 8px;background:rgba(61,142,240,.08);border-left:3px solid var(--acc);border-radius:4px;font-size:10px;color:var(--acc)">▶ результаты активной разведки ТСПУ (Intel) — последние ' + intelEvents.length + '</div>';
+    for(const e of intelEvents){
+      const ts = e.ts || e.ts_iso || '';
+      const summary = buildIntelSummary(e);
+      html += `<div style="margin-bottom:10px;padding:8px;background:var(--panel);border-left:3px solid var(--acc);border-radius:4px">
+        <div style="font-size:10px;color:var(--mut);margin-bottom:3px">${ts} · <b style="color:var(--acc)">tspu_intel</b> · ${e.meta?.mode||'-'} · ${e.meta?.elapsed_ms||0}ms</div>
+        <div style="color:var(--tx);font-size:10px;line-height:1.5">${summary}</div>
+      </div>`;
+    }
+  }
+  for(const e of events){
+    const color = evColors[e.event] || 'var(--tx)';
+    const ts = e.ts_iso || new Date((e.ts||0)*1000).toISOString();
+    const timePart = ts.split('T')[1] ? ts.split('T')[1].split('.')[0] : ts;
+    let summary = e.event;
+    if(e.conn && e.conn.lifetime_sec !== undefined) summary += ` | lifetime=${e.conn.lifetime_sec}s`;
+    if(e.slot && e.slot.strategy) summary += ` | slot${e.slot.index} ${e.slot.strategy}`;
+    if(e.new_strategy) summary += ` → ${e.new_strategy}`;
+    if(e.msg) summary = e.msg;
+    if(e.reason) summary += ` — ${e.reason}`;
+    let extra = '';
+    if(e.monitor){
+      const m = e.monitor;
+      if(m.ratio !== undefined) extra += `<div style="font-size:9px;color:var(--mut);margin-top:3px">monitor: ratio=${(m.ratio*100).toFixed(1)}% (resets=${m.resets||0}/${m.closes||0})</div>`;
+    }
+    if(e.slot && e.slot.qnum !== undefined){
+      extra += `<div style="font-size:9px;color:var(--mut);margin-top:2px">qnum=${e.slot.qnum} pkts=${e.slot.pkts_delta||0}</div>`;
+    }
+    html += `<div style="margin-bottom:8px;padding:7px 9px;background:var(--panel);border-left:3px solid ${color};border-radius:4px">
+      <div style="font-size:10px;color:var(--mut);margin-bottom:3px">${timePart} · <b style="color:${color}">${e.event}</b></div>
+      <div style="color:var(--tx)">${summary}</div>
+      ${extra}
+    </div>`;
+  }
+  box.innerHTML = html;
+  box.scrollTop = 0;
+}
+
+function buildIntelSummary(e){
+  if(!e) return '';
+  const parts = [];
+  if(e.meta){
+    if(e.meta.sni) parts.push('sni='+e.meta.sni);
+    if(e.meta.degraded && e.meta.degraded.length) parts.push('degraded: '+e.meta.degraded.join(','));
+  }
+  if(e.tspu_network_metrics){
+    const n = e.tspu_network_metrics;
+    if(n.dest_hop) parts.push('dest_hop='+n.dest_hop);
+    if(n.tspu_hop) parts.push('tspu_hop='+n.tspu_hop);
+  }
+  if(e.tspu_l7_vulnerabilities){
+    const l = e.tspu_l7_vulnerabilities;
+    let bypassed = 0, total = 0;
+    for(const k in l){
+      if(typeof l[k] === 'object' && l[k]){
+        total++;
+        if(l[k].bypass) bypassed++;
+      }
+    }
+    if(total) parts.push(`L7: ${bypassed}/${total} bypassed`);
+  }
+  if(e.strategy_context && e.strategy_context.name){
+    parts.push('strategy='+e.strategy_context.name);
+  }
+  return parts.length ? parts.join(' · ') : '(детали см. tspu_intel.jsonl)';
+}
+
+async function saveIntelCfg(){
+  const g = id => document.getElementById(id);
+  await post('/api/tspu-intel/configure', {
+    enabled:   +g('cfgIntelEn').value,
+    dry_run:   +g('cfgIntelDry').value,
+    cooldown:  +g('cfgIntelCool').value,
+    budget_ms: +g('cfgIntelBudget').value,
+    ttl_max:   +g('cfgIntelTtl').value,
+    sni:        g('cfgIntelSni').value.trim() || 'youtube.com',
+  });
+  ['cfgIntelEn','cfgIntelDry','cfgIntelCool','cfgIntelBudget','cfgIntelTtl','cfgIntelSni'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.dataset.dirty='';el.classList.remove('dirty');}
+  });
+  markSaved('cfgIntelSaved');
+  setTimeout(refreshTspuLog, 500);
+}
+
+['cfgIntelEn','cfgIntelDry','cfgIntelCool','cfgIntelBudget','cfgIntelTtl','cfgIntelSni'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('input',()=>{el.dataset.dirty='1';el.classList.add('dirty');});
+});
 
 // ═══════════════════════════════════════════════════════════════════════
 // Cache last API responses for settings sync
@@ -1584,6 +1875,18 @@ function syncSettingsFields(){
       if(el && ms[key] !== undefined && !el.dataset.dirty) el.value = ms[key];
     }
   }
+  if(_intelCfg){
+    const imap = {cfgIntelCool:'cooldown',cfgIntelBudget:'budget_ms',
+                  cfgIntelTtl:'ttl_max',cfgIntelSni:'sni'};
+    for(const [id,key] of Object.entries(imap)){
+      const el = document.getElementById(id);
+      if(el && _intelCfg[key] !== undefined && !el.dataset.dirty) el.value = _intelCfg[key];
+    }
+    const iEn  = document.getElementById('cfgIntelEn');
+    const iDry = document.getElementById('cfgIntelDry');
+    if(iEn  && !iEn.dataset.dirty  && _intelCfg.enabled !== undefined)  iEn.value  = _intelCfg.enabled ? '1' : '0';
+    if(iDry && !iDry.dataset.dirty && _intelCfg.mode !== undefined)     iDry.value = _intelCfg.mode === 'dry_run' ? '1' : '0';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1605,6 +1908,21 @@ async function refreshPool(){
   pp.className   = 'pill ' + ({ok:'ok',degraded:'warn',replacing:'warn',checking:'acc',idle:'idle'}[st]||'idle');
   _poolEnabled = !!s.enabled;
   _scores = s.strategy_scores || {};
+
+  // Update toggle button text and style
+  const btn = document.getElementById('poolToggleTxt');
+  const btnWrap = document.getElementById('poolToggleBtn');
+  if (btn && btnWrap) {
+    if (s.enabled) {
+      btn.textContent = '⏸ остановить пул';
+      btnWrap.classList.add('p');
+    } else {
+      btn.textContent = '▶ запустить пул';
+      btnWrap.classList.remove('p');
+    }
+  }
+
+  renderSlots();
   maybeRebuild();
   buildEdges();
   if(_activeTab === 'settings'){ syncSettingsFields(); renderCfgStratList(); }
