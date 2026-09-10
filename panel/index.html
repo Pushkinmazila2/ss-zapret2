@@ -137,10 +137,39 @@ body {
   overflow-y: auto;
 }
 
+/* ── сворачиваемые секции сайдбара ── */
+.sb-title.sb-head { user-select: none; }
+.sb-title .chev {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--mut);
+  transition: transform .15s;
+  flex-shrink: 0;
+}
+.sb-section.collapsed > .sb-title .chev { transform: rotate(90deg); }
+.sb-section.collapsed {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+.sb-section.collapsed > :not(.sb-title) { display: none !important; }
+
+/* контент-тег слота (классификация по объёму трафика) */
+.slot-tag {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.slot-tag.video { background: var(--ok-dim); color: var(--ok); }
+.slot-tag.other { background: rgba(255,255,255,.06); color: var(--mut); }
+
 /* ── right sidebar ── */
 #sidebar {
   width: 260px;
-  height: 100vh; /* Сайдбар растянут на всю высоту экрана */
+  /* высота задаётся flex-растяжением внутри #view-landscape */
   flex-shrink: 0;
   border-left: 1px solid var(--line);
   background: var(--panel);
@@ -513,7 +542,7 @@ body {
   <div id="sidebar">
 
     <!-- 1. детектор ТСПУ -->
-    <div class="sb-section" style="flex: 0 0 auto;">
+    <div class="sb-section" style="flex: 0 0 auto;" data-sb-key="mon">
       <div class="sb-title"><div class="dot" id="monDot"></div>детектор ТСПУ</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
         <span style="color:var(--mut);font-size:10px">reset ratio</span>
@@ -531,7 +560,7 @@ body {
     <div class="resizer"></div>
 
     <!-- 2. векторы уязвимости -->
-    <div class="sb-section" style="flex: 1;">
+    <div class="sb-section" style="flex: 1;" data-sb-key="vec">
       <div class="sb-title"><div class="dot"></div>векторы уязвимости</div>
       <div id="vectorList"></div>
     </div>
@@ -540,7 +569,7 @@ body {
     <div class="resizer"></div>
 
     <!-- 3. слоты пула -->
-    <div class="sb-section" style="height: 200px;">
+    <div class="sb-section" style="height: 200px;" data-sb-key="slots">
       <div class="sb-title" style="margin-bottom:6px">
         <div class="dot"></div>слоты пула
         <button class="hbtn" style="margin-left:auto;padding:1px 6px;font-size:9px" onclick="addSlot()">+ слот</button>
@@ -552,7 +581,7 @@ body {
     <div class="resizer"></div>
 
     <!-- 4. лог событий -->
-    <div class="sb-section" style="height: 180px;">
+    <div class="sb-section" style="height: 180px;" data-sb-key="log">
       <div class="sb-title" style="margin-bottom:4px">
         <div class="dot"></div>лог событий
         <button class="hbtn" style="margin-left:auto;padding:1px 6px;font-size:9px" onclick="clearLog()">очист.</button>
@@ -560,7 +589,9 @@ body {
       <div id="logBox"></div>
     </div>
 
+</div><!-- /#sidebar -->
 </div><!-- /view-landscape -->
+</div><!-- /#main -->
 
 <!-- settings view -->
 <div id="view-settings">
@@ -726,6 +757,10 @@ let _slots       = [];   // current pool slots
 let _scores      = {};   // name → score
 let _vectorData  = [];   // [{vector, strategies[], score, hazard, implicated}]
 let _traffic     = {};   // qnum → {kbps, pkts_delta, ...}
+// Классификация контента слота по объёму трафика
+const SLOT_VIDEO_KBPS   = 300;   // порог «видео» (медиана kbps за окно)
+const SLOT_KBPS_SAMPLES = 5;     // окно сэмплов для стабилизации
+let _slotKbpsHist = {};          // qnum → [последние kbps]
 let _cuts        = 0;
 let _logEntries  = [];
 let _logLen      = 0;
@@ -1351,6 +1386,8 @@ async function refreshTraffic(){
   const d = await api('/api/pool/traffic');
   if(!d || d.error) return;
   _traffic = d;
+  updateSlotKbpsHist(d);
+  if(_slots.length) renderSlots();
   if(_nodes.length) buildEdges();
 }
 
@@ -1718,6 +1755,26 @@ function switchTab(name){
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Content tag helpers (классификация по объёму трафика)
+function updateSlotKbpsHist(d){
+  for(const qn in d){
+    const r = d[qn];
+    if(!r || typeof r.kbps !== 'number') continue;
+    const h = _slotKbpsHist[qn] = _slotKbpsHist[qn] || [];
+    h.push(r.kbps);
+    if(h.length > SLOT_KBPS_SAMPLES) h.shift();
+  }
+  for(const qn in _slotKbpsHist) if(!(qn in d)) delete _slotKbpsHist[qn];
+}
+
+function slotContentTag(qnum){
+  const h = _slotKbpsHist[qnum];
+  if(!h || !h.length) return null;
+  const s = [...h].sort((a, b) => a - b);
+  const med = s[Math.floor(s.length / 2)];
+  return { video: med >= SLOT_VIDEO_KBPS, kbpsMed: med };
+}
+
 // Slots panel rendering
 // ═══════════════════════════════════════════════════════════════════════
 function renderSlots(){
@@ -1729,6 +1786,10 @@ function renderSlots(){
   }
   box.innerHTML = _slots.map(s => {
     const t        = _traffic[s.qnum] || {};
+    const tag      = slotContentTag(s.qnum);
+    const tagHtml  = tag
+      ? `<span class="slot-tag ${tag.video ? 'video' : 'other'}" title="медиана ${tag.kbpsMed.toFixed(0)} kbps · порог ${SLOT_VIDEO_KBPS} kbps">${tag.video ? '🎬 видео' : 'прочее'}</span>`
+      : '';
     const conns    = t.conns || 0;
     const kbps     = t.kbps || 0;
     const pkts     = t.pkts_delta || 0;
@@ -1741,10 +1802,11 @@ function renderSlots(){
       ? (conns > 0 ? `${conns}⚡ ${kbps.toFixed(0)}k` : `${kbps.toFixed(0)} kbps`)
       : '—';
     const stratName = s.strategy || '(пусто)';
-    return `<div class="slot-item" title="qnum=${s.qnum} pid=${s.pid||'—'} pkts_delta=${pkts}">
+    return `<div class="slot-item" title="qnum=${s.qnum} pid=${s.pid||'—'} pkts_delta=${pkts} kbps_med=${tag ? tag.kbpsMed.toFixed(0) : '-'}">
       <span class="slot-num">S${s.index}</span>
       <span class="slot-qnum">Q${s.qnum}</span>
       <span class="slot-strat" title="${stratName}">${stratName}</span>
+      ${tagHtml}
       <span class="slot-badge ${health}" title="${status}">${healthT}</span>
       <span class="slot-traffic">${traffic}</span>
       <button class="slot-btn" onclick="forceReplaceSlot(${s.index})" title="форсировать замену стратегии">↻</button>
@@ -2072,7 +2134,7 @@ function updateCurlCmd(){
 async function runCurl(){
   const url  = document.getElementById('curlUrl').value.trim()  || 'https://google.com';
   const port = parseInt(document.getElementById('curlPort').value) || 1080;
-  updateCurlCmd();
+dateCurlCmd();
   const log = document.getElementById('curlLog');
   log.style.display='block'; log.className='res-log info'; log.textContent='⏳ …';
   const r = await post('/api/test-curl',{url,socks_port:port});
@@ -2123,6 +2185,47 @@ function renderCfgStratList(){
       '</div>';
   }).join('');
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Сворачиваемые секции сайдбара
+// ═══════════════════════════════════════════════════════════════════════
+let _sbState = {};
+function sbSaveState(){ try{ localStorage.setItem('sb.collapse', JSON.stringify(_sbState)); }catch(e){} }
+
+function collapseSbSection(sec, silent){
+  sec.classList.add('collapsed');
+  const k = sec.dataset.sbKey;
+  if(k){ _sbState[k] = true; if(!silent) sbSaveState(); }
+}
+function expandSbSection(sec, silent){
+  sec.classList.remove('collapsed');
+  const k = sec.dataset.sbKey;
+  if(k){ _sbState[k] = false; if(!silent) sbSaveState(); }
+}
+function toggleSbSection(sec){
+  if(sec.classList.contains('collapsed')) expandSbSection(sec, false);
+  else                                   collapseSbSection(sec, false);
+  resize();
+}
+
+function initSidebarAccordion(){
+  try{ _sbState = Object.assign({}, JSON.parse(localStorage.getItem('sb.collapse') || '{}')); }
+  catch(e){ _sbState = {}; }
+  document.querySelectorAll('#sidebar .sb-section').forEach(sec => {
+    const title = sec.querySelector('.sb-title');
+    if(!title) return;
+    const chev = document.createElement('span');
+    chev.className = 'chev';
+    chev.textContent = '▾';
+    title.appendChild(chev);
+    title.classList.add('sb-head');
+    title.title = 'свернуть / развернуть';
+    title.style.cursor = 'pointer';
+    title.addEventListener('click', () => toggleSbSection(sec));
+    if(_sbState[sec.dataset.sbKey]) collapseSbSection(sec, true);
+  });
+}
+initSidebarAccordion();
 
 document.querySelectorAll('.resizer').forEach(resizer => {
   resizer.addEventListener('mousedown', function(e) {
