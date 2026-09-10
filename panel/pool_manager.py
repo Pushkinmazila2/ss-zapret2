@@ -927,11 +927,11 @@ class PoolManager:
 
 
 
-        def _reload_fw(self):
+    def _reload_fw(self):
         """
         Управляем iptables напрямую из Python — без custom.d.
 
-        Чистка правил выполняется ПО НОМЕРАМ строк в цепочках PREROUTING, INPUT, OUTPUT, POSTROUTING:
+        Чистка правил выполняется ПО НОМЕРАМ строк в POSTROUTING:
         находим все правила, содержащие 'NFQUEUE' с queue-num из диапазона
         пула (300..399) или 'ZAPRET_POOL', и удаляем их с конца.
         Это устойчиво к изменению точного синтаксиса (mark/set/connbytes),
@@ -950,40 +950,38 @@ class PoolManager:
             return r.returncode == 0
 
         def _delete_pool_rules(cmd):
-            """Удаляет из всех ключевых цепочек таблицы mangle все правила, относящиеся к пулу."""
-            # Проверяем PREROUTING, INPUT, OUTPUT и POSTROUTING
-            for chain in ["PREROUTING", "INPUT", "OUTPUT", "POSTROUTING"]:
-                while True:
-                    try:
-                        # Имя таблицы обязательно маленькими буквами 'mangle' для iptables-nft
-                        r = subprocess.run(
-                            [cmd, "-t", "mangle", "-L", chain, "--line-numbers", "-n"],
-                            capture_output=True, text=True, timeout=5
-                        )
-                    except Exception:
-                        break
-                    nums = []
-                    for line in r.stdout.splitlines():
-                        # Формат: "num  target ...  NFQUEUE ... num 300" или "num  ZAPRET_POOL"
-                        if "ZAPRET_POOL" in line:
-                            m = re.match(r"^\s*(\d+)", line)
-                            if m:
-                                nums.append(int(m.group(1)))
-                            continue
-                        # NFQUEUE с num 300..399 (слоты пула) — но НЕ чужие очереди
-                        m = re.match(r"^\s*(\d+)\s+NFQUEUE\s+.*\bnum\s+(\d+)\b", line)
+            """Удаляет из POSTROUTING все правила, относящиеся к пулу."""
+            while True:
+                try:
+                    r = subprocess.run(
+                        [cmd, "-t", "mangle", "-L", "POSTROUTING", "--line-numbers", "-n"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                except Exception:
+                    return
+                nums = []
+                for line in r.stdout.splitlines():
+                    # Формат: "num  target ...  NFQUEUE ... num 300" или "num  ZAPRET_POOL"
+                    if "ZAPRET_POOL" in line:
+                        m = re.match(r"^\s*(\d+)", line)
                         if m:
-                            qnum = int(m.group(2))
-                            if QNUM_BASE <= qnum < QNUM_BASE + 100:
-                                nums.append(int(m.group(1)))
-                    if not nums:
-                        break
-                    # Удаляем с конца, чтобы номера не сдвигались
-                    for num in sorted(nums, reverse=True):
-                        subprocess.run(
-                            [cmd, "-t", "mangle", "-D", chain, str(num)],
-                            capture_output=True, timeout=5
-                        )
+                            nums.append(int(m.group(1)))
+                        continue
+                    # NFQUEUE с num 300..399 (слоты пула) — но НЕ чужие очереди
+                    m = re.match(r"^\s*(\d+)\s+NFQUEUE\s+.*\bnum\s+(\d+)\b", line)
+                    if m:
+                        qnum = int(m.group(2))
+                        if QNUM_BASE <= qnum < QNUM_BASE + 100:
+                            nums.append(int(m.group(1)))
+                if not nums:
+                    return
+                # Удаляем с конца, чтобы номера не сдвигались
+                for num in sorted(nums, reverse=True):
+                    subprocess.run(
+                        [cmd, "-t", "mangle", "-D", "POSTROUTING", str(num)],
+                        capture_output=True, timeout=5
+                    )
+                # повторяем, т.к. после удаления могли появиться новые с одинаковыми номерами
 
         for cmd in ["iptables", "ip6tables"]:
             _delete_pool_rules(cmd)
@@ -1006,6 +1004,7 @@ class PoolManager:
         for cmd in ["iptables", "ip6tables"]:
             subprocess.run([cmd, "-t", "mangle", "-N", "ZAPRET_POOL"], capture_output=True)
 
+        # --- 3. Наполнение ZAPRET_POOL random-распределением ---
         # --- 3. Наполнение ZAPRET_POOL сессионным (CONNMARK) распределением ---
         for cmd in ["iptables", "ip6tables"]:
             # 3.1. Если у соединения УЖЕ есть сохраненная метка очереди, восстанавливаем ее в маркер пакета
@@ -1059,7 +1058,7 @@ class PoolManager:
                     "-j", "NFQUEUE", "--queue-num", str(qnum), "--queue-bypass"
                 ], capture_output=True)
 
-        # --- 4. Привязка ZAPRET_POOL к цепочкам Netfilter ---
+        # --- 4. Привязка ZAPRET_POOL к POSTROUTING ---
         #
         # ВАЖНО: в `config` стоит MODE_FILTER=none, поэтому zapret2 НЕ создаёт
         # ipset-ы zport_tcp/zport_udp. В этом случае нельзя молча пропускать
@@ -1068,70 +1067,6 @@ class PoolManager:
         # NFQWS2_PORTS_TCP/UDP из config. Если и порт пустой — используем
         # разумный default (80, 443 / 443).
         nfqws2_ports_tcp, nfqws2_ports_udp = self._read_nfqws2_ports()
-        
-        # Дефолты на случай пустых значений в конфиге
-        ports_tcp = nfqws2_ports_tcp if nfqws2_ports_tcp.strip() else "80,443"
-        ports_udp = nfqws2_ports_udp if nfqws2_ports_udp.strip() else "443"
-
-        for cfg in configs:
-            cmd = cfg["cmd"]
-            is_ipv6 = (cmd == "ip6tables")
-            
-            # Определяем имена ipset-ов
-            ipset_tcp = cfg["tcp"]
-            ipset_udp = cfg["udp"]
-            ipset_nz = cfg["nz"]
-            
-            # Проверяем существование ipset-ов (для режима с листами)
-            has_tcp_set = _ipset_exists(ipset_tcp)
-            has_udp_set = _ipset_exists(ipset_udp)
-            has_nz_set = _ipset_exists(ipset_nz)
-
-            # Нам нужно перехватывать трафик в двух местах:
-            # 1. PREROUTING (для классического прозрачного прокси / FORWARD, если контейнер как шлюз)
-            # 2. OUTPUT (критично для Docker!) — здесь рождается трафик самого ss-server к сайтам
-            
-            for chain in ["PREROUTING", "OUTPUT"]:
-                # Чтобы избежать зацикливания фейков, которые генерирует сам nfqws2, 
-                # мы полностью игнорируем в OUTPUT пакеты с меткой DESYNC_MARK
-                if chain == "OUTPUT":
-                    # Проверяем, что пакет сгенерирован не nfqws2
-                    # (nfqws2 метит свои пакеты с помощью --fwmark)
-                    pass
-
-                # Собираем базовые условия фильтрации для TCP
-                base_tcp_args = [cmd, "-t", "mangle", "-A", chain, "-p", "tcp"]
-                if chain == "OUTPUT":
-                    base_tcp_args += ["-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}"]
-                
-                if has_nz_set:
-                    # Исключаем nozapret (белый список)
-                    # Для OUTPUT проверяем dst, для PREROUTING проверяем src/dst в зависимости от архитектуры. 
-                    # По умолчанию проверяем dst (куда идет проксируемый трафик)
-                    base_tcp_args += ["-m", "set", "!", "--match-set", ipset_nz, "dst"]
-
-                # Применяем фильтр по портам/сетам для TCP и отправляем в пул
-                if has_tcp_set:
-                    subprocess.run(base_tcp_args + ["-m", "set", "--match-set", ipset_tcp, "dst", "-j", "ZAPRET_POOL"], capture_output=True)
-                else:
-                    # Fallback на multiport-матч (из NFQWS2_PORTS_TCP)
-                    subprocess.run(base_tcp_args + ["-m", "multiport", "--dports", ports_tcp, "-j", "ZAPRET_POOL"], capture_output=True)
-
-                # Собираем базовые условия фильтрации для UDP (QUIC / HTTP3)
-                base_udp_args = [cmd, "-t", "mangle", "-A", chain, "-p", "udp"]
-                if chain == "OUTPUT":
-                    base_udp_args += ["-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}"]
-                
-                if has_nz_set:
-                    base_udp_args += ["-m", "set", "!", "--match-set", ipset_nz, "dst"]
-                    # Применяем фильтр по портам/сетам для UDP и отправляем в пул
-                    if has_udp_set:
-                        subprocess.run(base_udp_args + ["-m", "set", "--match-set", ipset_udp, "dst", "-j", "ZAPRET_POOL"], capture_output=True)
-                    else:
-                        # Fallback на multiport-матч (из NFQWS2_PORTS_UDP)
-                        subprocess.run(base_udp_args + ["-m", "multiport", "--dports", ports_udp, "-j", "ZAPRET_POOL"], capture_output=True)
-                        self._log("info", f"Маршрутизация пула успешно обновлена для цепочек PREROUTING и OUTPUT. Активных слотов: {len(active_qnums)}")
-
 
         def _ports_for(mode):
             if mode == "TCP":
