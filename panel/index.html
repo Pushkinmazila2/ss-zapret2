@@ -269,24 +269,29 @@ body {
 .vscore.cold { color: var(--err); }
 .vscore.mid  { color: var(--warn); }
 
-/* slot list */
+/* slot cards */
 .slot-item {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  border-bottom: 1px solid rgba(255,255,255,.04);
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
   font-size: 10px;
 }
-.slot-item:last-child { border-bottom: none; }
+.slot-item:last-child { margin-bottom: 0; }
+.slot-item .row1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.slot-item .row2 { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .slot-num { font-weight: 700; color: var(--acc); min-width: 22px; }
 .slot-qnum { color: var(--mut); font-size: 9px; min-width: 32px; }
-.slot-strat { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.slot-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; text-align: center; }
+.slot-strat { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx); }
+.slot-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; text-align: center; flex-shrink: 0; }
 .slot-badge.ok   { background: var(--ok-dim); color: var(--ok); }
 .slot-badge.warn { background: var(--warn-dim); color: var(--warn); }
 .slot-badge.idle { background: rgba(255,255,255,.05); color: var(--mut); }
-.slot-traffic { font-size: 9px; color: var(--ok); min-width: 44px; text-align: right; }
+.slot-traffic { font-size: 9px; color: var(--ok); min-width: 44px; text-align: right; flex: 1; }
 .slot-btn {
   background: var(--panel2);
   border: 1px solid var(--line);
@@ -297,6 +302,15 @@ body {
   cursor: pointer;
 }
 .slot-btn:hover { border-color: var(--acc); color: var(--acc); }
+.slot-btn.danger:hover { border-color: var(--err); color: var(--err); }
+.slot-total {
+  font-size: 9px;
+  color: var(--acc);
+  min-width: 56px;
+  text-align: right;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 
 /* tooltip */
 #tooltip {
@@ -777,6 +791,7 @@ const SLOT_VIDEO_KBPS    = 300;          // порог «видео» (меди�
 const SLOT_KBPS_SAMPLES  = 30;           // длинное окно (~60с при опросе 2с) — «видео»
 const SLOT_KBPS_SAMPLES_SHORT = 6;       // короткое окно (~12с) — «шортсы»
 let _slotKbpsHist = {};                  // qnum → [последние kbps]
+let _slotTotals = {};                    // index → {strategy, bytes} — накопительный счётчик трафика слота
 let _cuts        = 0;
 let _logEntries  = [];
 let _logLen      = 0;
@@ -1403,6 +1418,7 @@ async function refreshTraffic(){
   if(!d || d.error) return;
   _traffic = d;
   updateSlotKbpsHist(d);
+  updateSlotTotals();
   if(_slots.length) renderSlots();
   if(_nodes.length) buildEdges();
 }
@@ -1799,6 +1815,27 @@ function slotContentTag(qnum){
 
 const TAG_LABEL = { video: '🎬 видео', shorts: '📱 шортсы', other: 'прочее' };
 
+// Накопительный трафик слота: суммируем bytes_delta; сброс при смене стратегии
+function updateSlotTotals(){
+  for(const s of _slots){
+    const prev = _slotTotals[s.index];
+    if(!prev || prev.strategy !== s.strategy){
+      _slotTotals[s.index] = { strategy: s.strategy, bytes: 0 };
+    }
+    const t = _traffic[s.qnum] || {};
+    _slotTotals[s.index].bytes += (t.bytes_delta || 0);
+  }
+  // чистим счётчики убранных слотов
+  for(const k in _slotTotals) if(!_slots.some(s => s.index === +k)) delete _slotTotals[k];
+}
+
+function fmtBytes(n){
+  if(n < 1024) return n.toFixed(0) + ' B';
+  if(n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  if(n < 1024*1024*1024) return (n/1048576).toFixed(1) + ' MB';
+  return (n/1073741824).toFixed(2) + ' GB';
+}
+
 // Slots panel rendering
 // ═══════════════════════════════════════════════════════════════════════
 function renderSlots(){
@@ -1826,14 +1863,22 @@ function renderSlots(){
       ? (conns > 0 ? `${conns}⚡ ${kbps.toFixed(0)}k` : `${kbps.toFixed(0)} kbps`)
       : '—';
     const stratName = s.strategy || '(пусто)';
-    return `<div class="slot-item" title="qnum=${s.qnum} pid=${s.pid||'—'} pkts_delta=${pkts} kbps_med=${tag ? tag.kbpsMed.toFixed(0) : '-'}">
-      <span class="slot-num">S${s.index}</span>
-      <span class="slot-qnum">Q${s.qnum}</span>
-      <span class="slot-strat" title="${stratName}">${stratName}</span>
-      ${tagHtml}
-      <span class="slot-badge ${health}" title="${status}">${healthT}</span>
-      <span class="slot-traffic">${traffic}</span>
-      <button class="slot-btn" onclick="forceReplaceSlot(${s.index})" title="форсировать замену стратегии">↻</button>
+    const totalBytes = _slotTotals[s.index] ? _slotTotals[s.index].bytes : 0;
+    const statusTxt = s.alive ? (s.fw_excluded ? 'исключён из fw' : 'в ротации') : 'мёртв';
+    return `<div class="slot-item" title="qnum=${s.qnum} pid=${s.pid||'—'} pkts_delta=${pkts} kbps_med=${tag ? tag.kbpsMed.toFixed(0) : '-'} · ${statusTxt}">
+      <div class="row1">
+        <span class="slot-num">S${s.index}</span>
+        <span class="slot-qnum">Q${s.qnum}</span>
+        <span class="slot-strat" title="${stratName}">${stratName}</span>
+        <span class="slot-badge ${health}" title="${statusTxt}">${healthT}</span>
+      </div>
+      <div class="row2">
+        ${tagHtml || '<span style="font-size:9px;color:var(--mut)">—</span>'}
+        <span class="slot-traffic">${traffic}</span>
+        <span class="slot-total" title="всего трафика через слот с текущей стратегией (сброс при замене)">Σ ${fmtBytes(totalBytes)}</span>
+        <button class="slot-btn" onclick="forceReplaceSlot(${s.index})" title="заменить стратегию">↻</button>
+        <button class="slot-btn danger" onclick="removeSlot(${s.index})" title="убрать слот из пула">✕</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1849,6 +1894,13 @@ async function forceReplaceSlot(idx){
   if(!choice) return;
   if(!list.includes(choice)){ alert('стратегия не найдена: '+choice); return; }
   const r = await post('/api/pool/slot/set', {index: idx, strategy: choice});
+  if(r.error) alert(r.error);
+  else refreshPool();
+}
+
+async function removeSlot(idx){
+  if(!confirm(`Убрать слот S${idx} из пула?`)) return;
+  const r = await post('/api/pool/slot/remove', {index: idx});
   if(r.error) alert(r.error);
   else refreshPool();
 }
