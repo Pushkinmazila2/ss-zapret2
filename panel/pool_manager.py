@@ -968,7 +968,7 @@ class PoolManager:
                             nums.append(int(m.group(1)))
                         continue
                     # NFQUEUE с num 300..399 (слоты пула) — но НЕ чужие очереди
-                    m = re.match(r"^\s*(\d+)\s+\S+\s+.*NFQUEUE.*num\s+(\d+)", line)
+                    m = re.match(r"^\s*(\d+)\s+NFQUEUE\s+.*\bnum\s+(\d+)\b", line)
                     if m:
                         qnum = int(m.group(2))
                         if QNUM_BASE <= qnum < QNUM_BASE + 100:
@@ -1077,7 +1077,7 @@ class PoolManager:
                 return p
             return "80,443" if mode == "TCP" else "443"
 
-        ipset_rules_added = 0
+        ipset_rules_added = set()
         for conf in configs:
             cmd = conf["cmd"]
             nz_set = conf["nz"]
@@ -1100,8 +1100,9 @@ class PoolManager:
                     # (исключает только пакеты, уже обработанные nfqws2).
                     # Собираем аргументы динамически в зависимости от наличия списка исключений
                     args = [
-                        cmd, "-t", "mangle", "-A", "POSTROUTING",
+                        cmd, "-t", "mangle", "-I", "POSTROUTING", "1",
                         "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
+                        "-p", mode.lower(),
                         "-m", "set", "--match-set", ipset, "dst",
                     ]
 
@@ -1116,7 +1117,7 @@ class PoolManager:
                     if r.returncode != 0:
                         self._log("error", f"{cmd} {mode} rc={r.returncode}: {r.stderr.strip()}")
                     else:
-                        ipset_rules_added += 1
+                        ipset_rules_added.add((cmd, mode))
                         self._log("info", f"{cmd} {mode} POSTROUTING → ZAPRET_POOL OK")
                 except Exception as e:
                     self._log("error", f"{cmd} {mode} POSTROUTING: {e}")
@@ -1125,24 +1126,30 @@ class PoolManager:
         # Срабатывает когда MODE_FILTER=none и ipset-ов нет вообще. Без
         # этого шага трафик в ZAPRET_POOL не попадает и пул крутится
         # вхолостую. nfqws2 сам фильтрует по SNI через --hostlist-domains.
-        if ipset_rules_added == 0:
+        if len(ipset_rules_added) < len(configs) * 2:
             self._log("warn",
-                "ipset-правил для ZAPRET_POOL не добавлено — включаю port-fallback "
+                "Не все ipset-правила для ZAPRET_POOL добавлены — включаю port-fallback "
                 "по NFQWS2_PORTS_TCP/UDP (MODE_FILTER=none в config)")
             for conf in configs:
                 cmd = conf["cmd"]
                 for mode, ports in (("TCP", _ports_for("TCP")), ("UDP", _ports_for("UDP"))):
+                    if (cmd, mode) in ipset_rules_added:
+                        continue
                     port_list = [p.strip() for p in ports.split(",") if p.strip()]
                     if not port_list:
                         continue
                     try:
                         args = [
-                            cmd, "-t", "mangle", "-A", "POSTROUTING",
+                            # NFQUEUE verdicts terminate table traversal: the pool
+                            # must precede any remaining default queue rule.
+                            cmd, "-t", "mangle", "-I", "POSTROUTING", "1",
                             "-m", "mark", "!", "--mark", f"{desync_mark}/{desync_mark}",
                             "-p", mode.lower(),
                             "-m", "multiport", "--dports", ",".join(port_list),
-                            "-j", "ZAPRET_POOL",
                         ]
+                        if _ipset_exists(conf["nz"]):
+                            args.extend(["-m", "set", "!", "--match-set", conf["nz"], "dst"])
+                        args.extend(["-j", "ZAPRET_POOL"])
                         r = subprocess.run(args, capture_output=True, text=True, timeout=5)
                         if r.returncode != 0:
                             self._log("warn", f"{cmd} {mode} (port-fallback) rc={r.returncode}: {r.stderr.strip()}")

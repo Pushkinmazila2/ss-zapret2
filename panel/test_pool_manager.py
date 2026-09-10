@@ -8,6 +8,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -60,7 +61,7 @@ class TestSlotForConn(unittest.TestCase):
         self.path = os.path.join(self.tmp, "nf_conntrack")
         self.pm = bare_manager(self.path)
         self.pm._slots = [make_slot(1, 301)]
-        self.conn = (52134, "8EFA4A78", 443)   # → 142.250.74.120
+        self.conn = (52134, "784AFA8E", 443)   # → 142.250.74.120
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -181,6 +182,10 @@ class TestReloadFwRules(unittest.TestCase):
                                   side_effect=self._record)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
+        ports = mock.patch.object(self.pm, "_read_nfqws2_ports",
+                                  return_value=("80,443", "443"))
+        ports.start()
+        self.addCleanup(ports.stop)
 
     def _record(self, args, **kw):
         self.calls.append(list(args) if isinstance(args, (list, tuple)) else [args])
@@ -189,14 +194,15 @@ class TestReloadFwRules(unittest.TestCase):
     def test_postrouting_pure_ipset_no_connbytes(self):
         self.pm._reload_fw()   # не должно падать (раньше был NameError на pkt_out)
         postrouting = [" ".join(c) for c in self.calls
-                       if "-A" in c and "POSTROUTING" in c and "ZAPRET_POOL" in c]
+                       if "-I" in c and "POSTROUTING" in c and "ZAPRET_POOL" in c]
         self.assertEqual(len(postrouting), 4)  # iptables/ip6tables × tcp/udp
         for line in postrouting:
             self.assertNotIn("connbytes", line)
             self.assertIn("-m mark ! --mark 0x40000000/0x40000000", line)
         self.assertIn(
-            "iptables -t mangle -A POSTROUTING"
+            "iptables -t mangle -I POSTROUTING 1"
             " -m mark ! --mark 0x40000000/0x40000000"
+            " -p tcp"
             " -m set --match-set zport_tcp dst"
             " -m set ! --match-set nozapret dst"
             " -j ZAPRET_POOL", postrouting)
@@ -205,7 +211,64 @@ class TestReloadFwRules(unittest.TestCase):
                  if "-A" in c and "ZAPRET_POOL" in c and "NFQUEUE" in c]
         qnums = {q for line in chain
                  for q in [line.rsplit("--queue-num", 1)[1].split()[0]]}
-        self.assertTrue({"301", "302", "400"} <= qnums)
+        self.assertEqual(qnums, {"301", "302"})
+
+    def test_partial_ipsets_fall_back_per_family_and_protocol(self):
+        def run(args, **kwargs):
+            result = self._record(args, **kwargs)
+            if args[:2] == ["ipset", "list"] and args[2] != "zport_tcp":
+                result.returncode = 1
+            return result
+
+        with mock.patch("pool_manager.subprocess.run", side_effect=run):
+            self.pm._reload_fw()
+        hooks = [c for c in self.calls
+                 if "POSTROUTING" in c and "ZAPRET_POOL" in c and "-I" in c]
+        self.assertEqual(len(hooks), 4)
+        for cmd in ("iptables", "ip6tables"):
+            for protocol in ("tcp", "udp"):
+                hook = next(c for c in hooks if c[0] == cmd and
+                            c[c.index("-p") + 1] == protocol)
+                self.assertEqual(hook[3:6], ["-I", "POSTROUTING", "1"])
+                if (cmd, protocol) == ("iptables", "tcp"):
+                    self.assertIn("zport_tcp", hook)
+                else:
+                    self.assertIn("--dports", hook)
+
+    def test_missing_ipsets_use_priority_port_hooks(self):
+        def run(args, **kwargs):
+            result = self._record(args, **kwargs)
+            if args[0] == "ipset":
+                result.returncode = 1
+            return result
+
+        with mock.patch("pool_manager.subprocess.run", side_effect=run):
+            self.pm._reload_fw()
+        hooks = [c for c in self.calls if "POSTROUTING" in c and "--dports" in c]
+        self.assertEqual(len(hooks), 4)
+        for hook in hooks:
+            self.assertEqual(hook[3:6], ["-I", "POSTROUTING", "1"])
+            self.assertEqual(hook[-2:], ["-j", "ZAPRET_POOL"])
+
+    def test_cleanup_removes_pool_queues_and_preserves_other_queues(self):
+        listed = set()
+
+        def run(args, **kwargs):
+            result = self._record(args, **kwargs)
+            if "--line-numbers" in args and args[0] not in listed:
+                listed.add(args[0])
+                result.stdout = (
+                    "1 NFQUEUE tcp -- 0.0.0.0/0 0.0.0.0/0 NFQUEUE num 200 bypass\n"
+                    "2 NFQUEUE tcp -- 0.0.0.0/0 0.0.0.0/0 NFQUEUE num 300 bypass\n"
+                    "3 ZAPRET_POOL all -- 0.0.0.0/0 0.0.0.0/0\n")
+            return result
+
+        with mock.patch("pool_manager.subprocess.run", side_effect=run):
+            self.pm._reload_fw()
+        for cmd in ("iptables", "ip6tables"):
+            deleted = [c[-1] for c in self.calls
+                       if c[0] == cmd and "-D" in c and "POSTROUTING" in c]
+            self.assertEqual(deleted, ["3", "2"])
 
 
 if __name__ == "__main__":
