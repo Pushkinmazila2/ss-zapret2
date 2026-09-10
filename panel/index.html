@@ -522,6 +522,7 @@ body {
     <div class="hs">срезов <b id="hCuts" style="color:var(--err)">0</b></div>
     <div class="hs">здоровых <b id="hHealth" style="color:var(--ok)">—</b></div>
     <div class="hs">YT-соед. <b id="hConns">—</b></div>
+    <div class="hs" title="Трафик контейнера / слоты / байпас">трафик <b id="hTrafficSlots" style="color:var(--acc)">—</b> <span id="hTrafficCover" style="color:var(--mut);font-size:9px"></span></div>
   </div>
   <div class="sep"></div>
   <button class="hbtn" id="poolToggleBtn" onclick="togglePool()"><span id="poolToggleTxt">⏳ загрузка...</span></button>
@@ -1319,7 +1320,7 @@ function closeDetail(){ document.getElementById('detail').style.display='none'; 
 // Data refresh
 // ═══════════════════════════════════════════════════════════════════════
 async function refreshAll(){
-  await Promise.all([refreshStrategies(), refreshPool(), refreshVectors(), refreshMonitor(), refreshLog(), refreshTraffic(), refreshSlots()]);
+  await Promise.all([refreshStrategies(), refreshPool(), refreshVectors(), refreshMonitor(), refreshLog(), refreshTraffic(), refreshSlots(), refreshTrafficMonitor()]);
   if(_activeTab === 'logs') refreshTspuLog();
 }
 
@@ -1421,6 +1422,43 @@ async function refreshTraffic(){
   updateSlotTotals();
   if(_slots.length) renderSlots();
   if(_nodes.length) buildEdges();
+}
+
+function fmtBytesMb(mb){
+  if(mb === undefined || mb === null) return '—';
+  if(mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
+  return mb.toFixed(1) + ' MB';
+}
+
+async function refreshTrafficMonitor(){
+  const d = await api('/api/traffic-monitor');
+  const valEl = document.getElementById('hTrafficSlots');
+  const covEl = document.getElementById('hTrafficCover');
+  if(!valEl || !covEl) return;
+  
+  if(!d || d.error){
+    valEl.textContent = '—';
+    covEl.textContent = '';
+    return;
+  }
+
+  // d.through_slots_mb, d.container_out_mb, d.bypassed_mb, d.coverage_pct, d.verdict
+  const slotsMb = d.through_slots_mb || 0;
+  const totalMb = d.container_out_mb || 0;
+  const pct = d.coverage_pct !== undefined ? d.coverage_pct : 0;
+
+  valEl.textContent = fmtBytesMb(slotsMb);
+  
+  let color = 'var(--ok)';
+  if(pct < 50) color = 'var(--err)';
+  else if(pct < 90) color = 'var(--warn)';
+  valEl.style.color = color;
+
+  covEl.textContent = `(${pct.toFixed(0)}% / ${fmtBytesMb(totalMb)})`;
+  if(d.verdict && d.verdict.length){
+    const titleText = d.verdict.join('\n') + `\nБайпас: ${fmtBytesMb(d.bypassed_mb)}`;
+    valEl.parentElement.setAttribute('title', titleText);
+  }
 }
 
 // ── curl ──────────────────────────────────────────────────────────────────
@@ -1759,13 +1797,14 @@ requestAnimationFrame(drawFrame);
 
 (async () => {
   await refreshAll();
-  setInterval(refreshPool,       3000);
-  setInterval(refreshVectors,    4000);
-  setInterval(refreshMonitor,    3000);
-  setInterval(refreshLog,        4000);
-  setInterval(refreshTraffic,    2000);
-  setInterval(refreshSlots,      3000);
-  setInterval(refreshStrategies, 15000);
+  setInterval(refreshPool,           3000);
+  setInterval(refreshVectors,        4000);
+  setInterval(refreshMonitor,        3000);
+  setInterval(refreshLog,            4000);
+  setInterval(refreshTraffic,        2000);
+  setInterval(refreshTrafficMonitor, 4000);
+  setInterval(refreshSlots,          3000);
+  setInterval(refreshStrategies,     15000);
   if(_activeTab === 'logs') setInterval(refreshTspuLog, 5000);
 })();
 

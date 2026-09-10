@@ -18,6 +18,7 @@ _tlog = _get_tlog()
 from pool_manager import PoolManager, MAX_SLOTS
 from conn_tracker import LifetimeTracker
 from strategy_vectors import classify_vector, VectorScorer, UNKNOWN_VECTOR
+from traffic_monitor import TrafficMonitor
 
 # ── globals ────────────────────────────────────────────────────────────────
 
@@ -356,6 +357,7 @@ class ResetMonitor:
 
 # глобальный экземпляр
 reset_monitor = ResetMonitor()
+traffic_monitor = None  # инициализируется в main() после проверки окружения
 
 class PoolSwitcher:
     """
@@ -1064,6 +1066,7 @@ class PoolSwitcher:
 _pool     = None
 _switcher = None
 _tracker  = None
+_traffic_monitor = None
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 
@@ -1117,6 +1120,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_pool.get_traffic_stats())
         elif p == "/api/monitor/status":
             self._json(reset_monitor.get_status())
+        elif p == "/api/traffic-monitor":
+            if _traffic_monitor is None:
+                self._json({"error": "traffic monitor not initialized"}, 503)
+            else:
+                try:
+                    self._json(_traffic_monitor.analyze())
+                except Exception as e:
+                    self._json({"error": str(e)}, 500)
         elif p == "/api/tspu-log":
             try:
                 n   = int(self.path.split("n=")[-1]) if "n=" in self.path else 200
@@ -1309,7 +1320,7 @@ def main():
     args = ap.parse_args()
 
     global CFG_PATH, STRAT_DIR, RESTART_CMD, SOCKS_PORT, SS_PORT
-    global _pool, _switcher, _tracker, _tspu_intel
+    global _pool, _switcher, _tracker, _tspu_intel, _traffic_monitor
     CFG_PATH    = args.config
     STRAT_DIR   = args.strategies
     RESTART_CMD = args.restart_cmd
@@ -1324,6 +1335,7 @@ def main():
 
     _pool     = PoolManager(log_fn=_log)
     _switcher = PoolSwitcher(_pool)
+    _traffic_monitor = TrafficMonitor()
     
     # ── TSPU Intel активная разведка ─────────────────────────────────────
     from tspu_intel import TspuIntel
