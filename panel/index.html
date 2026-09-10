@@ -105,9 +105,42 @@ body {
   cursor: crosshair;
 }
 
+/* Новые стили для интерактивных границ */
+.resizer {
+  height: 4px;
+  background: transparent;
+  cursor: row-resize; /* Меняет курсор на стрелочки вверх-вниз */
+  flex-shrink: 0;
+  margin: -2px 0; /* Визуально не увеличивает отступы, но расширяет зону клика */
+  z-index: 10;
+  transition: background 0.2s;
+}
+
+/* При наведении линия будет слегка подсвечиваться */
+.resizer:hover, .resizer.active {
+  background: var(--line); 
+}
+
+/* Обновляем базовый стиль секций */
+.sb-section {
+  /* Убираем border-bottom, так как его роль теперь играет .resizer */
+  border-bottom: none; 
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 50px; /* Минимальная высота, чтобы блок нельзя было схлопнуть в 0 */
+  box-sizing: border-box;
+}
+
+#vectorList, #slotList, #logBox {
+  flex: 1;
+  overflow-y: auto;
+}
+
 /* ── right sidebar ── */
 #sidebar {
   width: 260px;
+  height: 100vh; /* Сайдбар растянут на всю высоту экрана */
   flex-shrink: 0;
   border-left: 1px solid var(--line);
   background: var(--panel);
@@ -115,11 +148,26 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+
 .sb-section {
   border-bottom: 1px solid var(--line);
   padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Разрешает flex-элементам сжиматься/растягиваться корректно */
 }
-.sb-section:last-child { border-bottom: none; flex: 1; overflow: hidden; }
+
+.sb-section:last-child { 
+  border-bottom: none; 
+}
+
+/* Внутренние списки теперь будут занимать 100% высоты выделенного им блока */
+#vectorList, #slotList, #logBox {
+  flex: 1;
+  overflow-y: auto; /* Появится скроллбар, если элементы не влезают */
+  min-height: 0;
+}
+
 .sb-title {
   font-size: 10px;
   color: var(--mut);
@@ -128,7 +176,9 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0; /* Заголовок не должен сжиматься */
 }
+
 .sb-title .dot {
   width: 6px; height: 6px;
   border-radius: 50%;
@@ -138,6 +188,7 @@ body {
 .sb-title .dot.ok   { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .sb-title .dot.warn { background: var(--warn); }
 .sb-title .dot.err  { background: var(--err);  box-shadow: 0 0 6px var(--err); }
+
 
 /* monitor bar */
 .mbar-wrap { height: 5px; background: rgba(255,255,255,.07); border-radius: 3px; overflow: hidden; margin: 5px 0 8px; }
@@ -461,8 +512,8 @@ body {
   <!-- right sidebar -->
   <div id="sidebar">
 
-    <!-- TSPU monitor -->
-    <div class="sb-section">
+    <!-- 1. детектор ТСПУ -->
+    <div class="sb-section" style="flex: 0 0 auto;">
       <div class="sb-title"><div class="dot" id="monDot"></div>детектор ТСПУ</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
         <span style="color:var(--mut);font-size:10px">reset ratio</span>
@@ -476,23 +527,32 @@ body {
       </div>
     </div>
 
-    <!-- vector list -->
-    <div class="sb-section" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0">
+    <!-- Разделитель 1 -->
+    <div class="resizer"></div>
+
+    <!-- 2. векторы уязвимости -->
+    <div class="sb-section" style="flex: 1;">
       <div class="sb-title"><div class="dot"></div>векторы уязвимости</div>
       <div id="vectorList"></div>
     </div>
 
-    <!-- slots panel -->
-    <div class="sb-section" style="flex:0 0 auto; max-height:220px; display:flex; flex-direction:column; overflow:hidden">
+    <!-- Разделитель 2 -->
+    <div class="resizer"></div>
+
+    <!-- 3. слоты пула -->
+    <div class="sb-section" style="height: 200px;">
       <div class="sb-title" style="margin-bottom:6px">
         <div class="dot"></div>слоты пула
         <button class="hbtn" style="margin-left:auto;padding:1px 6px;font-size:9px" onclick="addSlot()">+ слот</button>
       </div>
-      <div id="slotList" style="flex:1; overflow-y:auto; padding:2px 0"></div>
+      <div id="slotList"></div>
     </div>
 
-    <!-- event log -->
-    <div class="sb-section" style="flex:0 0 180px;display:flex;flex-direction:column;overflow:hidden">
+    <!-- Разделитель 3 -->
+    <div class="resizer"></div>
+
+    <!-- 4. лог событий -->
+    <div class="sb-section" style="height: 180px;">
       <div class="sb-title" style="margin-bottom:4px">
         <div class="dot"></div>лог событий
         <button class="hbtn" style="margin-left:auto;padding:1px 6px;font-size:9px" onclick="clearLog()">очист.</button>
@@ -500,8 +560,6 @@ body {
       <div id="logBox"></div>
     </div>
 
-  </div>
-</div>
 </div><!-- /view-landscape -->
 
 <!-- settings view -->
@@ -2065,6 +2123,53 @@ function renderCfgStratList(){
       '</div>';
   }).join('');
 }
+
+document.querySelectorAll('.resizer').forEach(resizer => {
+  resizer.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    
+    // Блок, который находится НАД разделителем
+    const prevSection = resizer.previousElementSibling;
+    // Блок, который находится ПОД разделителем
+    const nextSection = resizer.nextElementSibling;
+    
+    const startY = e.clientY;
+    const startPrevHeight = prevSection.getBoundingClientRect().height;
+    const startNextHeight = nextSection.getBoundingClientRect().height;
+    
+    resizer.classList.add('active');
+
+    function onMouseMove(e) {
+      const deltaY = e.clientY - startY;
+      
+      // Проверяем, какой блок мы тянем. 
+      // Если нижний (Лог событий), то удобнее менять высоту нижнего
+      if (nextSection && nextSection.matches(':last-child')) {
+        const newHeight = startNextHeight - deltaY;
+        if (newHeight > 50) { // ограничение минимальной высоты
+          nextSection.style.height = newHeight + 'px';
+          nextSection.style.flex = 'none'; // отключаем flex, чтобы фиксировать высоту
+        }
+      } else if (prevSection) {
+        // Для остальных блоков меняем высоту верхнего элемента
+        const newHeight = startPrevHeight + deltaY;
+        if (newHeight > 50) {
+          prevSection.style.height = newHeight + 'px';
+          prevSection.style.flex = 'none';
+        }
+      }
+    }
+
+    function onMouseUp() {
+      resizer.classList.remove('active');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+});
 
 </script>
 </body>
