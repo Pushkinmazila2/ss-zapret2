@@ -164,11 +164,13 @@ body {
   flex-shrink: 0;
 }
 .slot-tag.video { background: var(--ok-dim); color: var(--ok); }
+.slot-tag.shorts { background: rgba(144,96,224,.14); color: var(--purple); }
 .slot-tag.other { background: rgba(255,255,255,.06); color: var(--mut); }
 
 /* ── right sidebar ── */
 #sidebar {
   width: 260px;
+  position: relative; /* для вертикального разделителя ширины */
   /* высота задаётся flex-растяжением внутри #view-landscape */
   flex-shrink: 0;
   border-left: 1px solid var(--line);
@@ -177,6 +179,18 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+
+/* вертикальный разделитель ширины сайдбара */
+.vresizer {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background .2s;
+}
+.vresizer:hover, .vresizer.active { background: var(--line); }
 
 .sb-section {
   border-bottom: 1px solid var(--line);
@@ -540,6 +554,7 @@ body {
 
   <!-- right sidebar -->
   <div id="sidebar">
+    <div class="vresizer" id="sbWidthResizer" title="ширина сайдбара"></div>
 
     <!-- 1. детектор ТСПУ -->
     <div class="sb-section" style="flex: 0 0 auto;" data-sb-key="mon">
@@ -591,7 +606,6 @@ body {
 
 </div><!-- /#sidebar -->
 </div><!-- /view-landscape -->
-</div><!-- /#main -->
 
 <!-- settings view -->
 <div id="view-settings">
@@ -733,6 +747,7 @@ body {
   </div>
   <div id="tspuLogBox" style="flex:1; overflow-y:auto; padding:12px; font-size:11px; line-height:1.6"></div>
 </div>
+</div><!-- /#main -->
 
 <!-- tooltip -->
 <div id="tooltip">
@@ -758,9 +773,10 @@ let _scores      = {};   // name → score
 let _vectorData  = [];   // [{vector, strategies[], score, hazard, implicated}]
 let _traffic     = {};   // qnum → {kbps, pkts_delta, ...}
 // Классификация контента слота по объёму трафика
-const SLOT_VIDEO_KBPS   = 300;   // порог «видео» (медиана kbps за окно)
-const SLOT_KBPS_SAMPLES = 5;     // окно сэмплов для стабилизации
-let _slotKbpsHist = {};          // qnum → [последние kbps]
+const SLOT_VIDEO_KBPS    = 300;          // порог «видео» (медиана kbps за длинное окно)
+const SLOT_KBPS_SAMPLES  = 30;           // длинное окно (~60с при опросе 2с) — «видео»
+const SLOT_KBPS_SAMPLES_SHORT = 6;       // короткое окно (~12с) — «шортсы»
+let _slotKbpsHist = {};                  // qnum → [последние kbps]
 let _cuts        = 0;
 let _logEntries  = [];
 let _logLen      = 0;
@@ -1770,10 +1786,18 @@ function updateSlotKbpsHist(d){
 function slotContentTag(qnum){
   const h = _slotKbpsHist[qnum];
   if(!h || !h.length) return null;
-  const s = [...h].sort((a, b) => a - b);
-  const med = s[Math.floor(s.length / 2)];
-  return { video: med >= SLOT_VIDEO_KBPS, kbpsMed: med };
+  const shortS = [...h.slice(-SLOT_KBPS_SAMPLES_SHORT)].sort((a, b) => a - b);
+  const longS  = [...h].sort((a, b) => a - b);
+  const shortMed = shortS[Math.floor(shortS.length / 2)];
+  const longMed  = longS[Math.floor(longS.length / 2)];
+  let type;
+  if(longMed >= SLOT_VIDEO_KBPS)       type = 'video';   // стабильно высокий поток
+  else if(shortMed >= SLOT_VIDEO_KBPS) type = 'shorts';  // короткий всплеск
+  else                                 type = 'other';
+  return { type, kbpsMed: longMed, shortMed };
 }
+
+const TAG_LABEL = { video: '🎬 видео', shorts: '📱 шортсы', other: 'прочее' };
 
 // Slots panel rendering
 // ═══════════════════════════════════════════════════════════════════════
@@ -1788,7 +1812,7 @@ function renderSlots(){
     const t        = _traffic[s.qnum] || {};
     const tag      = slotContentTag(s.qnum);
     const tagHtml  = tag
-      ? `<span class="slot-tag ${tag.video ? 'video' : 'other'}" title="медиана ${tag.kbpsMed.toFixed(0)} kbps · порог ${SLOT_VIDEO_KBPS} kbps">${tag.video ? '🎬 видео' : 'прочее'}</span>`
+      ? `<span class="slot-tag ${tag.type}" title="${TAG_LABEL[tag.type]} · медиана ${tag.kbpsMed.toFixed(0)} kbps · всплеск ${tag.shortMed.toFixed(0)} kbps · порог ${SLOT_VIDEO_KBPS} kbps">${TAG_LABEL[tag.type]}</span>`
       : '';
     const conns    = t.conns || 0;
     const kbps     = t.kbps || 0;
@@ -2227,36 +2251,81 @@ function initSidebarAccordion(){
 }
 initSidebarAccordion();
 
-document.querySelectorAll('.resizer').forEach(resizer => {
+// ── вертикальный разделитель ширины сайдбара ────────────────────────────
+let _sbWidth = 260;
+function sbSaveWidth(){ try{ localStorage.setItem('sb.width', String(_sbWidth)); }catch(e){} }
+function sbApplyWidth(){
+  const sb = document.getElementById('sidebar');
+  if(sb) sb.style.width = _sbWidth + 'px';
+}
+(function initSbWidth(){
+  try{ _sbWidth = parseInt(localStorage.getItem('sb.width') || '', 10) || 260; }
+  catch(e){ _sbWidth = 260; }
+  sbApplyWidth();
+})();
+
+const sbWidthResizer = document.getElementById('sbWidthResizer');
+if(sbWidthResizer){
+  sbWidthResizer.addEventListener('mousedown', function(e){
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = document.getElementById('sidebar').offsetWidth;
+    sbWidthResizer.classList.add('active');
+    function onMove(ev){
+      // левый край сайдбара: влево = шире, вправо = уже
+      const nw = startW + (startX - ev.clientX);
+      if(nw >= 200 && nw <= 520){
+        _sbWidth = Math.round(nw);
+        sbApplyWidth();
+        resize();
+      }
+    }
+    function onUp(){
+      sbWidthResizer.classList.remove('active');
+      sbSaveWidth();
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// ── горизонтальные разделители высоты секций ────────────────────────────
+document.querySelectorAll('#sidebar .resizer').forEach(resizer => {
   resizer.addEventListener('mousedown', function(e) {
     e.preventDefault();
-    
-    // Блок, который находится НАД разделителем
     const prevSection = resizer.previousElementSibling;
-    // Блок, который находится ПОД разделителем
     const nextSection = resizer.nextElementSibling;
-    
     const startY = e.clientY;
-    const startPrevHeight = prevSection.getBoundingClientRect().height;
-    const startNextHeight = nextSection.getBoundingClientRect().height;
-    
+    const startPrevHeight = prevSection ? prevSection.getBoundingClientRect().height : 0;
+    const startNextHeight = nextSection ? nextSection.getBoundingClientRect().height : 0;
+    const startGap = nextSection ? (parseFloat(nextSection.style.marginTop) || 0) : 0;
     resizer.classList.add('active');
 
     function onMouseMove(e) {
       const deltaY = e.clientY - startY;
-      
-      // Проверяем, какой блок мы тянем. 
-      // Если нижний (Лог событий), то удобнее менять высоту нижнего
-      if (nextSection && nextSection.matches(':last-child')) {
-        const newHeight = startNextHeight - deltaY;
-        if (newHeight > 50) { // ограничение минимальной высоты
-          nextSection.style.height = newHeight + 'px';
-          nextSection.style.flex = 'none'; // отключаем flex, чтобы фиксировать высоту
+      // разделитель между «слоты пула» и «лог событий» — двигаем лог (отлипает от слотов)
+      if(nextSection && nextSection.dataset.sbKey === 'log'){
+        const newGap = startGap + deltaY;
+        if(newGap >= 0 && newGap <= 500){
+          nextSection.style.marginTop = newGap + 'px';
         }
-      } else if (prevSection) {
-        // Для остальных блоков меняем высоту верхнего элемента
+        return;
+      }
+      // разделитель между «векторы» и «слоты пула» — меняем высоту слотов
+      if(nextSection && nextSection.dataset.sbKey === 'slots'){
+        const newHeight = startNextHeight + deltaY;
+        if(newHeight > 50){
+          nextSection.style.height = newHeight + 'px';
+          nextSection.style.flex = 'none';
+        }
+        return;
+      }
+      // остальные — меняем высоту верхней секции (детектор ТСПУ)
+      if(prevSection){
         const newHeight = startPrevHeight + deltaY;
-        if (newHeight > 50) {
+        if(newHeight > 50){
           prevSection.style.height = newHeight + 'px';
           prevSection.style.flex = 'none';
         }
